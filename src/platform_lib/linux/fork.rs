@@ -1,6 +1,7 @@
 #![cfg(target_family = "unix")]
 use std::{
-    env, fs::File, io::{BufRead, BufReader, Write}, path::Path, process::{Command, Stdio}, thread, time::{SystemTime, UNIX_EPOCH}
+    env, fs::File, io::{BufRead, BufReader, Write}, path::Path, process::{Command, Stdio}, ptr, thread, time::{SystemTime, UNIX_EPOCH},
+    ffi::CString
 };
 use home::home_dir;
 
@@ -42,8 +43,12 @@ pub fn run_daemon(files: Files, command: String) -> Result<(), MultErrorTuple> {
 }
 
 fn run_command(command: &str, process_dir: &Path) -> Result<(), MultErrorTuple> {
-    let mut child = Command::new("sh")
-        .args(&["-c", &command])
+    let shell_path = match env::var("SHELL") {
+        Ok(val) => val,
+        Err(_) => return Err((MultError::OSNotSupported, None))
+    };
+    let mut child = Command::new(shell_path)
+        .args(["-ic", &command])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
