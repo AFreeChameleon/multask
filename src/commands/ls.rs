@@ -70,10 +70,10 @@ pub fn setup_table(table: &mut TableManager) -> Result<(), MultErrorTuple> {
 
         let main_headers = MainHeaders {
             id: task.id,
-            command: command.command,
+            command: command.command.clone(),
         };
         if let Some(process) = sys.process(Pid::from_u32(command.pid)) {
-            if process.name() != command.name {
+            if !match_cmds(process.cmd()[0].clone(), command.command.clone()) {
                 table.insert_row(main_headers, None);
                 continue;
             }
@@ -94,3 +94,7 @@ pub fn setup_table(table: &mut TableManager) -> Result<(), MultErrorTuple> {
     Ok(())
 }
 
+fn match_cmds(p_cmd: String, cmd: String) -> bool {
+    let cmd_slice = &cmd[0..p_cmd.len()];
+    p_cmd == cmd_slice.to_string()
+}

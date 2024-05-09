@@ -39,7 +39,7 @@ pub fn print_error(error: MultError, descriptor: Option<String>) {
         MultError::TaskDirNotExist => format!("Could not get task directory {}.", descriptor.unwrap()),
         MultError::TaskFileNotExist => format!("Could not get task file {}.", descriptor.unwrap()),
         MultError::TaskBinFileUnreadable => "Failed to read from tasks file.".to_string(),
-        MultError::TaskNotFound => "No task exists with that id, use mult ls to see the available tasks.".to_string(),
+        MultError::TaskNotFound => "No task exists with that id, use mlt ls to see the available tasks.".to_string(),
         MultError::InvalidTaskId => "Invalid id, see 'mlt help' for more.".to_string(),
         MultError::UnknownProcessInDir => format!("Unknown process in dir: {}", descriptor.unwrap()),
         MultError::FailedFormattingProcessEntry => "Failed formatting entry.".to_string(),

@@ -42,8 +42,13 @@ pub fn run_daemon(files: Files, command: String) -> Result<(), MultErrorTuple> {
 }
 
 fn run_command(command: &str, process_dir: &Path) -> Result<(), MultErrorTuple> {
-    let mut child = Command::new("sh")
-        .args(&["-c", &command])
+    let shell_path = match env::var("SHELL") {
+        Ok(val) => val,
+        Err(_) => return Err((MultError::OSNotSupported, None))
+    };
+    let mut child = Command::new(shell_path)
+        .args(["-ic", &command])
+        .env("FORCE_COLOR", "true")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
