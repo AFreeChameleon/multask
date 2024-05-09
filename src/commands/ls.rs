@@ -88,7 +88,6 @@ pub fn setup_table(table: &mut TableManager) -> Result<(), MultErrorTuple> {
 
             table.insert_row(main_headers, Some(process_headers));
         } else {
-            println!("{:?}", command.pid);
             table.insert_row(main_headers, None);
         }
     }
