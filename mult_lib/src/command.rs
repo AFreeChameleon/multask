@@ -7,7 +7,7 @@ use bincode;
 
 use crate::error::{MultError, MultErrorTuple};
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub struct CommandData {
     pub command: String,
     pub pid: u32,

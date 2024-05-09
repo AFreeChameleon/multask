@@ -1,7 +1,6 @@
 #![cfg(target_family = "unix")]
 use std::{
-    env, fs::File, io::{BufRead, BufReader, Write}, path::Path, process::{Command, Stdio}, ptr, thread, time::{SystemTime, UNIX_EPOCH},
-    ffi::CString
+    env, fs::File, io::{BufRead, BufReader, Write}, path::Path, process::{Command, Stdio}, thread, time::{SystemTime, UNIX_EPOCH},
 };
 use home::home_dir;
 
@@ -38,17 +37,18 @@ pub fn run_daemon(files: Files, command: String) -> Result<(), MultErrorTuple> {
         libc::close(libc::STDERR_FILENO);
     }
     // Do daemon stuff here
-    run_command(&command, &files.process_dir)?;
+    run_command(&command, &files.process_dir, process_id)?;
     Ok(())
 }
 
-fn run_command(command: &str, process_dir: &Path) -> Result<(), MultErrorTuple> {
+fn run_command(command: &str, process_dir: &Path, process_id: i32) -> Result<(), MultErrorTuple> {
     let shell_path = match env::var("SHELL") {
         Ok(val) => val,
         Err(_) => return Err((MultError::OSNotSupported, None))
     };
     let mut child = Command::new(shell_path)
         .args(["-ic", &command])
+        .env("FORCE_COLOR", "true")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -66,6 +66,7 @@ fn run_command(command: &str, process_dir: &Path) -> Result<(), MultErrorTuple> 
         return Err((MultError::ProcessNotExists, None));
     }
     let process_name = process.unwrap().name();
+    print_info(&format!("Process id of command {} {:}", process_name, child.id()));
     let data = CommandData {
         command: command.to_string(),
         pid: child.id(),
