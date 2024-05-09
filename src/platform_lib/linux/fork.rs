@@ -37,11 +37,11 @@ pub fn run_daemon(files: Files, command: String) -> Result<(), MultErrorTuple> {
         libc::close(libc::STDERR_FILENO);
     }
     // Do daemon stuff here
-    run_command(&command, &files.process_dir, process_id)?;
+    run_command(&command, &files.process_dir)?;
     Ok(())
 }
 
-fn run_command(command: &str, process_dir: &Path, process_id: i32) -> Result<(), MultErrorTuple> {
+fn run_command(command: &str, process_dir: &Path) -> Result<(), MultErrorTuple> {
     let shell_path = match env::var("SHELL") {
         Ok(val) => val,
         Err(_) => return Err((MultError::OSNotSupported, None))
@@ -66,7 +66,6 @@ fn run_command(command: &str, process_dir: &Path, process_id: i32) -> Result<(),
         return Err((MultError::ProcessNotExists, None));
     }
     let process_name = process.unwrap().name();
-    print_info(&format!("Process id of command {} {:}", process_name, child.id()));
     let data = CommandData {
         command: command.to_string(),
         pid: child.id(),
