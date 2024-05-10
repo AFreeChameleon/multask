@@ -9,6 +9,28 @@ use mult_lib::task::Files;
 use mult_lib::command::{CommandManager, CommandData};
 use sysinfo::{System, Pid};
 
+macro_rules! spawn_logger{
+    ($out:ident,$out_file:ident) => {{
+        thread::spawn(move || {
+            let reader = BufReader::new($out);
+
+            for line in reader.lines() {
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis();
+                let formatted_line = format!(
+                    "{:}|{}\n",
+                    now,
+                    line.expect("Problem reading stderr.")
+                ); 
+                $out_file.write_all(formatted_line.as_bytes())
+                    .expect("Problem writing to stderr.");
+            }
+        });
+    }};
+}
+
 pub fn run_daemon(files: Files, command: String) -> Result<(), MultErrorTuple> {
     let process_id;
     let sid;
@@ -82,41 +104,8 @@ fn run_command(command: &str, process_dir: &Path) -> Result<(), MultErrorTuple> 
     let mut stderr_file = File::create(process_dir.join("stderr.err"))
         .expect("Could not open stderr file.");
 
-    thread::spawn(move || {
-        let reader = BufReader::new(stdout);
-
-        for line in reader.lines() {
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_millis();
-            let formatted_line = format!(
-                "{:}|{}\n",
-                now,
-                line.expect("Problem reading stdout.")
-            ); 
-            stdout_file.write_all(formatted_line.as_bytes())
-                .expect("Problem writing to stdout.");
-        }
-    });
-
-    thread::spawn(move || {
-        let reader = BufReader::new(stderr);
-
-        for line in reader.lines() {
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_millis();
-            let formatted_line = format!(
-                "{:}|{}\n",
-                now,
-                line.expect("Problem reading stderr.")
-            ); 
-            stderr_file.write_all(formatted_line.as_bytes())
-                .expect("Problem writing to stderr.");
-        }
-    });
+    spawn_logger!(stderr, stderr_file);
+    spawn_logger!(stdout, stdout_file);
     child.wait().unwrap();
     Ok(())
 }
