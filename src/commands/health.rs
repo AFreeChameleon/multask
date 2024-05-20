@@ -5,7 +5,7 @@ use std::env;
 use home::home_dir;
 use mult_lib::args::parse_args;
 use mult_lib::error::{print_error, print_info, print_success, MultError, MultErrorTuple};
-use mult_lib::task::TaskManager;
+use mult_lib::task::{Task, TaskManager};
 
 const FIX_FLAG: &str = "--fix";
 const FLAGS: [(&str, bool); 1] = [
@@ -31,7 +31,7 @@ pub fn run() -> Result<(), MultErrorTuple> {
 
 fn run_tests(fix_enabled: bool) -> Result<(), Option<MultErrorTuple>> {
     // Initial checks
-    let tasks_dir = Path::new(&home::home_dir().unwrap())
+    let tasks_dir = Path::new(&home_dir().unwrap())
         .join(".multi-tasker");
     if !tasks_dir.exists() && !tasks_dir.is_dir() {
         if !fix_enabled {

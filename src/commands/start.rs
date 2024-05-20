@@ -2,7 +2,7 @@ use std::env;
 
 use mult_lib::args::parse_args;
 use mult_lib::error::{print_success, MultError, MultErrorTuple};
-use mult_lib::proc::{get_proc_cpu_usage, get_proc_name};
+use mult_lib::proc::{get_proc_name};
 use mult_lib::task::{TaskManager, Files};
 use mult_lib::command::{CommandData, CommandManager};
 
@@ -21,7 +21,6 @@ pub fn run() -> Result<(), MultErrorTuple> {
         let task = TaskManager::get_task(&tasks, task_id)?;
         let files = TaskManager::generate_task_files(task.id, &tasks);
         let command_data = CommandManager::read_command_data(task.id)?;
-        get_proc_cpu_usage(command_data.pid)?;
         match get_proc_name(command_data.pid) {
             Ok(val) => {
                 if val == command_data.name {

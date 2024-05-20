@@ -7,6 +7,7 @@ use std::{
     sync::mpsc,
     collections::VecDeque
 };
+use home;
 
 use mult_lib::{args::{parse_args, ParsedArgs}, error::{print_error, print_info, MultError, MultErrorTuple}, task::TaskManager};
 

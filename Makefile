@@ -1,12 +1,12 @@
 main:
 	cargo build
 spawn:
-	cd mult_spawn
-	cargo build
-	cd ..
+	cd mult_spawn; cargo build; cd ..
 lib:
-	cd mult_lib
-	cargo build
-	cd ..
+	cc -c mult_lib/src/c/mult.c -o mult_lib/mult.o
+	cc -shared mult_lib/mult.o -o mult_lib/libmult.so
+	cd mult_lib; cargo build; cd ..
 all:
-	cargo build --workspace
+	make lib
+	make spawn
+	make main

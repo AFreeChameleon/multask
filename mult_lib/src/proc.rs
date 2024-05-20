@@ -38,7 +38,7 @@ pub fn get_proc_comm(pid: u32) -> Result<String, MultErrorTuple> {
     Ok(proc_comm.trim().to_string())
 }
 
-pub fn get_proc_cpu_usage(pid: u32) -> Result<i64, MultErrorTuple> {
+pub fn linux_get_proc_cpu_usage(pid: u32) -> Result<i64, MultErrorTuple> {
     let proc_uptime = match fs::read_to_string("/proc/uptime") {
         Ok(val) => val,
         Err(_) => {
@@ -62,4 +62,8 @@ pub fn get_proc_cpu_usage(pid: u32) -> Result<i64, MultErrorTuple> {
     let elapsed_sec = sys_uptime_sec - start_time_sec;
     let usage_percentage = usage_sec * 100 / elapsed_sec;
     Ok(usage_percentage)
+}
+
+pub fn linux_create_cgroup_v2(pid: u32) {
+
 }

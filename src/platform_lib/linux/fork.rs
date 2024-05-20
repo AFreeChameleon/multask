@@ -3,6 +3,7 @@ use std::{
     env, fs::File, io::{BufRead, BufReader, Write}, path::Path, process::{Command, Stdio}, thread, time::{SystemTime, UNIX_EPOCH}
 };
 use home::home_dir;
+use libc;
 
 use mult_lib::{error::{print_info, MultError, MultErrorTuple}, proc::get_proc_name};
 use mult_lib::task::Files;

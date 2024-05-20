@@ -1,2 +1,4 @@
 /target
 logs.log
+libmult.so
+mult.o
