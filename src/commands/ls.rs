@@ -8,6 +8,8 @@ use mult_lib::table::{MainHeaders, ProcessHeaders, TableManager};
 use mult_lib::task::{Task, TaskManager};
 use mult_lib::command::CommandManager;
 
+use crate::platform_lib::linux::fork::{get_proc_comm, get_proc_name};
+
 const WATCH_FLAG: &str = "--watch";
 const FLAGS: [(&str, bool); 1] = [
     (WATCH_FLAG, false)
@@ -73,7 +75,9 @@ pub fn setup_table(table: &mut TableManager) -> Result<(), MultErrorTuple> {
             command: command.command.clone(),
         };
         if let Some(process) = sys.process(Pid::from_u32(command.pid)) {
-            if !match_cmds(process.cmd()[0].clone(), command.command.clone()) {
+            let proc_comm = get_proc_comm(command.pid)?;
+            if proc_comm != process.name() {
+                println!("HI");
                 table.insert_row(main_headers, None);
                 continue;
             }

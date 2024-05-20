@@ -9,6 +9,7 @@ use sysinfo::{Pid, System};
 #[cfg(target_family = "unix")]
 use crate::platform_lib::linux::fork;
 
+use crate::platform_lib::linux::fork::get_proc_name;
 #[cfg(target_family = "windows")]
 use crate::platform_lib::windows::fork;
 
@@ -21,8 +22,8 @@ pub fn run() -> Result<(), MultErrorTuple> {
         let task = TaskManager::get_task(&tasks, task_id)?;
         let files = TaskManager::generate_task_files(task.id, &tasks);
         let command_data = CommandManager::read_command_data(task.id)?;
-        let sys = System::new_all();
-        if let Some(_) = sys.process(Pid::from_u32(command_data.pid)) {
+        let proc_name = get_proc_name(command_data.pid)?;
+        if proc_name == command_data.name {
             return Err((MultError::ProcessAlreadyRunning, None))
         }
         let current_dir = env::current_dir().unwrap();

@@ -1,6 +1,6 @@
 #![cfg(target_family = "unix")]
 use std::{
-    env, fs::File, io::{BufRead, BufReader, Write}, path::Path, process::{Command, Stdio}, thread, time::{SystemTime, UNIX_EPOCH}
+    env, fs::File, io::{BufRead, BufReader, Read, Write}, path::Path, process::{Command, Stdio}, thread, time::{SystemTime, UNIX_EPOCH}
 };
 use home::home_dir;
 
@@ -70,7 +70,6 @@ fn run_command(command: &str, process_dir: &Path) -> Result<(), MultErrorTuple> 
     };
     let mut child = Command::new(shell_path)
         .args(["-ic", &command])
-        .env("FORCE_COLOR", "true")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -81,31 +80,58 @@ fn run_command(command: &str, process_dir: &Path) -> Result<(), MultErrorTuple> 
         Err(_) => home_dir().unwrap()
     };
 
-    let sys = System::new_all();
-
-    let process = sys.process(Pid::from_u32(child.id()));
-    if let None = process {
-        return Err((MultError::ProcessNotExists, None));
-    }
-    let process_name = process.unwrap().name();
+    let child_pid = child.id();
+    let proc_name = get_proc_name(child_pid)?;
     let data = CommandData {
         command: command.to_string(),
-        pid: child.id(),
+        pid: child_pid,
         dir: current_dir.display().to_string(),
-        name: process_name.to_string()
+        name: proc_name,
     };
     CommandManager::write_command_data(data, process_dir);
 
-    let stdout = child.stdout.take().expect("Failed to take stdout.");
-    let stderr = child.stderr.take().expect("Failed to take stderr.");
+    let stdout = child.stdout.take().unwrap();
+    let stderr = child.stderr.take().unwrap();
     
-    let mut stdout_file = File::create(process_dir.join("stdout.out"))
-        .expect("Could not open stdout file.");
-    let mut stderr_file = File::create(process_dir.join("stderr.err"))
-        .expect("Could not open stderr file.");
+    let mut stdout_file = File::create(process_dir.join("stdout.out")).unwrap();
+    let mut stderr_file = File::create(process_dir.join("stderr.err")).unwrap();
 
     spawn_logger!(stderr, stderr_file);
     spawn_logger!(stdout, stdout_file);
     child.wait().unwrap();
     Ok(())
+}
+
+pub fn get_proc_name(pid: u32) -> Result<String, MultErrorTuple> {
+    let mut proc_name = String::new();
+    let mut proc_file = match File::open(format!("/proc/{}/cmdline", pid)) {
+        Ok(val) => val,
+        Err(_) => {
+            return Err((MultError::ProcessNotExists, None));
+        }
+    };
+    match proc_file.read_to_string(&mut proc_name) {
+        Ok(_) => (),
+        Err(_) => {
+            return Err((MultError::ProcessNotExists, None));
+        }
+    };
+    Ok(proc_name)
+}
+
+pub fn get_proc_comm(pid: u32) -> Result<String, MultErrorTuple> {
+    let mut proc_comm = String::new();
+    let mut proc_file = match File::open(format!("/proc/{}/comm", pid)) {
+        Ok(val) => val,
+        Err(_) => {
+            return Err((MultError::ProcessNotExists, None));
+        }
+    };
+    match proc_file.read_to_string(&mut proc_comm) {
+        Ok(_) => (),
+        Err(_) => {
+            return Err((MultError::ProcessNotExists, None));
+        }
+    };
+    Ok(proc_comm.trim().to_string())
 }
