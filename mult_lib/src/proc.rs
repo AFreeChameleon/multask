@@ -1,6 +1,9 @@
 use std::fs::{self, File};
 use std::io::Read;
 
+use cgroups_rs::cgroup_builder::CgroupBuilder;
+use cgroups_rs::{Cgroup, CgroupPid, Controller};
+
 use crate::error::{MultError, MultErrorTuple};
 
 
@@ -64,6 +67,34 @@ pub fn linux_get_proc_cpu_usage(pid: u32) -> Result<i64, MultErrorTuple> {
     Ok(usage_percentage)
 }
 
-pub fn linux_create_cgroup_v2(pid: u32) {
+pub fn create_cgroup(
+    mult_id: u32,
+    cpu_shares: u64,
+    memory_limit: i64
+) -> Cgroup {
+    let hier = cgroups_rs::hierarchies::auto();
 
+    let mut cgroup_id = "mult".to_owned();
+    cgroup_id.push_str(&mult_id.to_string());
+    let cg: Cgroup = CgroupBuilder::new(&cgroup_id)
+        .cpu()
+            .shares(cpu_shares)
+            .done()
+        .memory()
+            .memory_hard_limit(memory_limit)
+            .kernel_memory_limit(memory_limit)
+            .done()
+        .build(hier)
+        .unwrap();
+
+    cg
+}
+
+pub fn add_process_to_cgroup(pid: u32, cg: &Cgroup) {
+    cg.add_task(CgroupPid::from(pid as u64)).unwrap();
+    //let cpus: &cgroups_rs::cpu::CpuController = cg.controller_of().unwrap();
+    //cpus.add_task(&CgroupPid::from(pid as u64)).unwrap();
+
+    //let memory: &cgroups_rs::memory::MemController = cg.controller_of().unwrap();
+    //memory.add_task(&CgroupPid::from(pid as u64)).unwrap();
 }

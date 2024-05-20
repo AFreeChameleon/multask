@@ -1,11 +1,12 @@
 #![cfg(target_family = "unix")]
 use std::{
-    env, fs::File, io::{BufRead, BufReader, Write}, path::Path, process::{Command, Stdio}, thread, time::{SystemTime, UNIX_EPOCH}
+    env, fs::File, io::{BufRead, BufReader, Write}, path::Path, process::{Child, Command, Stdio}, thread, time::{SystemTime, UNIX_EPOCH}
 };
+use cgroups_rs::Cgroup;
 use home::home_dir;
 use libc;
 
-use mult_lib::{error::{print_info, MultError, MultErrorTuple}, proc::get_proc_name};
+use mult_lib::{error::{print_info, MultError, MultErrorTuple}, proc::{add_process_to_cgroup, get_proc_name}};
 use mult_lib::task::Files;
 use mult_lib::command::{CommandManager, CommandData};
 
@@ -31,7 +32,7 @@ macro_rules! spawn_logger{
     }};
 }
 
-pub fn run_daemon(files: Files, command: String) -> Result<(), MultErrorTuple> {
+pub fn run_daemon(files: Files, command: String, cgroup: Option<Cgroup>) -> Result<(), MultErrorTuple> {
     let process_id;
     let sid;
     unsafe {
@@ -59,11 +60,15 @@ pub fn run_daemon(files: Files, command: String) -> Result<(), MultErrorTuple> {
         libc::close(libc::STDERR_FILENO);
     }
     // Do daemon stuff here
-    run_command(&command, &files.process_dir)?;
+    let mut child = run_command(&command, &files.process_dir)?;
+    if let Some(cg) = cgroup {
+        add_process_to_cgroup(child.id(), &cg);
+    }
+    child.wait().unwrap();
     Ok(())
 }
 
-fn run_command(command: &str, process_dir: &Path) -> Result<(), MultErrorTuple> {
+fn run_command(command: &str, process_dir: &Path) -> Result<Child, MultErrorTuple> {
     let shell_path = match env::var("SHELL") {
         Ok(val) => val,
         Err(_) => return Err((MultError::OSNotSupported, None))
@@ -99,7 +104,6 @@ fn run_command(command: &str, process_dir: &Path) -> Result<(), MultErrorTuple> 
 
     spawn_logger!(stderr, stderr_file);
     spawn_logger!(stdout, stdout_file);
-    child.wait().unwrap();
-    Ok(())
+    Ok(child)
 }
 

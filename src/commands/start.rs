@@ -40,7 +40,7 @@ pub fn run() -> Result<(), MultErrorTuple> {
 
 pub fn start_process(files: Files, command_data: CommandData) -> Result<(), MultErrorTuple> {
     #[cfg(target_family = "unix")]
-    fork::run_daemon(files, command_data.command)?;
+    fork::run_daemon(files, command_data.command, None)?;
     #[cfg(target_family = "windows")]
     fork::run_daemon(files, command_data.command)?;
     Ok(())
