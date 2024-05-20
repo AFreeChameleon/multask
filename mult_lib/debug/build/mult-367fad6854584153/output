@@ -1,2 +1,0 @@
-cargo:rustc-link-lib=test
-cargo:rustc-link-search=mult_lib
