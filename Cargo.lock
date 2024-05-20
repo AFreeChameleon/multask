@@ -306,6 +306,7 @@ dependencies = [
  "bincode",
  "colored",
  "home",
+ "libc",
  "prettytable",
  "serde",
  "sysinfo",

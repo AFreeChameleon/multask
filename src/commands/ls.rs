@@ -1,5 +1,6 @@
 use std::{thread, time::Duration, env};
 use mult_lib::args::parse_args;
+use mult_lib::proc::{get_proc_comm, get_proc_cpu_usage};
 use prettytable::Table;
 use sysinfo::{System, Pid};
 
@@ -7,8 +8,6 @@ use mult_lib::error::{MultError, MultErrorTuple};
 use mult_lib::table::{MainHeaders, ProcessHeaders, TableManager};
 use mult_lib::task::{Task, TaskManager};
 use mult_lib::command::CommandManager;
-
-use crate::platform_lib::linux::fork::{get_proc_comm, get_proc_name};
 
 const WATCH_FLAG: &str = "--watch";
 const FLAGS: [(&str, bool); 1] = [
@@ -75,9 +74,9 @@ pub fn setup_table(table: &mut TableManager) -> Result<(), MultErrorTuple> {
             command: command.command.clone(),
         };
         if let Some(process) = sys.process(Pid::from_u32(command.pid)) {
+            get_proc_cpu_usage(command.pid)?;
             let proc_comm = get_proc_comm(command.pid)?;
             if proc_comm != process.name() {
-                println!("HI");
                 table.insert_row(main_headers, None);
                 continue;
             }
@@ -98,7 +97,3 @@ pub fn setup_table(table: &mut TableManager) -> Result<(), MultErrorTuple> {
     Ok(())
 }
 
-fn match_cmds(p_cmd: String, cmd: String) -> bool {
-    let cmd_slice = &cmd[0..p_cmd.len()];
-    p_cmd == cmd_slice.to_string()
-}

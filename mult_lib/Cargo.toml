@@ -13,3 +13,6 @@ sysinfo = "0.30.5"
 colored = "2.1.0"
 prettytable = "0.10.0"
 term = "0.7"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2.153"
