@@ -9,17 +9,12 @@ use mult_lib::table::{MainHeaders, ProcessHeaders, TableManager};
 use mult_lib::task::{Task, TaskManager};
 use mult_lib::command::CommandManager;
 
-extern "C" {
-    fn print_num(num: i32);
-}
-
 const WATCH_FLAG: &str = "--watch";
 const FLAGS: [(&str, bool); 1] = [
     (WATCH_FLAG, false)
 ];
 
 pub fn run() -> Result<(), MultErrorTuple> {
-    unsafe {print_num(32)};
     let args = env::args();
     let parsed_args = parse_args(&args.collect::<Vec<String>>()[2..], &FLAGS, false)?;
     let mut table = TableManager {

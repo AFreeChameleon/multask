@@ -90,11 +90,3 @@ pub fn create_cgroup(
     cg
 }
 
-pub fn add_process_to_cgroup(pid: u32, cg: &Cgroup) {
-    cg.add_task(CgroupPid::from(pid as u64)).unwrap();
-    //let cpus: &cgroups_rs::cpu::CpuController = cg.controller_of().unwrap();
-    //cpus.add_task(&CgroupPid::from(pid as u64)).unwrap();
-
-    //let memory: &cgroups_rs::memory::MemController = cg.controller_of().unwrap();
-    //memory.add_task(&CgroupPid::from(pid as u64)).unwrap();
-}

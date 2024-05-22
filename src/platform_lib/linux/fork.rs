@@ -2,11 +2,11 @@
 use std::{
     env, fs::File, io::{BufRead, BufReader, Write}, path::Path, process::{Child, Command, Stdio}, thread, time::{SystemTime, UNIX_EPOCH}
 };
-use cgroups_rs::Cgroup;
+use cgroups_rs::{Cgroup, CgroupPid};
 use home::home_dir;
 use libc;
 
-use mult_lib::{error::{print_info, MultError, MultErrorTuple}, proc::{add_process_to_cgroup, get_proc_name}};
+use mult_lib::{error::{print_info, MultError, MultErrorTuple}, proc::{get_proc_name}};
 use mult_lib::task::Files;
 use mult_lib::command::{CommandManager, CommandData};
 
@@ -62,7 +62,7 @@ pub fn run_daemon(files: Files, command: String, cgroup: Option<Cgroup>) -> Resu
     // Do daemon stuff here
     let mut child = run_command(&command, &files.process_dir)?;
     if let Some(cg) = cgroup {
-        add_process_to_cgroup(child.id(), &cg);
+        cg.add_task(CgroupPid::from(child.id() as u64)).unwrap();
     }
     child.wait().unwrap();
     Ok(())
