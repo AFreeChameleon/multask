@@ -1,4 +1,5 @@
-use std::fs;
+use std::fs::{self, File};
+use std::os::linux::fs::MetadataExt;
 use std::path::Path;
 use std::env;
 
@@ -27,6 +28,14 @@ pub fn run() -> Result<(), MultErrorTuple> {
         Err(_) => ()
     };
     Ok(())
+}
+
+fn check_cgroups() {
+    // Gets owner of who installed mult
+    let exe_loc = env::current_exe().unwrap().display().to_string();
+    if !Path::new(&exe_loc).exists() {
+        let exe_meta = fs::metadata(Path::new(&exe_loc)).unwrap();
+    }
 }
 
 fn run_tests(fix_enabled: bool) -> Result<(), Option<MultErrorTuple>> {
