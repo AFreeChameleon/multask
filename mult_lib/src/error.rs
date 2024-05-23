@@ -66,3 +66,7 @@ pub fn print_success(text: &str) {
 pub fn print_info(text: &str) {
     println!("{} {text}", "Info".blue());
 }
+
+pub fn print_warning(text: &str) {
+    println!("{} {text}", "Warning".yellow());
+}

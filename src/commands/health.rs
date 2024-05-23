@@ -5,8 +5,12 @@ use std::env;
 
 use home::home_dir;
 use mult_lib::args::parse_args;
-use mult_lib::error::{print_error, print_info, print_success, MultError, MultErrorTuple};
-use mult_lib::task::{Task, TaskManager};
+use mult_lib::error::{print_error, print_info, print_success, print_warning, MultError, MultErrorTuple};
+use mult_lib::task::TaskManager;
+
+extern "C" {
+    pub fn init_cgroup(uid: libc::uid_t, gid: libc::gid_t) -> i32;
+}
 
 const FIX_FLAG: &str = "--fix";
 const FLAGS: [(&str, bool); 1] = [
@@ -28,14 +32,6 @@ pub fn run() -> Result<(), MultErrorTuple> {
         Err(_) => ()
     };
     Ok(())
-}
-
-fn check_cgroups() {
-    // Gets owner of who installed mult
-    let exe_loc = env::current_exe().unwrap().display().to_string();
-    if !Path::new(&exe_loc).exists() {
-        let exe_meta = fs::metadata(Path::new(&exe_loc)).unwrap();
-    }
 }
 
 fn run_tests(fix_enabled: bool) -> Result<(), Option<MultErrorTuple>> {
@@ -109,7 +105,21 @@ fn run_tests(fix_enabled: bool) -> Result<(), Option<MultErrorTuple>> {
             delete_process(process.to_string())?;
         }
     }
+    check_cgroups();
     Ok(())
+}
+
+fn check_cgroups() {
+    // Gets owner of who installed mult
+    let exe_loc = env::current_exe().unwrap().display().to_string();
+    if !Path::new("/sys/fs/cgroup/mult").exists() {
+        print_info("Generating cgroups...");
+        let exe_meta = fs::metadata(Path::new(&exe_loc)).unwrap();
+        let err = unsafe { init_cgroup(exe_meta.st_uid(), exe_meta.st_gid()) };
+        if err == libc::EACCES {
+            print_warning("Root needed to create cgroups for resource limits on tasks. Run: `sudo mlt health --fix`.");
+        }
+    }
 }
 
 fn check_processes_dir(processes_dir: &Path) -> Result<Vec<String>, MultErrorTuple> {
