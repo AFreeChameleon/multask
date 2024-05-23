@@ -26,7 +26,8 @@ pub enum MultError {
     CustomError,
     // Linux only
     ForkFailed,
-    SetSidFailed
+    SetSidFailed,
+    CgroupsMissing
 }
 
 const RUN_FIX_TEXT: &str = "Try running `mlt health --fix` to fix this.";
@@ -55,6 +56,7 @@ pub fn print_error(error: MultError, descriptor: Option<String>) {
         MultError::SetSidFailed => "Setting sid failed.".to_string(),
         MultError::OSNotSupported => "Windows & linux is only officially supported at the moment".to_string(),
         MultError::CustomError => format!("{}", descriptor.unwrap()),
+        MultError::CgroupsMissing => "Cgroups is missing.".to_string()
     };
     println!("{} {}", "Error:".red(), message);
 }

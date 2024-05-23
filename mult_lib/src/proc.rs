@@ -1,5 +1,6 @@
 use std::fs::{self, File};
 use std::io::Read;
+use std::ffi::CString;
 
 use cgroups_rs::cgroup_builder::CgroupBuilder;
 use cgroups_rs::{Cgroup, CgroupPid, Controller};
@@ -90,3 +91,15 @@ pub fn create_cgroup(
     cg
 }
 
+pub unsafe fn init_cgroup() -> Option<i32> {
+    let mult_dir = CString::new("/sys/fs/cgroup/mult").unwrap();
+    if libc::mkdir(mult_dir.as_ptr(), 0755) != 0 {
+        return libc::__errno_location().as_ref().copied();
+    }
+
+    if libc::chmod(mult_dir.as_ptr(), 0755) != 0 {
+        return libc::__errno_location().as_ref().copied();
+    }
+
+    None
+}
