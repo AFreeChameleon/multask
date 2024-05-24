@@ -1,6 +1,8 @@
+use std::env;
 use std::fs::{self, File};
 use std::io::Read;
 use std::ffi::CString;
+use std::path::{Path, PathBuf};
 
 use cgroups_rs::cgroup_builder::CgroupBuilder;
 use cgroups_rs::{Cgroup, CgroupPid, Controller};
@@ -91,6 +93,70 @@ pub fn create_cgroup(
     cg
 }
 
+pub struct CGroup {
+    pub memory_limit: i64,
+    pub cpu_shares: u64,
+    pub task_id: u32,
+    pub path: Option<PathBuf>
+}
+
+impl CGroup {
+    pub fn new(
+        task_id: u32,
+        cpu_shares: u64,
+        memory_limit: i64
+    ) -> CGroup {
+        CGroup {
+            task_id,
+            cpu_shares,
+            memory_limit,
+            path: None
+        }
+    }
+
+    pub fn add_user(&mut self) -> Result<(), MultErrorTuple> {
+        let user = match env::var("USER") {
+            Ok(val) => val,
+            Err(_) => return Err((MultError::OSNotSupported, None))
+        };
+        let user_cg_path = Path::new("/sys/fs/cgroup/mult/").join(&user);
+        if !user_cg_path.exists() || !user_cg_path.is_dir() {
+            // Create cgroup
+            match fs::create_dir(&user_cg_path) {
+                Ok(_) => (),
+                Err(_) => return Err((MultError::CgroupsMissing, None))
+            };
+        }
+        self.path = Some(user_cg_path.to_path_buf());
+        Ok(())
+    }
+
+    pub fn add_task(
+        &mut self,
+        pid: u32
+    ) -> Result<(), MultErrorTuple> {
+        if self.path.is_none() {
+            return Err((MultError::CgroupsMissing, None))
+        }
+        let path = self.path.clone().unwrap();
+        let task_cg_path = path.join(self.task_id.to_string());
+        if !task_cg_path.exists() {
+            match fs::create_dir(task_cg_path) {
+                Ok(_) => (),
+                Err(_) => return Err((MultError::CgroupsMissing, None))
+            };
+        }
+
+        // Writing to CPU
+        fs::write(path.join("cpu.weight"), self.cpu_shares.to_string()).unwrap();
+        // Writing to Memory
+        fs::write(path.join("memory.limit_in_bytes"), self.memory_limit.to_string()).unwrap();
+        // Assigning PID
+        fs::write(path.join("cgroup.procs"), pid.to_string()).unwrap();
+        Ok(())
+    }
+}
+
 pub unsafe fn init_cgroup() -> Option<i32> {
     let mult_dir = CString::new("/sys/fs/cgroup/mult").unwrap();
     if libc::mkdir(mult_dir.as_ptr(), 0755) != 0 {
@@ -103,3 +169,44 @@ pub unsafe fn init_cgroup() -> Option<i32> {
 
     None
 }
+
+pub fn create_user_cgroup() -> Result<PathBuf, MultErrorTuple> {
+    let user = match env::var("USER") {
+        Ok(val) => val,
+        Err(_) => return Err((MultError::OSNotSupported, None))
+    };
+    let user_cg_path = Path::new("/sys/fs/cgroup/mult/").join(&user);
+    if !user_cg_path.exists() || !user_cg_path.is_dir() {
+        // Create cgroup
+        match fs::create_dir(&user_cg_path) {
+            Ok(_) => (),
+            Err(_) => return Err((MultError::CgroupsMissing, None))
+        };
+    }
+    Ok(user_cg_path.to_path_buf())
+}
+
+pub fn create_task_cgroup(
+    path: &Path,
+    task_id: u32,
+    cpu_shares: u64,
+    memory_limit: i64,
+    pid: u32
+) -> Result<(), MultErrorTuple> {
+    let task_cg_path = path.join(task_id.to_string());
+    if !task_cg_path.exists() {
+        match fs::create_dir(task_cg_path) {
+            Ok(_) => (),
+            Err(_) => return Err((MultError::CgroupsMissing, None))
+        };
+    }
+
+    // Writing to CPU
+    fs::write(path.join("cpu.weight"), cpu_shares.to_string()).unwrap();
+    // Writing to Memory
+    fs::write(path.join("memory.limit_in_bytes"), memory_limit.to_string()).unwrap();
+    // Assigning PID
+    fs::write(path.join("cgroup.procs"), pid.to_string()).unwrap();
+    Ok(())
+}
+

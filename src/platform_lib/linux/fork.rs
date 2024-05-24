@@ -6,7 +6,7 @@ use cgroups_rs::{Cgroup, CgroupPid};
 use home::home_dir;
 use libc;
 
-use mult_lib::{error::{print_info, MultError, MultErrorTuple}, proc::{get_proc_name}};
+use mult_lib::{error::{print_info, MultError, MultErrorTuple}, proc::{get_proc_name, CGroup}};
 use mult_lib::task::Files;
 use mult_lib::command::{CommandManager, CommandData};
 
@@ -32,7 +32,7 @@ macro_rules! spawn_logger{
     }};
 }
 
-pub fn run_daemon(files: Files, command: String, cgroup: Option<Cgroup>) -> Result<(), MultErrorTuple> {
+pub fn run_daemon(files: Files, command: String, cgroup: Option<CGroup>) -> Result<(), MultErrorTuple> {
     let process_id;
     let sid;
     unsafe {
@@ -61,8 +61,8 @@ pub fn run_daemon(files: Files, command: String, cgroup: Option<Cgroup>) -> Resu
     }
     // Do daemon stuff here
     let mut child = run_command(&command, &files.process_dir)?;
-    if let Some(cg) = cgroup {
-        cg.add_task(CgroupPid::from(child.id() as u64)).unwrap();
+    if let Some(mut cg) = cgroup {
+        cg.add_task(child.id())?;
     }
     child.wait().unwrap();
     Ok(())
