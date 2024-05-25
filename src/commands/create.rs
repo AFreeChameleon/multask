@@ -1,7 +1,7 @@
 use std::env;
 
 use mult_lib::args::{parse_args, ParsedArgs};
-use mult_lib::proc::{create_cgroup, create_task_cgroup, create_user_cgroup, CGroup};
+use mult_lib::proc::{create_cgroup, UserCgroup};
 use mult_lib::task::{Task, TaskManager};
 use mult_lib::error::{print_info, print_success, MultError, MultErrorTuple};
 
@@ -37,7 +37,7 @@ pub fn run() -> Result<(), MultErrorTuple> {
         let files = TaskManager::generate_task_files(new_task_id, &tasks);
 
         #[cfg(target_family = "unix")] {
-            let mut cg = CGroup {
+            let mut cg = UserCgroup {
                 task_id: new_task_id,
                 memory_limit: flags.memory_limit,
                 cpu_shares: flags.cpu_shares,

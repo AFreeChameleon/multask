@@ -6,7 +6,7 @@ use cgroups_rs::{Cgroup, CgroupPid};
 use home::home_dir;
 use libc;
 
-use mult_lib::{error::{print_info, MultError, MultErrorTuple}, proc::{get_proc_name, CGroup}};
+use mult_lib::{error::{print_info, MultError, MultErrorTuple}, proc::{get_proc_name, UserCgroup}};
 use mult_lib::task::Files;
 use mult_lib::command::{CommandManager, CommandData};
 
@@ -32,7 +32,7 @@ macro_rules! spawn_logger{
     }};
 }
 
-pub fn run_daemon(files: Files, command: String, cgroup: Option<CGroup>) -> Result<(), MultErrorTuple> {
+pub fn run_daemon(files: Files, command: String, cgroup: Option<UserCgroup>) -> Result<(), MultErrorTuple> {
     let process_id;
     let sid;
     unsafe {
