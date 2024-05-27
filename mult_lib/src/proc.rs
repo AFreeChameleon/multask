@@ -4,9 +4,6 @@ use std::io::Read;
 use std::ffi::CString;
 use std::path::{Path, PathBuf};
 
-use cgroups_rs::cgroup_builder::CgroupBuilder;
-use cgroups_rs::{Cgroup, CgroupPid, Controller};
-
 use crate::error::{MultError, MultErrorTuple};
 
 
@@ -68,29 +65,6 @@ pub fn linux_get_proc_cpu_usage(pid: u32) -> Result<i64, MultErrorTuple> {
     let elapsed_sec = sys_uptime_sec - start_time_sec;
     let usage_percentage = usage_sec * 100 / elapsed_sec;
     Ok(usage_percentage)
-}
-
-pub fn create_cgroup(
-    mult_id: u32,
-    cpu_shares: u64,
-    memory_limit: i64
-) -> Cgroup {
-    let hier = cgroups_rs::hierarchies::auto();
-
-    let mut cgroup_id = "mult".to_owned();
-    cgroup_id.push_str(&mult_id.to_string());
-    let cg: Cgroup = CgroupBuilder::new(&cgroup_id)
-        .cpu()
-            .shares(cpu_shares)
-            .done()
-        .memory()
-            .memory_hard_limit(memory_limit)
-            .kernel_memory_limit(memory_limit)
-            .done()
-        .build(hier)
-        .unwrap();
-
-    cg
 }
 
 pub struct UserCgroup {

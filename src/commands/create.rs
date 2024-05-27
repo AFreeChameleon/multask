@@ -42,18 +42,7 @@ pub fn run() -> Result<(), MultErrorTuple> {
 }
 
 fn get_flag_values(parsed_args: &ParsedArgs) -> Result<MemStats, MultErrorTuple> {
-    let mut cpu_shares: u64 = 100;
     let mut memory_limit: i64 = 1024 * 1024;
-    if let Some(cpu_shares_flag) = parsed_args.value_flags.clone().into_iter().find(|(flag, _)| {
-        flag == CPU_SHARES_FLAG
-    }) {
-        if cpu_shares_flag.1.is_some() {
-            cpu_shares = match cpu_shares_flag.1.unwrap().parse::<u64>() {
-                Err(_) => return Err((MultError::InvalidArgument, Some(CPU_SHARES_FLAG.to_string()))),
-                Ok(val) => val
-            };
-        }
-    }
     if let Some(memory_limit_flag) = parsed_args.value_flags.clone().into_iter().find(|(flag, _)| {
         flag == MEMORY_LIMIT_FLAG
     }) {

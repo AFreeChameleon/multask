@@ -1,28 +1,20 @@
-use std::fs::{self, File};
-use std::os::linux::fs::MetadataExt;
+use std::fs;
 use std::path::Path;
 use std::env;
 
 use home::home_dir;
 use mult_lib::args::parse_args;
-use mult_lib::error::{print_error, print_info, print_success, print_warning, MultError, MultErrorTuple};
-use mult_lib::proc::init_cgroup;
+use mult_lib::error::{print_error, print_info, print_success, MultError, MultErrorTuple};
 use mult_lib::task::TaskManager;
 
 const FIX_ALL_FLAG: &str = "--fix-all";
-const FIX_CGROUP_FLAG: &str = "--fix-cg";
-const FLAGS: [(&str, bool); 2] = [
-    (FIX_ALL_FLAG, false),
-    (FIX_CGROUP_FLAG, false)
+const FLAGS: [(&str, bool); 1] = [
+    (FIX_ALL_FLAG, false)
 ];
 
 pub fn run() -> Result<(), MultErrorTuple> {
     let args = env::args();
     let parsed_args = parse_args(&args.collect::<Vec<String>>()[2..], &FLAGS, false)?;
-    if parsed_args.flags.contains(&FIX_CGROUP_FLAG.to_string()) {
-        check_cgroups(true);
-        return Ok(());
-    }
     let mut fix_enabled = false;
     if parsed_args.flags.contains(&FIX_ALL_FLAG.to_string()) {
         print_info("Fix flag enabled.");
@@ -108,25 +100,7 @@ fn run_tests(fix_enabled: bool) -> Result<(), Option<MultErrorTuple>> {
             delete_process(process.to_string())?;
         }
     }
-    check_cgroups(fix_enabled);
     Ok(())
-}
-
-fn check_cgroups(fix_enabled: bool) {
-    // Gets owner of who installed mult
-    if !Path::new("/sys/fs/cgroup/mult").exists() {
-        if !fix_enabled {
-            print_error(MultError::CgroupsMissing, None);
-            return;
-        }
-        print_info("Fixing cgroups...");
-        let err = unsafe { init_cgroup() };
-        if err.is_some() && err.unwrap() == libc::EACCES {
-            print_warning("Root needed to create cgroups for resource limits on tasks. Run: `sudo mlt health --fix-cg`.");
-            return;
-        }
-    }
-    print_success("Cgroups read.");
 }
 
 fn check_processes_dir(processes_dir: &Path) -> Result<Vec<String>, MultErrorTuple> {

@@ -1,12 +1,11 @@
 #![cfg(target_family = "unix")]
 use std::{
-    env, fs::File, io::{BufRead, BufReader, Write}, ops::Deref, path::Path, process::{Child, Command, Stdio}, thread, time::{SystemTime, UNIX_EPOCH}
+    env, fs::File, io::{BufRead, BufReader, Write}, path::Path, process::{Child, Command, Stdio}, thread, time::{SystemTime, UNIX_EPOCH}
 };
-use cgroups_rs::{Cgroup, CgroupPid};
 use home::home_dir;
 use libc;
 
-use mult_lib::{error::{print_info, MultError, MultErrorTuple}, proc::{get_proc_name}};
+use mult_lib::{error::{print_info, MultError, MultErrorTuple}, proc::get_proc_name};
 use mult_lib::task::Files;
 use mult_lib::command::{CommandManager, CommandData, MemStats};
 

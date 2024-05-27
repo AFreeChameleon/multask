@@ -23,4 +23,3 @@ mult_lib = { path = "./mult_lib" }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2.153"
-cgroups-rs = "0.3.4"
