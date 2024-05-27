@@ -10,10 +10,8 @@ use crate::platform_lib::linux::fork;
 #[cfg(target_family = "windows")]
 use crate::platform_lib::windows::fork;
 
-const CPU_SHARES_FLAG: &str = "--cpu-shares";
 const MEMORY_LIMIT_FLAG: &str = "--memory-limit";
-const FLAGS: [(&str, bool); 2] = [
-    (CPU_SHARES_FLAG, true),
+const FLAGS: [(&str, bool); 1] = [
     (MEMORY_LIMIT_FLAG, true)
 ];
 
