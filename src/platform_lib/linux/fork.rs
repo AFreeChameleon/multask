@@ -1,14 +1,14 @@
 #![cfg(target_family = "unix")]
 use std::{
-    env, fs::File, io::{BufRead, BufReader, Write}, path::Path, process::{Child, Command, Stdio}, thread, time::{SystemTime, UNIX_EPOCH}
+    env, fs::File, io::{BufRead, BufReader, Write}, ops::Deref, path::Path, process::{Child, Command, Stdio}, thread, time::{SystemTime, UNIX_EPOCH}
 };
 use cgroups_rs::{Cgroup, CgroupPid};
 use home::home_dir;
 use libc;
 
-use mult_lib::{error::{print_info, MultError, MultErrorTuple}, proc::{get_proc_name, UserCgroup}};
+use mult_lib::{error::{print_info, MultError, MultErrorTuple}, proc::{get_proc_name}};
 use mult_lib::task::Files;
-use mult_lib::command::{CommandManager, CommandData};
+use mult_lib::command::{CommandManager, CommandData, MemStats};
 
 macro_rules! spawn_logger{
     ($out:ident,$out_file:ident) => {{
@@ -32,7 +32,8 @@ macro_rules! spawn_logger{
     }};
 }
 
-pub fn run_daemon(files: Files, command: String, cgroup: Option<UserCgroup>) -> Result<(), MultErrorTuple> {
+
+pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), MultErrorTuple> {
     let process_id;
     let sid;
     unsafe {
@@ -59,16 +60,20 @@ pub fn run_daemon(files: Files, command: String, cgroup: Option<UserCgroup>) -> 
         libc::close(libc::STDOUT_FILENO);
         libc::close(libc::STDERR_FILENO);
     }
+    let memory_limit = libc::rlimit {
+        rlim_cur: stats.memory_limit as u64,
+        rlim_max: stats.memory_limit as u64 * 2
+    };
+    unsafe {
+        libc::setrlimit(libc::RLIMIT_AS, &memory_limit);
+    };
     // Do daemon stuff here
-    let mut child = run_command(&command, &files.process_dir)?;
-    if let Some(mut cg) = cgroup {
-        cg.add_task(child.id())?;
-    }
+    let mut child = run_command(&command, &files.process_dir, stats)?;
     child.wait().unwrap();
     Ok(())
 }
 
-fn run_command(command: &str, process_dir: &Path) -> Result<Child, MultErrorTuple> {
+fn run_command(command: &str, process_dir: &Path, stats: MemStats) -> Result<Child, MultErrorTuple> {
     let shell_path = match env::var("SHELL") {
         Ok(val) => val,
         Err(_) => return Err((MultError::OSNotSupported, None))
@@ -93,6 +98,7 @@ fn run_command(command: &str, process_dir: &Path) -> Result<Child, MultErrorTupl
         pid: child_pid,
         dir: current_dir.display().to_string(),
         name: proc_name,
+        stats
     };
     CommandManager::write_command_data(data, process_dir);
 

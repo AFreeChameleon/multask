@@ -7,12 +7,18 @@ use bincode;
 
 use crate::error::{MultError, MultErrorTuple};
 
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub struct MemStats {
+    pub memory_limit: i64
+}
+
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct CommandData {
     pub command: String,
     pub pid: u32,
     pub dir: String,
-    pub name: String
+    pub name: String,
+    pub stats: MemStats
 }
 
 pub struct CommandManager {}
