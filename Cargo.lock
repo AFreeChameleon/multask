@@ -286,7 +286,7 @@ dependencies = [
 
 [[package]]
 name = "mult"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bincode",
  "colored",
@@ -301,7 +301,7 @@ dependencies = [
 
 [[package]]
 name = "mult_lib"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bincode",
  "colored",
@@ -315,7 +315,7 @@ dependencies = [
 
 [[package]]
 name = "mult_spawn"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "home",
  "mult_lib",

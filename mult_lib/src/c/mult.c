@@ -6,19 +6,6 @@
 #include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include "cpulimit/cpulimit.h"
 
-int init_cgroup(uid_t uid, gid_t gid) {
-    int res = mkdir("/sys/fs/cgroup/mult", 0777);
-    if (res != 0) {
-        return errno;
-    }
-
-    //res = chown("/sys/fs/cgroup/mult", uid, gid);
-    res = chmod("/sys/fs/cgroup/mult", 0777);
-    if (res != 0) {
-        return errno;
-    }
-
-    return 0;
-}
-
+void limit_process(pid_t pid, double limit, int include_children);
