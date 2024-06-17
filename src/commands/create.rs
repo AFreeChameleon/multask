@@ -10,7 +10,7 @@ use crate::platform_lib::linux::fork;
 #[cfg(target_family = "windows")]
 use crate::platform_lib::windows::fork;
 
-const MEMORY_LIMIT_FLAG: &str = "--memory-limit";
+const MEMORY_LIMIT_FLAG: &str = "-m";
 const FLAGS: [(&str, bool); 1] = [
     (MEMORY_LIMIT_FLAG, true)
 ];

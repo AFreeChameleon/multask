@@ -41,6 +41,7 @@
 #include <sys/resource.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include "cpulimit.h"
 
 #ifdef __APPLE__ || __FREEBSD__
 #include <libgen.h>
@@ -85,13 +86,6 @@ char *program_name;
 //number of cpu
 int NCPU;
 
-/* CONFIGURATION VARIABLES */
-
-//verbose mode
-int verbose = 0;
-//lazy mode (exits if there is no process)
-int lazy = 0;
-
 //SIGINT and SIGTERM signal handler
 static void quit(int sig)
 {
@@ -123,12 +117,6 @@ static void increase_priority() {
 	int priority = old_priority;
 	while (setpriority(PRIO_PROCESS, 0, priority-1) == 0 && priority>MAX_PRIORITY) {
 		priority--;	
-	}
-	if (priority != old_priority) {
-		if (verbose) printf("Priority changed to %d\n", priority);
-	}
-	else {
-		if (verbose) printf("Warning: Cannot change priority. Run as root or renice for best results.\n");
 	}
 }
 
@@ -197,8 +185,6 @@ void limit_process(pid_t pid, double limit, int include_children)
 	//build the family
 	init_process_group(&pgroup, pid, include_children);
 
-	if (verbose) printf("Members in the process group owned by %d: %d\n", pgroup.target_pid, pgroup.proclist->count);
-
 	//rate at which we are keeping active the processes (range 0-1)
 	//1 means that the process are using all the twork slice
 	double workingrate = -1;
@@ -206,7 +192,6 @@ void limit_process(pid_t pid, double limit, int include_children)
 		update_process_group(&pgroup);
 
 		if (pgroup.proclist->count==0) {
-			if (verbose) printf("No more processes.\n");
 			break;
 		}
 		
@@ -238,13 +223,6 @@ void limit_process(pid_t pid, double limit, int include_children)
 		}
 		tsleep.tv_nsec = TIME_SLOT * 1000 - twork.tv_nsec;
 
-		if (verbose) {
-			if (c%200==0)
-				printf("\n%%CPU\twork quantum\tsleep quantum\tactive rate\n");
-			if (c%10==0 && c>0)
-				printf("%0.2lf%%\t%6ld us\t%6ld us\t%0.2lf%%\n", pcpu*100, twork.tv_nsec/1000, tsleep.tv_nsec/1000, workingrate*100);
-		}
-
 		//resume processes
 		node = pgroup.proclist->first;
 		while (node != NULL)
@@ -253,7 +231,6 @@ void limit_process(pid_t pid, double limit, int include_children)
 			struct process *proc = (struct process*)(node->data);
 			if (kill(proc->pid,SIGCONT) != 0) {
 				//process is dead, remove it from family
-				if (verbose) fprintf(stderr, "SIGCONT failed. Process %d dead!\n", proc->pid);
 				//remove process from group
 				delete_node(pgroup.proclist, node);
 				remove_process(&pgroup, proc->pid);
@@ -282,7 +259,6 @@ void limit_process(pid_t pid, double limit, int include_children)
 				struct process *proc = (struct process*)(node->data);
 				if (kill(proc->pid,SIGSTOP)!=0) {
 					//process is dead, remove it from family
-					if (verbose) fprintf(stderr, "SIGSTOP failed. Process %d dead!\n", proc->pid);
 					//remove process from group
 					delete_node(pgroup.proclist, node);
 					remove_process(&pgroup, proc->pid);
@@ -297,22 +273,12 @@ void limit_process(pid_t pid, double limit, int include_children)
 	close_process_group(&pgroup);
 }
 
-struct limit_params {
-    pid_t pid;
-    char *exe;
-    int pid_ok;
-	int perclimit;
-	int exe_ok;
-	int limit_ok;
-	int include_children;
-} limit_params;
 
-void set_cpu_limit(struct limit_params limit_p) {
+void set_cpu_limit(pid_t pid, int perclimit) {
 	//get current pid
 	cpulimit_pid = getpid();
 	//get cpu count
 	NCPU = get_ncpu();
-    int perclimit = atoi(optarg);
 
 	double limit = perclimit / 100.0;
 
@@ -320,29 +286,17 @@ void set_cpu_limit(struct limit_params limit_p) {
 	signal(SIGINT, quit);
 	signal(SIGTERM, quit);
 
-	//print the number of available cpu
-	if (verbose) printf("%d cpu detected\n", NCPU);
-
-	while(1) {
-		//look for the target process..or wait for it
-		pid_t ret = 0;
-        //search by pid
-        ret = find_process_by_pid(limit_p.pid);
-        if (ret == 0) {
-            printf("No process found\n");
-        } else if (ret < 0) {
-            printf("Process found but you aren't allowed to control it\n");
-		}
-		if (ret > 0) {
-			if (ret == cpulimit_pid) {
-				printf("Target process %d is cpulimit itself! Aborting because it makes no sense\n", ret);
-				exit(1);
-			}
-			//control
-			limit_process(limit_p.pid, limit, 1);
-		}
-		if (lazy) break;
-		sleep(2);
-	};
+    pid_t ret = 0;
+    //search by pid
+    ret = find_process_by_pid(pid);
+    if (ret == 0) {
+        printf("No process found\n");
+    } else if (ret < 0) {
+        printf("Process found but you aren't allowed to control it\n");
+    }
+    if (ret > 0) {
+        //control
+        limit_process(pid, limit, 1);
+    }
 }
 

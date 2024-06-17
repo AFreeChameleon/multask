@@ -6,6 +6,9 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{MultError, MultErrorTuple};
 
+extern "C" {
+    pub fn set_cpu_limit(pid: libc::pid_t, perclimit: i32);
+}
 
 pub fn get_proc_name(pid: u32) -> Result<String, MultErrorTuple> {
     let mut proc_name = String::new();
@@ -131,3 +134,6 @@ pub unsafe fn init_cgroup() -> Option<i32> {
     None
 }
 
+pub unsafe fn limit_cpu(pid: i32, limit: i32) {
+    set_cpu_limit(pid, limit);
+}
