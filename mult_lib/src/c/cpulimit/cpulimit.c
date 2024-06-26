@@ -77,32 +77,24 @@
 /* GLOBAL VARIABLES */
 
 //the "family"
-struct process_group pgroup;
-//pid of cpulimit
-pid_t cpulimit_pid;
-//name of this program (maybe cpulimit...)
-char *program_name;
-
-//number of cpu
-int NCPU;
+static struct process_group pgroup;
 
 //SIGINT and SIGTERM signal handler
 static void quit(int sig)
 {
-	//let all the processes continue if stopped
-	struct list_node *node = NULL;
-	if (pgroup.proclist != NULL)
-	{
-		for (node = pgroup.proclist->first; node != NULL; node = node->next) {
-			struct process *p = (struct process*)(node->data);
-			kill(p->pid, SIGCONT);
-		}
-		close_process_group(&pgroup);
-	}
-	//fix ^C little problem
-	printf("\r");
-	fflush(stdout);
-	exit(0);
+    //let all the processes continue if stopped
+    struct list_node *node = NULL;
+    if (pgroup.proclist != NULL)
+    {
+        for (node = pgroup.proclist->first; node != NULL; node = node->next) {
+            struct process *p = (struct process*)(node->data);
+            kill(p->pid, SIGCONT);
+        }
+        close_process_group(&pgroup);
+    }
+    //fix ^C little problem
+    printf("\r");
+    exit(0);
 }
 
 //return t1-t2 in microseconds (no overflow checks, so better watch out!)
@@ -118,23 +110,6 @@ static void increase_priority() {
 	while (setpriority(PRIO_PROCESS, 0, priority-1) == 0 && priority>MAX_PRIORITY) {
 		priority--;	
 	}
-}
-
-/* Get the number of CPUs */
-static int get_ncpu() {
-	int ncpu;
-#ifdef _SC_NPROCESSORS_ONLN
-	ncpu = sysconf(_SC_NPROCESSORS_ONLN);
-#elif defined __APPLE__
-	int mib[2] = {CTL_HW, HW_NCPU};
-	size_t len = sizeof(ncpu);
-	sysctl(mib, 2, &ncpu, &len, NULL, 0);
-#elif defined _GNU_SOURCE
-	ncpu = get_nprocs();
-#else
-	ncpu = -1;
-#endif
-	return ncpu;
 }
 
 int get_pid_max()
@@ -275,11 +250,6 @@ void limit_process(pid_t pid, double limit, int include_children)
 
 
 void set_cpu_limit(pid_t pid, int perclimit) {
-	//get current pid
-	cpulimit_pid = getpid();
-	//get cpu count
-	NCPU = get_ncpu();
-
 	double limit = perclimit / 100.0;
 
 	//all arguments are ok!

@@ -20,11 +20,17 @@
  */
 
 #include <sys/vfs.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#include <dirent.h>
+#include <string.h>
+#include "process_iterator.h"
 
 static int get_boot_time()
 {
 	int uptime = 0;
-	FILE *fp = fopen ("/proc/uptime", "r");
+	FILE *fp = fopen("/proc/uptime", "r");
 	if (fp != NULL)
 	{
 		char buf[BUFSIZ];
@@ -54,7 +60,6 @@ static int check_proc()
 int init_process_iterator(struct process_iterator *it, struct process_filter *filter)
 {
 	if (!check_proc()) {
-		fprintf(stderr, "procfs is not mounted!\nAborting\n");
 		exit(-2);
 	}
 	//open a directory stream to /proc directory

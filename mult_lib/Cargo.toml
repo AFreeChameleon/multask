@@ -16,3 +16,7 @@ term = "0.7"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2.153"
+
+[build-dependencies]
+cc = "1.0"
+pkg-config = "0.3"

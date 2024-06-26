@@ -5,7 +5,7 @@ use std::{
 use home::home_dir;
 use libc;
 
-use mult_lib::{error::{print_info, MultError, MultErrorTuple}, proc::get_proc_name};
+use mult_lib::{error::{print_info, MultError, MultErrorTuple}, proc::{get_proc_name, limit_cpu}};
 use mult_lib::task::Files;
 use mult_lib::command::{CommandManager, CommandData, MemStats};
 
@@ -59,13 +59,16 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
         libc::close(libc::STDOUT_FILENO);
         libc::close(libc::STDERR_FILENO);
     }
-    let memory_limit = libc::rlimit {
-        rlim_cur: stats.memory_limit as u64,
-        rlim_max: stats.memory_limit as u64 * 2
-    };
-    unsafe {
-        libc::setrlimit(libc::RLIMIT_AS, &memory_limit);
-    };
+    if stats.memory_limit > -1 {
+        let memory_limit = libc::rlimit {
+            rlim_cur: stats.memory_limit as u64,
+            rlim_max: stats.memory_limit as u64
+        };
+        unsafe { libc::setrlimit(libc::RLIMIT_AS, &memory_limit); }
+    }
+    if stats.cpu_limit > -1 {
+        unsafe { limit_cpu(process_id, stats.cpu_limit) };
+    }
     // Do daemon stuff here
     let mut child = run_command(&command, &files.process_dir, stats)?;
     child.wait().unwrap();

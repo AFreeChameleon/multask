@@ -5,8 +5,8 @@ use mult_lib::task::TaskManager;
 use mult_lib::command::CommandManager;
 use mult_lib::args::parse_args;
 
+use crate::platform_lib::linux::fork;
 use crate::stop::kill_process;
-use crate::start::start_process;
 
 pub fn run() -> Result<(), MultErrorTuple> {
     let args = env::args();
@@ -20,7 +20,12 @@ pub fn run() -> Result<(), MultErrorTuple> {
         kill_process(command_data.pid)?;
         let files = TaskManager::generate_task_files(task.id, &tasks);
         print_info("Restarting process...");
-        start_process(files, command_data)?;
+
+        #[cfg(target_family = "unix")]
+        fork::run_daemon(files, command_data.command, command_data.stats)?;
+        #[cfg(target_family = "windows")]
+        fork::run_daemon(files, command_data.command)?;
+
         print_success(&format!("Process {} restarted.", task_id));
     }
     Ok(())
