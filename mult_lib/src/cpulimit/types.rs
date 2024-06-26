@@ -14,11 +14,12 @@ pub struct ProcessIterator {
 	pub filter: ProcessFilter
 }
 
+#[cfg(target_os = "linux")]
 pub struct Process {
-	pub pid: i32,
-	pub ppid: i32,
-	pub starttime: i32,
-	pub cputime: i32,
-	pub cpu_usage: f64,
-	pub command: String
+    pub pid: i32,
+    pub ppid: i32,
+    pub starttime: i32,
+    pub cputime: i32,
+    pub cpu_usage: f64,
+    pub command: String
 }
