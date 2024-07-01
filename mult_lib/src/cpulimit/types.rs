@@ -23,3 +23,11 @@ pub struct Process {
     pub cpu_usage: f64,
     pub command: String
 }
+
+pub struct ProcessGroup {
+    pub proctable: Vec,
+    pub proclist: Vec,
+    pub target_pid: i32,
+    pub include_children: i32,
+    pub last_update: i32,
+}
