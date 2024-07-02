@@ -1,6 +1,9 @@
-use std::fs::File;
+use std::{collections::HashMap, fs::File};
 
 pub static HZ: i32 = unsafe {libc::sysconf(libc::_SC_CLK_TCK)};
+pub static PIDHASH_SZ: i32 = 1024;
+pub static MIN_DT: i32 = 20;
+pub static ALFA: f32 = 0.08;
 
 pub struct ProcessFilter {
 	pub pid: i32,
@@ -15,6 +18,7 @@ pub struct ProcessIterator {
 }
 
 #[cfg(target_os = "linux")]
+#[derive(Clone)]
 pub struct Process {
     pub pid: i32,
     pub ppid: i32,
@@ -25,9 +29,9 @@ pub struct Process {
 }
 
 pub struct ProcessGroup {
-    pub proctable: Vec,
+    pub proctable: HashMap<i32, Process>,
     pub proclist: Vec,
     pub target_pid: i32,
     pub include_children: i32,
-    pub last_update: i32,
+    pub last_update: u64,
 }
