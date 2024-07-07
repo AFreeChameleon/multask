@@ -30,7 +30,7 @@ pub enum MultError {
     CgroupsMissing
 }
 
-const RUN_FIX_TEXT: &str = "Try running `mlt health --fix` to fix this.";
+const RUN_FIX_TEXT: &str = "Try running `mlt health --fix-all` to fix this.";
 pub fn print_error(error: MultError, descriptor: Option<String>) {
     let message = match error {
         MultError::MainDirNotExist => format!("Main directory doesn't exist.\n{}", RUN_FIX_TEXT).to_string(),

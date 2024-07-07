@@ -1,6 +1,4 @@
-use std::{borrow::BorrowMut, collections::HashMap, hash::Hash, mem, time::{Duration, SystemTime, UNIX_EPOCH}};
-
-use libc::exit;
+use std::{collections::HashMap, hash::Hash, mem, time::{Duration, SystemTime, UNIX_EPOCH}};
 
 use super::{process_iterator_linux::{close_process_iterator, get_next_process, init_process_iterator}, types::{Process, ProcessFilter, ProcessGroup, ProcessIterator, ALFA, MIN_DT, PIDHASH_SZ}};
 
@@ -14,32 +12,6 @@ pub unsafe fn find_process_by_pid(pid: i32) -> i32 {
     } else {
         return -pid;
     }
-}
-
-pub fn find_process_by_name(process_name: &String) -> i32 {
-    let mut pid = -1;
-
-    let mut it: ProcessIterator = unsafe { mem::zeroed() };
-    let mut proc: Process = unsafe { mem::zeroed() };
-    let mut filter: ProcessFilter = unsafe { mem::zeroed() };
-	filter.pid = 0;
-	filter.include_children = false;
-    unsafe {
-        init_process_iterator(&mut it, filter);
-        while get_next_process(&mut it, &mut proc).is_ok() {
-            if &proc.command == process_name && libc::kill(pid, libc::SIGCONT) == 0 {
-                pid = proc.pid;
-                break;
-            }
-        }
-        if close_process_iterator(&mut it).is_err() {
-            exit(1);
-        }
-    }
-    if pid >= 0 {
-        return pid;
-    }
-    return 0
 }
 
 pub fn init_process_group(pgroup: &mut ProcessGroup, target_pid: i32, include_children: bool) {

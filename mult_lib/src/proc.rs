@@ -7,7 +7,7 @@ use std::io::Read;
 use std::ffi::CString;
 use std::path::{Path, PathBuf};
 
-use crate::cpulimit;
+use crate::cpulimit::cpulimit::set_cpu_limit;
 use crate::error::{MultError, MultErrorTuple};
 
 pub fn get_proc_name(pid: u32) -> Result<String, MultErrorTuple> {
@@ -136,4 +136,8 @@ pub unsafe fn init_cgroup() -> Option<i32> {
 
 pub unsafe fn limit_cpu(pid: i32, limit: i32) {
     set_cpu_limit(pid, limit);
+}
+
+pub fn kill_all_processes(parent: i32) {
+    
 }
