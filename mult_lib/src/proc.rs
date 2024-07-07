@@ -7,7 +7,7 @@ use std::io::Read;
 use std::ffi::CString;
 use std::path::{Path, PathBuf};
 
-use crate::set_cpu_limit;
+use crate::cpulimit;
 use crate::error::{MultError, MultErrorTuple};
 
 pub fn get_proc_name(pid: u32) -> Result<String, MultErrorTuple> {

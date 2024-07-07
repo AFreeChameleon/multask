@@ -1,19 +1,24 @@
-use std::{collections::HashMap, fs::File};
+use std::{collections::HashMap, fs::{DirEntry, File}, path::PathBuf};
 
-pub static HZ: i32 = unsafe {libc::sysconf(libc::_SC_CLK_TCK)};
 pub static PIDHASH_SZ: i32 = 1024;
-pub static MIN_DT: i32 = 20;
-pub static ALFA: f32 = 0.08;
+pub static TIME_SLOT : i32 = 100000;
+pub static MIN_DT: u64 = 20;
+pub static ALFA: f64 = 0.08;
+pub static MAX_PRIORITY: i32 = -10;
+
+pub unsafe fn get_hz() -> i64 {
+    return libc::sysconf(libc::_SC_CLK_TCK);
+}
 
 pub struct ProcessFilter {
 	pub pid: i32,
-	pub include_children: i32,
+	pub include_children: bool,
 	pub program_name: String
 }
 
 pub struct ProcessIterator {
-	pub dip: File,
-	pub boot_time: i32,
+	pub dip: Option<PathBuf>,
+	pub boot_time: u64,
 	pub filter: ProcessFilter
 }
 
@@ -23,15 +28,17 @@ pub struct Process {
     pub pid: i32,
     pub ppid: i32,
     pub starttime: i32,
-    pub cputime: i32,
+    pub cputime: u32,
     pub cpu_usage: f64,
     pub command: String
 }
 
+#[derive(Clone)]
 pub struct ProcessGroup {
-    pub proctable: HashMap<i32, Process>,
-    pub proclist: Vec,
+    pub proctable: HashMap<i32, Vec<Process>>,
+    pub proclist: Vec<Process>,
     pub target_pid: i32,
-    pub include_children: i32,
+    pub include_children: bool,
     pub last_update: u64,
 }
+

@@ -220,10 +220,6 @@ void limit_process(pid_t pid, double limit, int include_children)
 		workingtime = timediff(&endwork, &startwork);
 		
 		long delay = workingtime - twork.tv_nsec/1000;
-		if (c>0 && delay>10000) {
-			//delay is too much! signal to user?
-			//fprintf(stderr, "%d %ld us\n", c, delay);
-		}
 
 		if (tsleep.tv_nsec>0) {
 			//stop processes only if tsleep>0
