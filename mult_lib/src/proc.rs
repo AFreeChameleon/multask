@@ -1,15 +1,12 @@
 extern crate core;
 extern crate std;
 
-use std::env;
-use std::fs::{self, File};
+use std::fs::{File};
 use std::io::Read;
-use std::ffi::CString;
 use std::path::{Path, PathBuf};
 
 use sysinfo::{Pid, System};
 
-use crate::cpulimit::cpulimit::set_cpu_limit;
 use crate::error::{MultError, MultErrorTuple};
 
 pub fn get_proc_name(pid: u32) -> Result<String, MultErrorTuple> {
@@ -44,18 +41,6 @@ pub fn get_proc_comm(pid: u32) -> Result<String, MultErrorTuple> {
         }
     };
     Ok(proc_comm.trim().to_string())
-}
-
-pub struct UserCgroup {
-    pub memory_limit: i64,
-    pub cpu_shares: u64,
-    pub task_id: u32,
-    pub path: Option<PathBuf>
-}
-
-
-pub unsafe fn limit_cpu(pid: i32, limit: i32) {
-    set_cpu_limit(pid, limit);
 }
 
 pub fn kill_process(pid: u32) -> Result<(), MultErrorTuple> {

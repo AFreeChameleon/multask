@@ -4,6 +4,7 @@ use libc;
 
 static MILS_IN_SECOND: f32 = 1000.0;
 
+// ADD CHECK IF PROCESS DOESN'T EXIST
 unsafe fn next(pid: i32, running: bool, idle_time: i32, running_time: i32) {
     let mut timeout: Option<i32> = None;
     let sig = if running { libc::SIGSTOP } else { libc::SIGCONT };
@@ -12,7 +13,6 @@ unsafe fn next(pid: i32, running: bool, idle_time: i32, running_time: i32) {
         timeout = if running { Some(idle_time) } else { Some(running_time) };
     }
     if timeout.is_some() {
-        println!("{} {} {} {}", sig, kill_ret, idle_time, running_time);
         thread::sleep(Duration::from_millis(timeout.unwrap() as u64));
         next(pid, !running, idle_time, running_time);
     } else {
