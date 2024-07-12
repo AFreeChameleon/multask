@@ -8,8 +8,7 @@ static MILS_IN_SECOND: f32 = 1000.0;
 unsafe fn next(pid: i32, running: bool, idle_time: i32, running_time: i32) {
     let mut timeout: Option<i32> = None;
     let sig = if running { libc::SIGSTOP } else { libc::SIGCONT };
-    let kill_ret = libc::kill(pid, sig);
-    if kill_ret == 0 {
+    if libc::kill(pid, sig) == 0 {
         timeout = if running { Some(idle_time) } else { Some(running_time) };
     }
     if timeout.is_some() {
