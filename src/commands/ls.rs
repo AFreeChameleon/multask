@@ -1,6 +1,6 @@
 use std::{thread, time::Duration, env};
 use mult_lib::args::parse_args;
-use mult_lib::proc::{get_proc_comm};
+use mult_lib::proc::get_proc_comm;
 use prettytable::Table;
 use sysinfo::{System, Pid};
 

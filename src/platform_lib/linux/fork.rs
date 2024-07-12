@@ -1,6 +1,6 @@
 #![cfg(target_family = "unix")]
 use std::{
-    env, fs::File, io::{BufRead, BufReader, Write}, path::Path, process::{Child, Command, Stdio}, thread, time::{SystemTime, UNIX_EPOCH}
+    env, fs::{self, File}, io::{BufRead, BufReader, Write}, path::Path, process::{Child, Command, Stdio}, thread, time::{SystemTime, UNIX_EPOCH}
 };
 use home::home_dir;
 use libc;
@@ -66,11 +66,12 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
         };
         unsafe { libc::setrlimit(libc::RLIMIT_AS, &memory_limit); }
     }
-    if stats.cpu_limit > -1 {
-        unsafe { limit_cpu(process_id, stats.cpu_limit) };
-    }
     // Do daemon stuff here
-    let mut child = run_command(&command, &files.process_dir, stats)?;
+    let mut child = run_command(&command, &files.process_dir, stats.clone())?;
+    if stats.cpu_limit > -1 {
+        fs::write("/home/bean/logs.txt", format!("{} {}", stats.cpu_limit, child.id())).unwrap();
+        unsafe { limit_cpu(child.id() as i32, stats.cpu_limit) };
+    }
     child.wait().unwrap();
     Ok(())
 }

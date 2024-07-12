@@ -1,4 +1,4 @@
-use std::{cmp, collections::HashMap, fs::File, io::Read, thread, time::{Duration, SystemTime, UNIX_EPOCH}};
+use std::{cmp, collections::HashMap, fs::{self, File}, io::Read, thread, time::{Duration, SystemTime, UNIX_EPOCH}};
 
 use crate::error::{print_error, print_success, MultError};
 
@@ -40,16 +40,12 @@ pub fn get_pid_max() -> i32 {
     }
 }
 
-fn timediff(t1: u64, t2: u64) -> u64 {
-    return (t1 - t2) * 1000000;
-}
-
 pub fn limit_process(
     pid: i32,
     limit: f64,
     include_children: bool,
     pgroup: &mut ProcessGroup
-) {
+) -> Result<i32, i32> {
     let mut twork: u64;
     let mut tsleep: u64;
 
@@ -59,7 +55,7 @@ pub fn limit_process(
 
     let mut working_rate = -1.0;
     loop {
-        update_process_group(pgroup);
+        update_process_group(pgroup)?;
 
         if pgroup.proclist.len() == 0 {
             break;
@@ -86,7 +82,7 @@ pub fn limit_process(
         for (idx, proc) in pgroup.proclist.iter().enumerate() {
             if unsafe { libc::kill(proc.pid, libc::SIGCONT) } != 0 {
                 new_pgroup.proclist.remove(idx);
-                remove_process(&mut new_pgroup, proc.pid);
+                remove_process(&mut new_pgroup, proc.pid)?;
             } 
         }
         pgroup.proclist = new_pgroup.proclist;
@@ -100,7 +96,7 @@ pub fn limit_process(
 					//process is dead, remove it from family
 					//remove process from group
                     new_pgroup.proclist.remove(idx);
-					remove_process(&mut new_pgroup, proc.pid);
+					remove_process(&mut new_pgroup, proc.pid)?;
 				}
             }
             pgroup.proclist = new_pgroup.proclist;
@@ -109,6 +105,7 @@ pub fn limit_process(
         }
     }
     close_process_group(pgroup);
+    Ok(0)
 }
 
 pub fn set_cpu_limit(pid: i32, perclimit: i32) {
