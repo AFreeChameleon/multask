@@ -45,7 +45,7 @@ fn listen() -> Result<(), MultErrorTuple> {
     let mut height = table.print();
     let mut terminal = term::stdout().unwrap();
     loop {
-        thread::sleep(Duration::from_secs(2));
+        thread::sleep(Duration::from_secs(1));
         table = TableManager {
             ascii_table: Table::new(),
             table_data: Vec::new()
