@@ -1,9 +1,9 @@
 extern crate core;
 extern crate std;
 
-use std::fs::{File};
+use std::fs::File;
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use sysinfo::{Pid, System};
 

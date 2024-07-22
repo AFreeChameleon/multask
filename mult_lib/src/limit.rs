@@ -7,14 +7,22 @@ static MILS_IN_SECOND: f32 = 1000.0;
 
 unsafe fn next(pid: i32, running: bool, idle_time: i32, running_time: i32, sys: &mut System) {
     sys.refresh_processes();
-    if sys.process(Pid::from(pid as usize)).is_some() {
+    if let Some(process) = sys.process(Pid::from(pid as usize)) {
         let mut timeout: Option<i32> = None;
         let sig = if running { libc::SIGSTOP } else { libc::SIGCONT };
         if libc::kill(pid, sig) == 0 {
-            timeout = if running { Some(idle_time) } else { Some(running_time) };
+            timeout = if running {
+                let limit = running_time / 10;
+                let cpu_usage = process.cpu_usage() as i32;
+                if cpu_usage > limit {
+                    Some(((cpu_usage - limit) * 10) / 1000)
+                } else { Some(0) }
+            } else { Some(running_time) };
         }
         if timeout.is_some() {
-            thread::sleep(Duration::from_millis(timeout.unwrap() as u64));
+            if timeout.unwrap() > 0 {
+                thread::sleep(Duration::from_millis(timeout.unwrap() as u64));
+            }
             next(pid, !running, idle_time, running_time, sys);
         }
     }
@@ -25,7 +33,13 @@ pub fn limit_cpu(pid: i32, limit: f32) {
     let running_time = MILS_IN_SECOND * (limit / 100.0);
     let idle_time = MILS_IN_SECOND - running_time;
     let running = true;
-    unsafe { next(pid, running, idle_time as i32, running_time as i32, &mut sys); }
+    unsafe { next(
+        pid,
+        running,
+        idle_time as i32,
+        running_time as i32,
+        &mut sys
+    ); }
 }
 
 fn get_all_processes(sys: &System, pid: usize) -> Vec<usize> {
