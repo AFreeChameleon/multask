@@ -3,8 +3,8 @@ use std::{env, fs, path::Path};
 use mult_lib::args::parse_args;
 use mult_lib::command::CommandManager;
 use mult_lib::error::{print_info, print_success, MultError, MultErrorTuple};
+use mult_lib::proc::kill_all_processes;
 use mult_lib::task::TaskManager;
-use crate::stop::kill_process;
 
 pub fn run() -> Result<(), MultErrorTuple> {
     let args = env::args();
@@ -15,7 +15,7 @@ pub fn run() -> Result<(), MultErrorTuple> {
         let task_id: u32 = TaskManager::parse_arg(Some(arg.to_string()))?;
         let task = TaskManager::get_task(&tasks, task_id)?;
         let command_data = CommandManager::read_command_data(task.id)?;
-        match kill_process(command_data.pid) {
+        match kill_all_processes(command_data.pid) {
             Ok(_) => (),
             Err(_) => { print_info(&format!("Process {} is not running.", task_id)) }
         };

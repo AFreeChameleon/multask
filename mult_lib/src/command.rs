@@ -9,7 +9,8 @@ use crate::error::{MultError, MultErrorTuple};
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub struct MemStats {
-    pub memory_limit: i64
+    pub memory_limit: i64,
+    pub cpu_limit: i32
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]

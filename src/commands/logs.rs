@@ -150,14 +150,16 @@ struct Log {
 fn sort_last_lines(
     lines: VecDeque<String>
 ) -> Result<Vec<Log>, MultErrorTuple> {
-    let vecdeque_lines: VecDeque<Log> = lines.iter().map(|line: &String| {
-        let (time_string, content) = line.split_once("|").unwrap();
-        Log {
-            time_millis: time_string.parse::<u128>().expect("Log time not a valid integer."),
-            content: content.to_string()
+    let mut new_lines = Vec::new();
+    for line in lines.iter() {
+        if let Some((time_string, content)) =  line.split_once("|") {
+            new_lines.push(Log {
+                time_millis: time_string.parse::<u128>().expect("Log time not a valid integer."),
+                content: content.to_string()
+            });
         }
-    }).collect();
-    let mut sorted_lines: Vec<Log> = Vec::from(vecdeque_lines);
+    }
+    let mut sorted_lines: Vec<Log> = Vec::from(new_lines);
     sorted_lines.sort_by_key(|log: &Log| log.time_millis);
     Ok(sorted_lines)
 }
