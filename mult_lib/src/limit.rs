@@ -1,4 +1,4 @@
-use std::{collections::HashMap, thread, time::Duration};
+use std::{collections::HashMap, fs, path::Path, thread, time::Duration};
 
 use libc;
 use sysinfo::{Pid, System};
@@ -57,11 +57,36 @@ fn get_all_processes(sys: &System, pid: usize) -> Vec<usize> {
     return all_processes;
 }
 
+// uses proc api
+fn linux_get_all_processes(pid: usize) -> Vec<usize> {
+    let mut all_processes: Vec<usize> = vec![pid];
+    linux_get_process(pid, &mut all_processes);
+    return all_processes;
+}
+
+fn linux_get_process(pid: usize, all_processes: &mut Vec<usize>) {
+    let initial_proc = format!("/proc/{}/", pid).to_owned();
+    let proc_path = Path::new(&initial_proc);
+    if proc_path.exists() {
+        let child_path = proc_path.join("task").join(pid.to_string()).join("children");
+        if child_path.exists() {
+            let contents = fs::read_to_string(child_path).unwrap();
+            let child_pids = contents.split_whitespace();
+            for c_pid in child_pids {
+                let usize_c_pid = c_pid.parse::<usize>().unwrap();
+                all_processes.push(usize_c_pid);            
+                linux_get_process(usize_c_pid, all_processes);
+            }
+        }
+    }
+}
+
 pub fn split_cpu_limit(pid: usize, limit: f32) {
-    let sys = System::new_all();
+    let _sys = System::new_all();
     let mut limiting_processes: HashMap<i32, bool> = HashMap::new();
     loop {
-        let processes = get_all_processes(&sys, pid);
+        let processes = linux_get_all_processes(pid);
+        println!("{:?}", processes);
         let split_limit = limit / processes.len() as f32;
         for process_pid in processes {
             let is_limiting = limiting_processes.get(&(process_pid as i32));

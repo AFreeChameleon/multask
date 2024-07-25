@@ -5,7 +5,7 @@ use std::{
 use home::home_dir;
 use libc;
 
-use mult_lib::{error::{print_info, MultError, MultErrorTuple}, proc::get_proc_name, limit::limit_cpu};
+use mult_lib::{error::{print_info, MultError, MultErrorTuple}, limit::{limit_cpu, split_cpu_limit}, proc::get_proc_name};
 use mult_lib::task::Files;
 use mult_lib::command::{CommandManager, CommandData, MemStats};
 
@@ -70,7 +70,10 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
     let mut child = run_command(&command, &files.process_dir, stats.clone())?;
     if stats.cpu_limit > -1 {
         // ADD IN ANOTHER THREAD TO STOP BLOCKING
-        limit_cpu(child.id() as i32, stats.cpu_limit as f32);
+        let child_id = child.id();
+        thread::spawn(move || {
+            split_cpu_limit(child_id as usize, stats.cpu_limit as f32);
+        });
     }
     child.wait().unwrap();
     Ok(())

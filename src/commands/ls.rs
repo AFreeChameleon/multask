@@ -74,6 +74,12 @@ pub fn setup_table(table: &mut TableManager) -> Result<(), MultErrorTuple> {
             command: command.command.clone(),
         };
         if let Some(process) = sys.process(Pid::from_u32(command.pid)) {
+            println!("{}", process.pid());
+            if let Some(tasks) = process.tasks() {
+                for task in tasks {
+                    println!("{}", task);
+                }
+            }
             let proc_comm = get_proc_comm(command.pid)?;
             if proc_comm != process.name() {
                 table.insert_row(main_headers, None);
