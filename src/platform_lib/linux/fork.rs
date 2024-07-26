@@ -1,11 +1,11 @@
 #![cfg(target_family = "unix")]
 use std::{
-    env, fs::File, io::{BufRead, BufReader, Write}, path::Path, process::{Child, Command, Stdio}, thread, time::{SystemTime, UNIX_EPOCH}
+    env, fs::File, io::{BufRead, BufReader, Write}, path::Path, process::{Child, Command, Stdio}, thread, time::{Duration, SystemTime, UNIX_EPOCH}
 };
 use home::home_dir;
 use libc;
 
-use mult_lib::{error::{print_info, MultError, MultErrorTuple}, limit::{limit_cpu, split_cpu_limit}, proc::get_proc_name};
+use mult_lib::{error::{print_info, MultError, MultErrorTuple}, limit::{limit_cpu, linux_get_all_processes, split_cpu_limit}, proc::get_proc_name};
 use mult_lib::task::Files;
 use mult_lib::command::{CommandManager, CommandData, MemStats};
 
@@ -33,32 +33,32 @@ macro_rules! spawn_logger{
 
 
 pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), MultErrorTuple> {
-    let process_id;
-    let sid;
-    unsafe {
-        process_id = libc::fork();
-    }
-    // Fork failed
-    if process_id < 0 {
-        return Err((MultError::ForkFailed, None))
-    }
-    // Parent process - need to kill it
-    if process_id > 0 {
-        print_info(&format!("Process id of child process {}", process_id));
-        return Ok(())
-    }
-    unsafe {
-        libc::umask(0);
-        sid = libc::setsid();
-    }
-    if sid < 0 {
-        return Err((MultError::SetSidFailed, None))
-    }
-    unsafe {
-        libc::close(libc::STDIN_FILENO);
-        libc::close(libc::STDOUT_FILENO);
-        libc::close(libc::STDERR_FILENO);
-    }
+    //let process_id;
+    //let sid;
+    //unsafe {
+    //    process_id = libc::fork();
+    //}
+    //// Fork failed
+    //if process_id < 0 {
+    //    return Err((MultError::ForkFailed, None))
+    //}
+    //// Parent process - need to kill it
+    //if process_id > 0 {
+    //    print_info(&format!("Process id of child process {}", process_id));
+    //    return Ok(())
+    //}
+    //unsafe {
+    //    libc::umask(0);
+    //    sid = libc::setsid();
+    //}
+    //if sid < 0 {
+    //    return Err((MultError::SetSidFailed, None))
+    //}
+    //unsafe {
+    //    libc::close(libc::STDIN_FILENO);
+    //    libc::close(libc::STDOUT_FILENO);
+    //    libc::close(libc::STDERR_FILENO);
+    //}
     if stats.memory_limit > -1 {
         let memory_limit = libc::rlimit {
             rlim_cur: stats.memory_limit as u64,
@@ -76,6 +76,11 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
         });
     }
     child.wait().unwrap();
+    loop {
+        let all_processes = linux_get_all_processes(child.id() as usize);
+        thread::sleep(Duration::from_secs(1));
+        break;
+    }
     Ok(())
 }
 
