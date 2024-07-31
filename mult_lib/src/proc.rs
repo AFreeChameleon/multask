@@ -1,13 +1,13 @@
 extern crate core;
 extern crate std;
 
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::Read;
 use std::path::Path;
 
 use sysinfo::{Pid, System};
 
-use crate::error::{MultError, MultErrorTuple};
+use crate::{error::{MultError, MultErrorTuple}, tree::TreeNode};
 
 pub fn get_proc_name(pid: u32) -> Result<String, MultErrorTuple> {
     let mut proc_name = String::new();
@@ -93,4 +93,9 @@ pub fn kill_all_processes(ppid: u32) -> Result<(), MultErrorTuple> {
         kill_process(pid)?;
     }
     Ok(())
+}
+
+pub fn save_task_processes(path: &Path, tree: &TreeNode) {
+    let encoded_data = bincode::serialize::<TreeNode>(tree).unwrap();
+    fs::write(path.join("processes.bin"), encoded_data).unwrap();
 }
