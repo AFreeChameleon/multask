@@ -68,7 +68,7 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
         unsafe { libc::setrlimit(libc::RLIMIT_AS, &memory_limit); }
     }
     // Do daemon stuff here
-    let child = run_command(&command, &files.process_dir, stats.clone())?;
+    let child = run_command(&command, &files.process_dir)?;
     if stats.cpu_limit > -1 {
         // ADD IN ANOTHER THREAD TO STOP BLOCKING
         let child_id = child.id();
@@ -96,7 +96,7 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
     Ok(())
 }
 
-fn run_command(command: &str, process_dir: &Path, stats: MemStats) -> Result<Child, MultErrorTuple> {
+fn run_command(command: &str, process_dir: &Path) -> Result<Child, MultErrorTuple> {
     let shell_path = match env::var("SHELL") {
         Ok(val) => val,
         Err(_) => return Err((MultError::OSNotSupported, None))
@@ -120,8 +120,7 @@ fn run_command(command: &str, process_dir: &Path, stats: MemStats) -> Result<Chi
         command: command.to_string(),
         pid: child_pid,
         dir: current_dir.display().to_string(),
-        name: proc_name,
-        stats
+        name: proc_name
     };
     CommandManager::write_command_data(data, process_dir);
 

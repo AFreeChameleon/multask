@@ -28,7 +28,7 @@ pub fn run() -> Result<(), MultErrorTuple> {
         let task_id: u32 = TaskManager::parse_arg(Some(arg.to_string()))?;
         let task = TaskManager::get_task(&tasks, task_id)?;
         let files = TaskManager::generate_task_files(task.id, &tasks);
-        let mut command_data = CommandManager::read_command_data(task.id)?;
+        let command_data = CommandManager::read_command_data(task.id)?;
         match get_proc_name(command_data.pid) {
             Ok(val) => {
                 if val == command_data.name {
@@ -40,15 +40,8 @@ pub fn run() -> Result<(), MultErrorTuple> {
         let current_dir = env::current_dir().unwrap();
         env::set_current_dir(&command_data.dir).unwrap();
 
-        if flags.memory_limit != -1 {
-            command_data.stats.memory_limit = flags.memory_limit;
-        }
-        if flags.cpu_limit != -1 {
-            command_data.stats.cpu_limit = flags.cpu_limit;
-        }
-
         #[cfg(target_family = "unix")]
-        fork::run_daemon(files, command_data.command, command_data.stats)?;
+        fork::run_daemon(files, command_data.command, flags.clone())?;
         #[cfg(target_family = "windows")]
         fork::run_daemon(files, command_data.command)?;
 

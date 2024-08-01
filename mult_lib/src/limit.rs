@@ -46,20 +46,16 @@ pub fn limit_cpu(pid: i32, limit: f32) {
 }
 
 pub fn new_limit_cpu(pid: i32, limit: f32) {
-    let mut sys = System::new_all();
     let running_time = MILS_IN_SECOND * (limit / 100.0);
     let idle_time = MILS_IN_SECOND - running_time;
     let mut running = true;
     loop {
-        println!("New Loop Starting");
-        sys.refresh_all();
+        println!("New Loop Starting {}", running);
         let process_tree = get_all_processes(pid as usize);
         let sig = if running { libc::SIGSTOP } else { libc::SIGCONT };
         let timeout = if running { idle_time } else { running_time };
         search_tree(&process_tree, &|c_pid: usize| {
-            if sys.process(c_pid.into()).is_some() {
-                unsafe { libc::kill(c_pid as i32, sig); }
-            } else {
+            if unsafe { libc::kill(c_pid as i32, sig) } != 0 {
                 println!("Process Missing {} {}", c_pid, running);
             }
         });
