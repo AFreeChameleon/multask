@@ -1,4 +1,4 @@
-use std::{fs, path::Path, thread, time::Duration};
+use std::{fs, path::Path, sync::{Arc, Mutex}, thread, time::Duration};
 
 use libc;
 
@@ -11,32 +11,17 @@ pub fn split_limit_cpu(pid: i32, limit: f32) {
     let idle_time = MILS_IN_SECOND - running_time;
     let mut running = true;
     loop {
-        println!("New Loop Starting {}", running);
         let process_tree = get_all_processes(pid as usize);
         let sig = if running { libc::SIGSTOP } else { libc::SIGCONT };
         let timeout = if running { idle_time } else { running_time };
         search_tree(&process_tree, &|c_pid: usize| {
-            if unsafe { libc::kill(c_pid as i32, sig) } != 0 {
-                println!("Process Missing {} {}", c_pid, running);
-            }
+            unsafe { libc::kill(c_pid as i32, sig) };
         });
         thread::sleep(Duration::from_millis(timeout as u64));
         running = !running;
     }
 }
 
-//let mut all_processes: Vec<usize> = Vec::new();
-//if let Some(process) = sys.process(Pid::from(pid)) {
-//    all_processes.push(process.pid().into());
-//    if let Some(tasks) = process.tasks() {
-//        for task_pid in tasks {
-//            if let Some(task) = sys.process(*task_pid) {
-//                all_processes.push(task.pid().into());
-//            }
-//        }
-//    }
-//}
-//return all_processes;
 pub fn get_all_processes(pid: usize) -> TreeNode {
     #[cfg(target_os = "linux")]
     return linux_get_all_processes(pid);
