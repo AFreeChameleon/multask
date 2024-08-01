@@ -7,6 +7,8 @@ use std::path::Path;
 
 use sysinfo::{Pid, System};
 
+use crate::limit::get_all_processes;
+use crate::tree::compress_tree;
 use crate::{error::{MultError, MultErrorTuple}, tree::TreeNode};
 
 pub fn get_proc_name(pid: u32) -> Result<String, MultErrorTuple> {
@@ -43,54 +45,22 @@ pub fn get_proc_comm(pid: u32) -> Result<String, MultErrorTuple> {
     Ok(proc_comm.trim().to_string())
 }
 
-pub fn kill_process(pid: u32) -> Result<(), MultErrorTuple> {
-    let sys = System::new_all();
-    if let Some(process) = sys.process(Pid::from_u32(pid)) {
-        process.kill();
-    } else {
-        return Err((MultError::ProcessNotRunning, None))
-    }
-    Ok(())
-}
-
 pub fn kill_all_processes(ppid: u32) -> Result<(), MultErrorTuple> {
-    let mut pids: Vec<u32> = Vec::new();
-    let parent_path = Path::new("/proc").join(ppid.to_string());
-    if !parent_path.exists() || !parent_path.is_dir() {
-        return Err((MultError::ProcessNotRunning, None))
-    }
-    let mut task_path = parent_path.join("task").join(ppid.to_string());
-    loop {
-        if task_path.exists() {
-            let child_path = task_path.join("children");
-            if !child_path.exists() {
-                task_path = task_path.join("task").join(ppid.to_string());
-                continue;
-            }
-            task_path = task_path.join("task").join(ppid.to_string());
-        } else {
-            task_path.pop();
-            task_path.pop();
-            let child_path = task_path.join("children");
-            if !child_path.exists() {
-                pids.push(ppid);
-                break;
-            }
-            let mut child_file = File::open(child_path).unwrap();
-            let mut contents = String::new();
-            child_file.read_to_string(&mut contents).unwrap();
-            let str_pids = contents.split_whitespace();
-            for pid in str_pids {
-                let num_pid = pid.parse::<u32>().unwrap();
-                pids.push(num_pid);
-                kill_all_processes(num_pid)?;
-            }
-            pids.push(ppid);
-            break;
+    let sys = System::new_all();
+    let process_tree = get_all_processes(ppid as usize);
+    let mut all_processes = vec![];
+    compress_tree(&process_tree, &mut all_processes);
+    if let Some(process) = sys.process(Pid::from_u32(ppid)) {
+        if let Some(parent_pid) = process.parent() {
+            sys.process(parent_pid).unwrap().kill();
         }
     }
-    for pid in pids {
-        kill_process(pid)?;
+    for pid in all_processes {
+        if let Some(process) = sys.process(Pid::from_u32(pid as u32)) {
+            process.kill();
+        } else {
+            return Err((MultError::ProcessNotRunning, None))
+        }
     }
     Ok(())
 }
