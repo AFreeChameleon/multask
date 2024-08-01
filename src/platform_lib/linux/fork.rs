@@ -1,13 +1,14 @@
 #![cfg(target_family = "unix")]
 use std::{
-    env, fs::File, io::{BufRead, BufReader, Write}, path::Path, process::{Child, Command, Stdio}, thread, time::{SystemTime, UNIX_EPOCH}
+    env, fs::File, io::{BufRead, BufReader, Write}, path::Path, process::{Child, Command, Stdio}, sync::{Arc, Mutex}, thread, time::{Duration, SystemTime, UNIX_EPOCH}
 };
 use home::home_dir;
 use libc;
 
-use mult_lib::{error::{print_info, MultError, MultErrorTuple}, proc::get_proc_name, limit::limit_cpu};
+use mult_lib::{error::{print_info, MultError, MultErrorTuple}, limit::{get_all_processes, split_limit_cpu}, proc::{get_proc_name, proc_exists, save_task_processes}, tree::{compress_tree, search_tree}};
 use mult_lib::task::Files;
 use mult_lib::command::{CommandManager, CommandData, MemStats};
+use sysinfo::{RefreshKind, System};
 
 macro_rules! spawn_logger{
     ($out:ident,$out_file:ident) => {{
@@ -67,16 +68,32 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
         unsafe { libc::setrlimit(libc::RLIMIT_AS, &memory_limit); }
     }
     // Do daemon stuff here
-    let mut child = run_command(&command, &files.process_dir, stats.clone())?;
+    let child = run_command(&command, &files.process_dir)?;
     if stats.cpu_limit > -1 {
         // ADD IN ANOTHER THREAD TO STOP BLOCKING
-        limit_cpu(child.id() as i32, stats.cpu_limit as f32);
+        let child_id = child.id();
+        thread::spawn(move || {
+            split_limit_cpu(child_id as i32, stats.cpu_limit as f32);
+        });
     }
-    child.wait().unwrap();
+    loop {
+        let process_tree = get_all_processes(child.id() as usize);
+        save_task_processes(&files.process_dir, &process_tree);
+        let keep_running = Arc::new(Mutex::new(true));
+        search_tree(&process_tree, &|pid: usize| {
+            if proc_exists(pid as i32) {
+                *keep_running.lock().unwrap() = true;
+            }
+        });
+        if !*keep_running.lock().unwrap() {
+            break;
+        }
+        thread::sleep(Duration::from_secs(1));
+    }
     Ok(())
 }
 
-fn run_command(command: &str, process_dir: &Path, stats: MemStats) -> Result<Child, MultErrorTuple> {
+fn run_command(command: &str, process_dir: &Path) -> Result<Child, MultErrorTuple> {
     let shell_path = match env::var("SHELL") {
         Ok(val) => val,
         Err(_) => return Err((MultError::OSNotSupported, None))
@@ -100,8 +117,7 @@ fn run_command(command: &str, process_dir: &Path, stats: MemStats) -> Result<Chi
         command: command.to_string(),
         pid: child_pid,
         dir: current_dir.display().to_string(),
-        name: proc_name,
-        stats
+        name: proc_name
     };
     CommandManager::write_command_data(data, process_dir);
 

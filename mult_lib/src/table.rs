@@ -1,15 +1,17 @@
 use prettytable::{Table, Cell, Row, format};
 
+use crate::colors::{color_string, ERR_RED};
+
 pub struct MainHeaders {
     pub id: u32,
     pub command: String,
 }
 
 pub struct ProcessHeaders {
-    pub pid: u32,
-    pub memory: u64,
-    pub cpu: f32,
-    pub runtime: u64,
+    pub pid: String,
+    pub memory: String,
+    pub cpu: String,
+    pub runtime: String,
     pub status: String
 }
 
@@ -61,16 +63,16 @@ impl TableManager {
         ];
         if let Some(p) = process {
             row.extend(vec![
-                Cell::new(&p.pid.to_string()),
-                Cell::new(&p.status.to_string()).style_spec("Fgb"),
-                Cell::new(&format_bytes(p.memory as f64)),
-                Cell::new(&p.cpu.to_string()),
-                Cell::new(&p.runtime.to_string())
+                Cell::new(&p.pid),
+                Cell::new(&p.status),
+                Cell::new(&p.memory),
+                Cell::new(&p.cpu),
+                Cell::new(&p.runtime)
             ]);
         } else {
             row.extend(vec![
                 Cell::new("N/A"),
-                Cell::new("Stopped").style_spec("Frb"),
+                Cell::new(&color_string(ERR_RED, "Stopped")),
                 Cell::new("N/A"),
                 Cell::new("N/A"),
                 Cell::new("N/A")

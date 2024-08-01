@@ -1,4 +1,4 @@
-use colored::Colorize;
+use crate::colors::{color_string, ERR_RED, INFO_BLUE, OK_GREEN, WARNING_ORANGE};
 
 pub type MultErrorTuple = (MultError, Option<String>);
 #[derive(Debug)]
@@ -58,17 +58,17 @@ pub fn print_error(error: MultError, descriptor: Option<String>) {
         MultError::CustomError => format!("{}", descriptor.unwrap()),
         MultError::CgroupsMissing => "Cgroups is missing.".to_string()
     };
-    println!("{} {}", "Error:".red(), message);
+    println!("{} {}", color_string(ERR_RED, "Error:"), message);
 }
 
 pub fn print_success(text: &str) {
-    println!("{} {text}", "Success".green());
+    println!("{} {text}", color_string(OK_GREEN, "Success"));
 }
 
 pub fn print_info(text: &str) {
-    println!("{} {text}", "Info".blue());
+    println!("{} {text}", color_string(INFO_BLUE, "Info"));
 }
 
 pub fn print_warning(text: &str) {
-    println!("{} {text}", "Warning".yellow());
+    println!("{} {text}", color_string(WARNING_ORANGE, "Warning"));
 }

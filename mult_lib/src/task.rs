@@ -7,9 +7,8 @@ use std::{
 
 use bincode;
 use home;
-use colored::Colorize;
 
-use crate::error::{MultError, MultErrorTuple};
+use crate::{colors::{color_string, ERR_RED}, error::{MultError, MultErrorTuple}};
 use crate::command::{CommandData, CommandManager};
 
 const PROCESS_FILES: [&str; 3] = ["stdout.out", "stderr.err", "data.bin"];
@@ -37,7 +36,7 @@ impl TaskManager {
         }
         for file in PROCESS_FILES.iter() {
             if tasks_dir.join(file).exists() {
-                println!("Could not get {}", file.red());
+                println!("Could not get {}", color_string(ERR_RED, file));
             }
         }
         Ok(())
