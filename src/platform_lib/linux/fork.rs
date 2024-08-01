@@ -5,7 +5,7 @@ use std::{
 use home::home_dir;
 use libc;
 
-use mult_lib::{error::{print_info, MultError, MultErrorTuple}, limit::{get_all_processes, split_limit_cpu}, proc::{get_proc_name, save_task_processes}, tree::{compress_tree, search_tree}};
+use mult_lib::{error::{print_info, MultError, MultErrorTuple}, limit::{get_all_processes, split_limit_cpu}, proc::{get_proc_name, proc_exists, save_task_processes}, tree::{compress_tree, search_tree}};
 use mult_lib::task::Files;
 use mult_lib::command::{CommandManager, CommandData, MemStats};
 use sysinfo::{RefreshKind, System};
@@ -78,12 +78,10 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
     }
     loop {
         let process_tree = get_all_processes(child.id() as usize);
-        println!("{:?}", process_tree);
         save_task_processes(&files.process_dir, &process_tree);
-        let keep_running = Arc::new(Mutex::new(false));
+        let keep_running = Arc::new(Mutex::new(true));
         search_tree(&process_tree, &|pid: usize| {
-            let sys = System::new_all();
-            if sys.process(pid.into()).is_some() {
+            if proc_exists(pid as i32) {
                 *keep_running.lock().unwrap() = true;
             }
         });

@@ -69,3 +69,8 @@ pub fn save_task_processes(path: &Path, tree: &TreeNode) {
     let encoded_data = bincode::serialize::<TreeNode>(tree).unwrap();
     fs::write(path.join("processes.bin"), encoded_data).unwrap();
 }
+
+pub fn proc_exists(pid: i32) -> bool {
+    #[cfg(target_family = "unix")]
+    return unsafe { libc::kill(pid, 0) } == 0;
+}
