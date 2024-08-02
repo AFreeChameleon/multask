@@ -5,10 +5,9 @@ use std::{
 use home::home_dir;
 use libc;
 
-use mult_lib::{error::{print_info, MultError, MultErrorTuple}, limit::{get_all_processes, split_limit_cpu}, proc::{get_proc_name, proc_exists, save_task_processes}, tree::{compress_tree, search_tree}};
+use mult_lib::{error::{print_info, MultError, MultErrorTuple}, cpu::split_limit_cpu, proc::{get_all_processes, get_proc_name, proc_exists, save_task_processes}, tree::{compress_tree, search_tree}};
 use mult_lib::task::Files;
 use mult_lib::command::{CommandManager, CommandData, MemStats};
-use sysinfo::{RefreshKind, System};
 
 macro_rules! spawn_logger{
     ($out:ident,$out_file:ident) => {{

@@ -1,8 +1,7 @@
 use std::{thread, time::Duration, env};
 use mult_lib::args::{parse_args, ParsedArgs};
 use mult_lib::colors::{color_string, OK_GREEN};
-use mult_lib::limit::get_all_processes;
-use mult_lib::proc::get_proc_comm;
+use mult_lib::proc::{get_all_processes, get_proc_comm};
 use mult_lib::tree::compress_tree;
 use prettytable::Table;
 use sysinfo::{System, Pid};

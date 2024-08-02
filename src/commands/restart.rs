@@ -17,7 +17,7 @@ const FLAGS: [(&str, bool); 2] = [
 
 pub fn run() -> Result<(), MultErrorTuple> {
     let args = env::args();
-    let parsed_args = parse_args(&args.collect::<Vec<String>>()[2..], &[], true)?;
+    let parsed_args = parse_args(&args.collect::<Vec<String>>()[2..], &FLAGS, true)?;
     let tasks = TaskManager::get_tasks()?;
     let flags: MemStats = get_flag_values(&parsed_args)?;
     for arg in parsed_args.values.iter() {
