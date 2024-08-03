@@ -83,18 +83,20 @@ pub fn setup_table(table: &mut TableManager, parsed_args: &ParsedArgs) -> Result
                 table.insert_row(main_headers, None);
                 continue;
             }
+            let mut cpu_usage = 0.0;
+            let usage_stats = read_usage_stats(task.id)?;
+            if let Some(stats) = usage_stats.get(&(command.pid as usize)) {
+                cpu_usage = (stats.cpu_usage * 100.0).round() / 100.0;
+            }
             // Get memory stats
             let mut process_headers = ProcessHeaders {
                 pid: command.pid.to_string(),
                 memory: format_bytes(process.memory() as f64),
-                cpu: process.cpu_usage().to_string(),
+                cpu: cpu_usage.to_string(),
                 runtime: process.run_time().to_string(),
                 status: color_string(OK_GREEN, "Running").to_string()
             };
             let process_tree = get_all_processes(command.pid as usize);
-
-            let usage_stats = read_usage_stats(task.id).unwrap();
-            println!("{:?}", usage_stats);
 
             let mut all_processes = vec![];
             compress_tree(&process_tree, &mut all_processes);
@@ -103,6 +105,9 @@ pub fn setup_table(table: &mut TableManager, parsed_args: &ParsedArgs) -> Result
                     for child_process_id in all_processes.iter() {
                         if *child_process_id as u32 == command.pid { continue; }
                         if let Some(child_process) = sys.process(Pid::from_u32(*child_process_id as u32)) {
+                            if let Some(stats) = usage_stats.get(child_process_id) {
+                                cpu_usage = (stats.cpu_usage * 100.0).round() / 100.0;
+                            }
                             main_headers.command.push_str(
                                 &format!("\n {}", child_process.name())
                             );
@@ -113,7 +118,7 @@ pub fn setup_table(table: &mut TableManager, parsed_args: &ParsedArgs) -> Result
                                 &format!("\n{}", format_bytes(child_process.memory() as f64))
                             );
                             process_headers.cpu.push_str(
-                                &format!("\n{}", child_process.cpu_usage().to_string())
+                                &format!("\n{}%", cpu_usage.to_string())
                             );
                             process_headers.runtime.push_str(
                                 &format!("\n{}", child_process.run_time().to_string())
