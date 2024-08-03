@@ -95,7 +95,9 @@ fn linux_get_all_processes(pid: usize) -> TreeNode {
     let process_stats = linux_get_process_stats(pid);
     let mut head_node = TreeNode {
         pid,
-        utime: process_stats[13].parse().unwrap(),
+        utime: if process_stats.len() > 0 {
+            process_stats[13].parse().unwrap()
+        } else { 0 },
         children: Vec::new()
     };
     linux_get_process(pid, &mut head_node);
