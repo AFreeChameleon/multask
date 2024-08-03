@@ -198,3 +198,20 @@ pub fn linux_get_cpu_stats() -> Vec<String> {
     return stats;
 }
 
+pub fn get_process_memory(pid: &usize) -> String {
+    #[cfg(target_os = "linux")]
+    return linux_get_process_memory(pid);
+}
+
+pub fn linux_get_process_memory(pid: &usize) -> String {
+    let mem_path = Path::new("/proc").join(pid.to_string()).join("status");
+    if mem_path.exists() {
+        let contents = fs::read_to_string(mem_path).unwrap();
+        let mut vmrss_line = contents.lines().find(|line| {
+            line.starts_with("VmRSS")
+        }).unwrap().split_whitespace();
+        return format!("{} {}", vmrss_line.nth(1).unwrap(), vmrss_line.next().unwrap());
+    }
+    return "0 b".to_string();
+}
+

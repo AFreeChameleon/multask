@@ -1,7 +1,7 @@
 use std::{thread, time::Duration, env};
 use mult_lib::args::{parse_args, ParsedArgs};
 use mult_lib::colors::{color_string, OK_GREEN};
-use mult_lib::proc::{get_all_processes, get_proc_comm, read_usage_stats};
+use mult_lib::proc::{get_all_processes, get_proc_comm, get_process_memory, read_usage_stats};
 use mult_lib::tree::compress_tree;
 use prettytable::Table;
 use sysinfo::{System, Pid};
@@ -91,7 +91,7 @@ pub fn setup_table(table: &mut TableManager, parsed_args: &ParsedArgs) -> Result
             // Get memory stats
             let mut process_headers = ProcessHeaders {
                 pid: command.pid.to_string(),
-                memory: format_bytes(process.memory() as f64),
+                memory: get_process_memory(&(command.pid as usize)),
                 cpu: cpu_usage.to_string(),
                 runtime: process.run_time().to_string(),
                 status: color_string(OK_GREEN, "Running").to_string()
@@ -115,7 +115,7 @@ pub fn setup_table(table: &mut TableManager, parsed_args: &ParsedArgs) -> Result
                                 &format!("\n{}", child_process_id.to_string())
                             );
                             process_headers.memory.push_str(
-                                &format!("\n{}", format_bytes(child_process.memory() as f64))
+                                &format!("\n{}", get_process_memory(child_process_id))
                             );
                             process_headers.cpu.push_str(
                                 &format!("\n{}%", cpu_usage.to_string())
