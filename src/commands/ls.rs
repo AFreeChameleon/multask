@@ -1,7 +1,7 @@
 use std::{thread, time::Duration, env};
 use mult_lib::args::{parse_args, ParsedArgs};
 use mult_lib::colors::{color_string, OK_GREEN};
-use mult_lib::proc::{get_all_processes, get_proc_comm};
+use mult_lib::proc::{get_all_processes, get_proc_comm, read_usage_stats};
 use mult_lib::tree::compress_tree;
 use prettytable::Table;
 use sysinfo::{System, Pid};
@@ -92,6 +92,10 @@ pub fn setup_table(table: &mut TableManager, parsed_args: &ParsedArgs) -> Result
                 status: color_string(OK_GREEN, "Running").to_string()
             };
             let process_tree = get_all_processes(command.pid as usize);
+
+            let usage_stats = read_usage_stats(task.id).unwrap();
+            println!("{:?}", usage_stats);
+
             let mut all_processes = vec![];
             compress_tree(&process_tree, &mut all_processes);
             if all_processes.len() > 1 {

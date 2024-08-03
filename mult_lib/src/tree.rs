@@ -2,6 +2,7 @@
 pub struct TreeNode {
     pub pid: usize,
     pub utime: u32,
+    pub stime: u32,
     pub children: Vec<TreeNode>
 }
 

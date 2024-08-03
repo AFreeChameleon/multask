@@ -13,7 +13,7 @@ use crate::{error::{MultError, MultErrorTuple}, tree::TreeNode};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct UsageStats {
-    pub cpu_usage: u32
+    pub cpu_usage: f32
 }
 
 pub fn get_proc_name(pid: u32) -> Result<String, MultErrorTuple> {
@@ -80,6 +80,23 @@ pub fn save_usage_stats(path: &Path, stats: &HashMap<usize, UsageStats>) {
     fs::write(path.join("r_usage.bin"), encoded_data).unwrap();
 }
 
+pub fn read_usage_stats(task_id: u32) -> Result<HashMap<usize, UsageStats>, MultErrorTuple> {
+    let process_dir = Path::new(&home::home_dir().unwrap())
+        .join(".multi-tasker")
+        .join("processes")
+        .join(task_id.to_string());
+    let usage_file = process_dir.join("r_usage.bin");
+    if usage_file.exists() {
+        let encoded: Vec<u8> = fs::read(usage_file).unwrap(); 
+        let decoded: HashMap<usize, UsageStats> = match bincode::deserialize(&encoded[..]) {
+            Ok(val) => val,
+            Err(_) => return Err((MultError::TaskBinFileUnreadable, None))
+        };
+        return Ok(decoded);
+    }
+    Ok(HashMap::new())
+}
+
 pub fn proc_exists(pid: i32) -> bool {
     #[cfg(target_family = "unix")]
     return unsafe { libc::kill(pid, 0) } == 0;
@@ -93,11 +110,16 @@ pub fn get_all_processes(pid: usize) -> TreeNode {
 // uses proc api
 fn linux_get_all_processes(pid: usize) -> TreeNode {
     let process_stats = linux_get_process_stats(pid);
+    let mut utime = 0;
+    let mut stime = 0;
+    if process_stats.len() > 0 {
+        utime = process_stats[13].parse().unwrap();
+        stime = process_stats[14].parse().unwrap();
+    }
     let mut head_node = TreeNode {
         pid,
-        utime: if process_stats.len() > 0 {
-            process_stats[13].parse().unwrap()
-        } else { 0 },
+        utime,
+        stime,
         children: Vec::new()
     };
     linux_get_process(pid, &mut head_node);
@@ -118,6 +140,7 @@ fn linux_get_process(pid: usize, tree_node: &mut TreeNode) {
                 let mut new_node = TreeNode {
                     pid: usize_c_pid,
                     utime: process_stats[13].parse().unwrap(),
+                    stime: process_stats[14].parse().unwrap(),
                     children: Vec::new()
                 };
                 linux_get_process(usize_c_pid, &mut new_node);

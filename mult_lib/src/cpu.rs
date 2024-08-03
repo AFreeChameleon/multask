@@ -22,14 +22,16 @@ pub fn split_limit_cpu(pid: i32, limit: f32) {
     }
 }
 
-fn linux_get_cpu_usage(pid: usize, node: TreeNode, old_total_time: u32) -> u32 {
+fn linux_get_cpu_usage(pid: usize, node: TreeNode, old_total_time: u32) -> f32 {
     let stats = linux_get_process_stats(pid);
     let cpu_stats = linux_get_cpu_stats();
     let utime: u32 = stats[13].clone().parse().unwrap();
+    let stime: u32 = stats[14].clone().parse().unwrap();
+    let old_proc_times = node.utime + node.stime;
+    let proc_times = utime + stime;
     let total_time = linux_get_cpu_time_total(cpu_stats);
-    let old_utime= node.utime;
-
-    let cpu_usage = 100 * (utime - old_utime) / (total_time - old_total_time);
+    let cpu_usage = unsafe { libc::sysconf(libc::_SC_NPROCESSORS_ONLN) as f32 } *
+        100.0 * ((proc_times - old_proc_times) as f32 / (total_time - old_total_time) as f32);
     return cpu_usage;
 }
 
@@ -43,7 +45,7 @@ pub fn linux_get_cpu_time_total(cpu_stats: Vec<String>) -> u32 {
     return time_total;
 }
 
-pub fn get_cpu_usage(pid: usize, node: TreeNode, old_total_time: u32) -> u32 {
+pub fn get_cpu_usage(pid: usize, node: TreeNode, old_total_time: u32) -> f32 {
     #[cfg(target_os = "linux")]
     return linux_get_cpu_usage(pid, node, old_total_time);
 }
