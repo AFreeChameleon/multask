@@ -1,9 +1,8 @@
 use std::env;
-use std::process::id;
 
 use mult_lib::args::{parse_args, ParsedArgs};
 use mult_lib::error::{print_success, MultError, MultErrorTuple};
-use mult_lib::proc::{get_proc_name, proc_exists};
+use mult_lib::proc::proc_exists;
 use mult_lib::task::TaskManager;
 use mult_lib::command::{CommandManager, MemStats};
 
