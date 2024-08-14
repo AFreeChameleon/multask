@@ -1,13 +1,12 @@
 use std::{thread, time::Duration, env};
 use mult_lib::args::{parse_args, ParsedArgs};
 use mult_lib::colors::{color_string, OK_GREEN};
-use mult_lib::proc::{get_all_processes, get_proc_comm, get_proc_name, get_process_memory, get_process_runtime, get_process_starttime, get_process_stats, get_readable_runtime, read_usage_stats};
+use mult_lib::proc::{get_all_processes, get_proc_comm, get_process_memory, get_process_runtime, get_process_stats, get_readable_runtime, proc_exists, read_usage_stats};
 use mult_lib::tree::compress_tree;
 use prettytable::Table;
-use sysinfo::{System, Pid};
 
 use mult_lib::error::{MultError, MultErrorTuple};
-use mult_lib::table::{format_bytes, MainHeaders, ProcessHeaders, TableManager};
+use mult_lib::table::{MainHeaders, ProcessHeaders, TableManager};
 use mult_lib::task::{Task, TaskManager};
 use mult_lib::command::CommandManager;
 
@@ -71,8 +70,6 @@ pub fn setup_table(table: &mut TableManager, parsed_args: &ParsedArgs) -> Result
             Ok(result) => result,
             Err(err) => return Err(err)
         };
-        let sys = System::new_all();
-
         let mut main_headers = MainHeaders {
             id: task.id,
             command: command.command.clone(),
@@ -105,29 +102,35 @@ pub fn setup_table(table: &mut TableManager, parsed_args: &ParsedArgs) -> Result
             if parsed_args.flags.contains(&LIST_CHILDREN_FLAG.to_string()) {
                 for child_process_id in all_processes.iter() {
                     if *child_process_id as u32 == command.pid { continue; }
-                    if let Some(child_process) = sys.process(Pid::from_u32(*child_process_id as u32)) {
-                        if let Some(stats) = usage_stats.get(child_process_id) {
-                            cpu_usage = (stats.cpu_usage * 100.0).round() / 100.0;
-                        }
-                        main_headers.command.push_str(
-                            &format!("\n {}", child_process.name())
-                        );
-                        process_headers.pid.push_str(
-                            &format!("\n{}", child_process_id.to_string())
-                        );
-                        process_headers.memory.push_str(
-                            &format!("\n{}", get_process_memory(child_process_id))
-                        );
-                        process_headers.cpu.push_str(
-                            &format!("\n{}%", cpu_usage.to_string())
-                        );
-                        process_headers.runtime.push_str(
-                            &format!("\n{}", child_process.run_time().to_string())
-                        );
-                        process_headers.status.push_str(
-                            &format!("\n{}", color_string(OK_GREEN, "Running"))
-                        );
+                    if !proc_exists(*child_process_id as i32) {
+                        continue;
                     }
+                    let child_proc_stats = get_process_stats(*child_process_id);
+                    let mut child_cpu_usage = 0.0;
+                    let child_usage_stats = read_usage_stats(task.id)?;
+                    if let Some(stats) = child_usage_stats.get(child_process_id) {
+                        child_cpu_usage = (stats.cpu_usage * 100.0).round() / 100.0;
+                    }
+                    main_headers.command.push_str(
+                        &format!("\n {}", get_proc_comm(*child_process_id as u32)?)
+                    );
+                    process_headers.pid.push_str(
+                        &format!("\n{}", child_process_id.to_string())
+                    );
+                    process_headers.memory.push_str(
+                        &format!("\n{}", get_process_memory(child_process_id))
+                    );
+                    process_headers.cpu.push_str(
+                        &format!("\n{}%", child_cpu_usage)
+                    );
+                    process_headers.runtime.push_str(
+                        &format!("\n{}", get_readable_runtime(
+                            get_process_runtime(child_proc_stats[21].parse().unwrap()) as u64
+                        ))
+                    );
+                    process_headers.status.push_str(
+                        &format!("\n{}", color_string(OK_GREEN, "Running"))
+                    );
                 }
             } else {
                 main_headers.command.push_str(
