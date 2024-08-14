@@ -1,7 +1,7 @@
 use std::{thread, time::Duration, env};
 use mult_lib::args::{parse_args, ParsedArgs};
 use mult_lib::colors::{color_string, OK_GREEN};
-use mult_lib::proc::{get_all_processes, get_proc_comm, get_proc_name, get_process_memory, get_process_runtime, get_process_starttime, get_process_stats, read_usage_stats};
+use mult_lib::proc::{get_all_processes, get_proc_comm, get_proc_name, get_process_memory, get_process_runtime, get_process_starttime, get_process_stats, get_readable_runtime, read_usage_stats};
 use mult_lib::tree::compress_tree;
 use prettytable::Table;
 use sysinfo::{System, Pid};
@@ -78,7 +78,6 @@ pub fn setup_table(table: &mut TableManager, parsed_args: &ParsedArgs) -> Result
             command: command.command.clone(),
         };
         let proc_stats = get_process_stats(command.pid as usize);
-        println!("{:?} {} {} {} {}", proc_stats, proc_stats[21].parse::<u32>().unwrap(), command.starttime, command.pid, get_process_runtime(proc_stats[21].parse().unwrap()));
         if proc_stats.len() == 0 || command.starttime != proc_stats[21].parse().unwrap() {
             table.insert_row(main_headers, None);
             continue;
@@ -93,7 +92,9 @@ pub fn setup_table(table: &mut TableManager, parsed_args: &ParsedArgs) -> Result
             pid: command.pid.to_string(),
             memory: get_process_memory(&(command.pid as usize)),
             cpu: cpu_usage.to_string(),
-            runtime: get_process_runtime(proc_stats[21].parse().unwrap()).to_string(),
+            runtime: get_readable_runtime(
+                get_process_runtime(proc_stats[21].parse().unwrap()) as u64
+            ),
             status: color_string(OK_GREEN, "Running").to_string()
         };
         let process_tree = get_all_processes(command.pid as usize);

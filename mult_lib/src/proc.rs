@@ -163,6 +163,13 @@ pub fn get_process_runtime(starttime: u32) -> f64 {
     runtime
 }
 
+pub fn get_readable_runtime(secs: u64) -> String {
+    let seconds = secs % 60;
+    let minutes = (secs / 60) % 60;
+    let hours = (secs / 60) / 60;
+    format!("{}h {}m {}s", hours, minutes, seconds).to_string()
+}
+
 pub fn linux_get_process_runtime(starttime: u32) -> f64 {
     let secs_since_boot: f64 = fs::read_to_string("/proc/uptime")
         .unwrap().split_whitespace().nth(0).unwrap().parse().unwrap();
@@ -170,7 +177,6 @@ pub fn linux_get_process_runtime(starttime: u32) -> f64 {
     let now = SystemTime::now();
     let since_epoch = now.duration_since(UNIX_EPOCH).unwrap().as_secs() as f64;
     let run_time = since_epoch - (secs_since_boot - (starttime as f64 / ticks_per_sec as f64));
-    println!("{} {} {} {}", secs_since_boot, starttime, ticks_per_sec, since_epoch);
     since_epoch - run_time
 }
 
@@ -254,10 +260,12 @@ pub fn linux_get_process_memory(pid: &usize) -> String {
     let mem_path = Path::new("/proc").join(pid.to_string()).join("status");
     if mem_path.exists() {
         let contents = fs::read_to_string(mem_path).unwrap();
-        let mut vmrss_line = contents.lines().find(|line| {
+        if let Some(vmrss) = contents.lines().find(|line| {
             line.starts_with("VmRSS")
-        }).unwrap().split_whitespace();
-        return format!("{} {}", vmrss_line.nth(1).unwrap(), vmrss_line.next().unwrap());
+        }) {
+            let mut vmrss_line = vmrss.split_whitespace();
+            return format!("{} {}", vmrss_line.nth(1).unwrap(), vmrss_line.next().unwrap());
+        }
     }
     return "0 b".to_string();
 }
