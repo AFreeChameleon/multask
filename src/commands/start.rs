@@ -1,9 +1,8 @@
 use std::env;
-use std::process::id;
 
 use mult_lib::args::{parse_args, ParsedArgs};
 use mult_lib::error::{print_success, MultError, MultErrorTuple};
-use mult_lib::proc::get_proc_name;
+use mult_lib::proc::proc_exists;
 use mult_lib::task::TaskManager;
 use mult_lib::command::{CommandManager, MemStats};
 
@@ -30,14 +29,9 @@ pub fn run() -> Result<(), MultErrorTuple> {
         let task = TaskManager::get_task(&tasks, task_id)?;
         let files = TaskManager::generate_task_files(task.id, &tasks);
         let command_data = CommandManager::read_command_data(task.id)?;
-        match get_proc_name(command_data.pid) {
-            Ok(val) => {
-                if val == command_data.name {
-                    return Err((MultError::ProcessAlreadyRunning, None))
-                }
-            },
-            Err(_) => ()
-        };
+        if proc_exists(command_data.pid as i32) {
+            return Err((MultError::ProcessAlreadyRunning, None))
+        }
         let current_dir = env::current_dir().unwrap();
         env::set_current_dir(&command_data.dir).unwrap();
 

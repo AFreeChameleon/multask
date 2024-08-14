@@ -1,11 +1,13 @@
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TreeNode {
     pub pid: usize,
+    pub utime: u32,
+    pub stime: u32,
     pub children: Vec<TreeNode>
 }
 
-pub fn search_tree(tree: &TreeNode, cb: &impl Fn(usize)) {
-    cb(tree.pid);
+pub fn search_tree(tree: &TreeNode, cb: &impl Fn(&TreeNode)) {
+    cb(tree);
     for child_node in tree.children.iter() {
         search_tree(child_node, cb);
     }
