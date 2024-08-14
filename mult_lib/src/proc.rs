@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use sysinfo::{Pid, System};
 
@@ -16,7 +17,7 @@ pub struct UsageStats {
     pub cpu_usage: f32
 }
 
-pub fn get_proc_name(pid: u32) -> Result<String, MultErrorTuple> {
+fn linux_get_proc_name(pid: u32) -> Result<String, MultErrorTuple> {
     let mut proc_name = String::new();
     let mut proc_file = match File::open(format!("/proc/{}/cmdline", pid)) {
         Ok(val) => val,
@@ -30,6 +31,12 @@ pub fn get_proc_name(pid: u32) -> Result<String, MultErrorTuple> {
             return Err((MultError::ProcessDirNotExist, None));
         }
     };
+    Ok(proc_name)
+} 
+
+pub fn get_proc_name(pid: u32) -> Result<String, MultErrorTuple> {
+    #[cfg(target_os = "linux")]
+    let proc_name = linux_get_proc_name(pid)?;
     Ok(proc_name)
 }
 
@@ -148,6 +155,46 @@ fn linux_get_process(pid: usize, tree_node: &mut TreeNode) {
             }
         }
     }
+}
+
+pub fn get_process_runtime(starttime: u32) -> f64 {
+    #[cfg(target_os = "linux")]
+    let runtime = linux_get_process_runtime(starttime);
+    runtime
+}
+
+pub fn linux_get_process_runtime(starttime: u32) -> f64 {
+    let secs_since_boot: f64 = fs::read_to_string("/proc/uptime")
+        .unwrap().split_whitespace().nth(0).unwrap().parse().unwrap();
+    let ticks_per_sec = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
+    let now = SystemTime::now();
+    let since_epoch = now.duration_since(UNIX_EPOCH).unwrap().as_secs() as f64;
+    let run_time = since_epoch - (secs_since_boot - (starttime as f64 / ticks_per_sec as f64));
+    println!("{} {} {} {}", secs_since_boot, starttime, ticks_per_sec, since_epoch);
+    since_epoch - run_time
+}
+
+pub fn linux_get_process_starttime(pid: usize) -> f64 {
+    let stats = get_process_stats(pid);
+    let secs_since_boot: f64 = fs::read_to_string("/proc/uptime")
+        .unwrap().split_whitespace().nth(0).unwrap().parse().unwrap();
+    let starttime: f64 = stats[23].clone().parse().unwrap();
+    let ticks_per_sec = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
+    let now = SystemTime::now();
+    let since_epoch = now.duration_since(UNIX_EPOCH).unwrap().as_secs() as f64;
+    since_epoch - (since_epoch - ((secs_since_boot - (starttime / ticks_per_sec as f64)) as f64))
+}
+
+pub fn get_process_starttime(pid: usize) -> f64 {
+    #[cfg(target_os = "linux")]
+    let starttime = linux_get_process_starttime(pid);
+    starttime
+}
+
+pub fn get_process_stats(pid: usize) -> Vec<String> {
+    #[cfg(target_os = "linux")]
+    let stats = linux_get_process_stats(pid);
+    stats
 }
 
 pub fn linux_get_process_stats(pid: usize) -> Vec<String> {

@@ -5,7 +5,7 @@ use std::{
 use home::home_dir;
 use libc;
 
-use mult_lib::{cpu::{get_cpu_usage, linux_get_cpu_time_total, split_limit_cpu}, error::{print_info, MultError, MultErrorTuple}, proc::{get_all_processes, get_proc_name, linux_get_cpu_stats, proc_exists, save_task_processes, save_usage_stats, UsageStats}, tree::{compress_tree, search_tree, TreeNode}};
+use mult_lib::{cpu::{get_cpu_usage, linux_get_cpu_time_total, split_limit_cpu}, error::{print_info, MultError, MultErrorTuple}, proc::{get_all_processes, get_proc_name, get_process_starttime, get_process_stats, linux_get_cpu_stats, proc_exists, save_task_processes, save_usage_stats, UsageStats}, tree::{compress_tree, search_tree, TreeNode}};
 use mult_lib::task::Files;
 use mult_lib::command::{CommandManager, CommandData, MemStats};
 
@@ -131,11 +131,13 @@ fn run_command(command: &str, process_dir: &Path) -> Result<Child, MultErrorTupl
 
     let child_pid = child.id();
     let proc_name = get_proc_name(child_pid)?;
+    let proc_stats = get_process_stats(child_pid as usize);
     let data = CommandData {
         command: command.to_string(),
         pid: child_pid,
         dir: current_dir.display().to_string(),
-        name: proc_name
+        name: proc_name,
+        starttime: proc_stats[21].parse().unwrap()
     };
     CommandManager::write_command_data(data, process_dir);
 

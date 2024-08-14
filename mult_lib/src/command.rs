@@ -18,7 +18,8 @@ pub struct CommandData {
     pub command: String,
     pub pid: u32,
     pub dir: String,
-    pub name: String
+    pub name: String,
+    pub starttime: u32
 }
 
 pub struct CommandManager {}
