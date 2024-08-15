@@ -6,7 +6,11 @@ use mult_lib::task::TaskManager;
 use mult_lib::command::{CommandManager, MemStats};
 use mult_lib::args::{parse_args, ParsedArgs};
 
+#[cfg(target_family = "unix")]
 use crate::platform_lib::linux::fork;
+
+#[cfg(target_family = "windows")]
+use crate::platform_lib::windows::fork;
 
 const MEMORY_LIMIT_FLAG: &str = "-m";
 const CPU_LIMIT_FLAG: &str = "-c";

@@ -1,6 +1,6 @@
 use std::env::args;
 use commands::{create, delete, ls, start, stop, logs, help, restart, health};
-use mult_lib::error::{print_error, MultError};
+use mult_lib::{colors::set_virtual_terminal, error::{print_error, MultError}};
 
 mod commands;
 mod platform_lib;
@@ -9,7 +9,7 @@ const NO_MODE_TEXT: &str = "No mode given.\n
 For a full list of commands: mlt help";
 fn main() {
     #[cfg(target_family = "windows")]
-    colored::control::set_virtual_terminal(true).unwrap();
+    set_virtual_terminal(true).unwrap();
     if let Some(mode) = args().nth(1) {
         if let Err((message, descriptor)) = match mode.as_str() {
             "create" => create::run(),

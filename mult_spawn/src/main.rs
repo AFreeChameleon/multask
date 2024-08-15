@@ -51,7 +51,8 @@ fn main() -> Result<(), MultErrorTuple> {
         command,
         pid: process::id(),
         dir: current_dir.display().to_string(),
-        name: process_name.to_string()
+        name: process_name.to_string(),
+        starttime: 0
     };
     CommandManager::write_command_data(data, process_dir);
 

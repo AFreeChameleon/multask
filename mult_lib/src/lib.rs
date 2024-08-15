@@ -7,3 +7,4 @@ pub mod proc;
 pub mod tree;
 pub mod colors;
 pub mod cpu;
+pub mod linux;

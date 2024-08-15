@@ -1,3 +1,4 @@
+#![cfg(target_family = "unix")]
 use std::{thread, time::Duration};
 
 use libc;
