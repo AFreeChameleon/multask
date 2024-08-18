@@ -6,9 +6,10 @@ use mult_lib::task::{Task, TaskManager};
 use mult_lib::error::{print_info, print_success, MultError, MultErrorTuple};
 
 #[cfg(target_family = "unix")]
-use crate::platform_lib::linux::fork;
+use mult_lib::linux::fork;
+
 #[cfg(target_family = "windows")]
-use crate::platform_lib::windows::fork;
+use mult_lib::windows::fork;
 
 const MEMORY_LIMIT_FLAG: &str = "-m";
 const CPU_LIMIT_FLAG: &str = "-c";
@@ -34,7 +35,7 @@ pub fn run() -> Result<(), MultErrorTuple> {
         #[cfg(target_family = "unix")]
         fork::run_daemon(files, arg.to_string(), flags.clone())?;
         #[cfg(target_family = "windows")]
-        fork::run_daemon(files, arg.to_string())?;
+        fork::run_daemon(files, arg.to_string(), &flags)?;
 
         print_success(&format!("Process {} created.", new_task_id));
     }

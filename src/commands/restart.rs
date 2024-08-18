@@ -7,10 +7,10 @@ use mult_lib::command::{CommandManager, MemStats};
 use mult_lib::args::{parse_args, ParsedArgs};
 
 #[cfg(target_family = "unix")]
-use crate::platform_lib::linux::fork;
+use mult_lib::linux::fork;
 
 #[cfg(target_family = "windows")]
-use crate::platform_lib::windows::fork;
+use mult_lib::windows::fork;
 
 const MEMORY_LIMIT_FLAG: &str = "-m";
 const CPU_LIMIT_FLAG: &str = "-c";
@@ -36,7 +36,7 @@ pub fn run() -> Result<(), MultErrorTuple> {
         #[cfg(target_family = "unix")]
         fork::run_daemon(files, command_data.command, flags.clone())?;
         #[cfg(target_family = "windows")]
-        fork::run_daemon(files, command_data.command)?;
+        fork::run_daemon(files, command_data.command, &flags)?;
 
         print_success(&format!("Process {} restarted.", task_id));
     }

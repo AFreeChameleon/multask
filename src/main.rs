@@ -3,7 +3,6 @@ use commands::{create, delete, ls, start, stop, logs, help, restart, health};
 use mult_lib::{colors::set_virtual_terminal, error::{print_error, MultError}};
 
 mod commands;
-mod platform_lib;
 
 const NO_MODE_TEXT: &str = "No mode given.\n
 For a full list of commands: mlt help";
