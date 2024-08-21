@@ -88,7 +88,7 @@ pub fn setup_table(table: &mut TableManager, parsed_args: &ParsedArgs) -> Result
         let mut process_headers = ProcessHeaders {
             pid: command.pid.to_string(),
             memory: get_process_memory(&(command.pid as usize)),
-            cpu: cpu_usage.to_string(),
+            cpu: format!("{}%", cpu_usage),
             runtime: get_readable_runtime(
                 get_process_runtime(proc_stats[21].parse().unwrap()) as u64
             ),
