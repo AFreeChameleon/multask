@@ -35,7 +35,7 @@ pub fn run() -> Result<(), MultErrorTuple> {
         #[cfg(target_family = "unix")]
         fork::run_daemon(files, arg.to_string(), flags.clone())?;
         #[cfg(target_family = "windows")]
-        fork::run_daemon(files, arg.to_string(), &flags)?;
+        fork::run_daemon(files, arg.to_string(), &flags, new_task_id)?;
 
         print_success(&format!("Process {} created.", new_task_id));
     }

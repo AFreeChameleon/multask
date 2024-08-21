@@ -38,7 +38,7 @@ pub fn run() -> Result<(), MultErrorTuple> {
         #[cfg(target_family = "unix")]
         fork::run_daemon(files, command_data.command, flags.clone())?;
         #[cfg(target_family = "windows")]
-        fork::run_daemon(files, command_data.command, &flags)?;
+        fork::run_daemon(files, command_data.command, &flags, task_id)?;
 
         env::set_current_dir(&current_dir).unwrap();
         print_success(&format!("Process {} started.", task_id));
