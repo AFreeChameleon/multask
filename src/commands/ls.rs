@@ -1,28 +1,28 @@
-use std::{thread, time::Duration, env};
 use mult_lib::args::{parse_args, ParsedArgs};
 use mult_lib::colors::{color_string, OK_GREEN};
-use mult_lib::proc::{get_all_processes, get_proc_comm, get_process_memory, get_process_runtime, get_process_stats, get_readable_runtime, proc_exists, read_usage_stats};
+use mult_lib::proc::{
+    get_all_processes, get_proc_comm, get_process_memory, get_process_runtime, get_process_stats,
+    get_readable_runtime, proc_exists, read_usage_stats,
+};
 use mult_lib::tree::compress_tree;
 use prettytable::Table;
+use std::{env, thread, time::Duration};
 
+use mult_lib::command::CommandManager;
 use mult_lib::error::{MultError, MultErrorTuple};
 use mult_lib::table::{MainHeaders, ProcessHeaders, TableManager};
 use mult_lib::task::{Task, TaskManager};
-use mult_lib::command::CommandManager;
 
 const WATCH_FLAG: &str = "-w";
 const LIST_CHILDREN_FLAG: &str = "-a";
-const FLAGS: [(&str, bool); 2] = [
-    (WATCH_FLAG, false),
-    (LIST_CHILDREN_FLAG, false)
-];
+const FLAGS: [(&str, bool); 2] = [(WATCH_FLAG, false), (LIST_CHILDREN_FLAG, false)];
 
 pub fn run() -> Result<(), MultErrorTuple> {
     let args = env::args();
     let parsed_args = parse_args(&args.collect::<Vec<String>>()[2..], &FLAGS, false)?;
     let mut table = TableManager {
         ascii_table: Table::new(),
-        table_data: Vec::new()
+        table_data: Vec::new(),
     };
     table.create_headers();
     setup_table(&mut table, &parsed_args)?;
@@ -41,7 +41,7 @@ pub fn run() -> Result<(), MultErrorTuple> {
 fn listen(parsed_args: &ParsedArgs) -> Result<(), MultErrorTuple> {
     let mut table = TableManager {
         ascii_table: Table::new(),
-        table_data: Vec::new()
+        table_data: Vec::new(),
     };
     table.create_headers();
     setup_table(&mut table, parsed_args)?;
@@ -51,7 +51,7 @@ fn listen(parsed_args: &ParsedArgs) -> Result<(), MultErrorTuple> {
         thread::sleep(Duration::from_secs(1));
         table = TableManager {
             ascii_table: Table::new(),
-            table_data: Vec::new()
+            table_data: Vec::new(),
         };
         table.create_headers();
         setup_table(&mut table, parsed_args)?;
@@ -63,12 +63,15 @@ fn listen(parsed_args: &ParsedArgs) -> Result<(), MultErrorTuple> {
     }
 }
 
-pub fn setup_table(table: &mut TableManager, parsed_args: &ParsedArgs) -> Result<(), MultErrorTuple> {
+pub fn setup_table(
+    table: &mut TableManager,
+    parsed_args: &ParsedArgs,
+) -> Result<(), MultErrorTuple> {
     let tasks: Vec<Task> = TaskManager::get_tasks()?;
     for task in tasks.iter() {
         let command = match CommandManager::read_command_data(task.id) {
             Ok(result) => result,
-            Err(err) => return Err(err)
+            Err(err) => return Err(err),
         };
         let mut main_headers = MainHeaders {
             id: task.id,
@@ -92,7 +95,7 @@ pub fn setup_table(table: &mut TableManager, parsed_args: &ParsedArgs) -> Result
             runtime: get_readable_runtime(
                 get_process_runtime(proc_stats[21].parse().unwrap()) as u64
             ),
-            status: color_string(OK_GREEN, "Running").to_string()
+            status: color_string(OK_GREEN, "Running").to_string(),
         };
         let process_tree = get_all_processes(command.pid as usize);
 
@@ -101,7 +104,9 @@ pub fn setup_table(table: &mut TableManager, parsed_args: &ParsedArgs) -> Result
         if all_processes.len() > 1 {
             if parsed_args.flags.contains(&LIST_CHILDREN_FLAG.to_string()) {
                 for child_process_id in all_processes.iter() {
-                    if *child_process_id as u32 == command.pid { continue; }
+                    if *child_process_id as u32 == command.pid {
+                        continue;
+                    }
                     if !proc_exists(*child_process_id as i32) {
                         continue;
                     }
@@ -111,31 +116,32 @@ pub fn setup_table(table: &mut TableManager, parsed_args: &ParsedArgs) -> Result
                     if let Some(stats) = child_usage_stats.get(child_process_id) {
                         child_cpu_usage = (stats.cpu_usage * 100.0).round() / 100.0;
                     }
-                    main_headers.command.push_str(
-                        &format!("\n {}", get_proc_comm(*child_process_id as u32)?)
-                    );
-                    process_headers.pid.push_str(
-                        &format!("\n{}", child_process_id.to_string())
-                    );
-                    process_headers.memory.push_str(
-                        &format!("\n{}", get_process_memory(child_process_id))
-                    );
-                    process_headers.cpu.push_str(
-                        &format!("\n{}%", child_cpu_usage)
-                    );
-                    process_headers.runtime.push_str(
-                        &format!("\n{}", get_readable_runtime(
-                            get_process_runtime(child_proc_stats[21].parse().unwrap()) as u64
-                        ))
-                    );
-                    process_headers.status.push_str(
-                        &format!("\n{}", color_string(OK_GREEN, "Running"))
-                    );
+                    main_headers
+                        .command
+                        .push_str(&format!("\n {}", get_proc_comm(*child_process_id as u32)?));
+                    process_headers
+                        .pid
+                        .push_str(&format!("\n{}", child_process_id.to_string()));
+                    process_headers
+                        .memory
+                        .push_str(&format!("\n{}", get_process_memory(child_process_id)));
+                    process_headers
+                        .cpu
+                        .push_str(&format!("\n{}%", child_cpu_usage));
+                    process_headers.runtime.push_str(&format!(
+                        "\n{}",
+                        get_readable_runtime(get_process_runtime(
+                            child_proc_stats[21].parse().unwrap()
+                        ) as u64)
+                    ));
+                    process_headers
+                        .status
+                        .push_str(&format!("\n{}", color_string(OK_GREEN, "Running")));
                 }
             } else {
-                main_headers.command.push_str(
-                    &format!("\n + {} more processes", all_processes.len() - 1)
-                );
+                main_headers
+                    .command
+                    .push_str(&format!("\n + {} more processes", all_processes.len() - 1));
             }
         }
 
@@ -143,4 +149,3 @@ pub fn setup_table(table: &mut TableManager, parsed_args: &ParsedArgs) -> Result
     }
     Ok(())
 }
-

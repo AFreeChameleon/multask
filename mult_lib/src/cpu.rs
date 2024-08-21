@@ -3,7 +3,10 @@ use std::{thread, time::Duration};
 
 use libc;
 
-use crate::{proc::{get_all_processes, linux_get_cpu_stats, linux_get_process_stats}, tree::{search_tree, TreeNode}};
+use crate::{
+    proc::{get_all_processes, linux_get_cpu_stats, linux_get_process_stats},
+    tree::{search_tree, TreeNode},
+};
 
 static MILS_IN_SECOND: f32 = 1000.0;
 
@@ -13,7 +16,11 @@ pub fn split_limit_cpu(pid: i32, limit: f32) {
     let mut running = true;
     loop {
         let process_tree = get_all_processes(pid as usize);
-        let sig = if running { libc::SIGSTOP } else { libc::SIGCONT };
+        let sig = if running {
+            libc::SIGSTOP
+        } else {
+            libc::SIGCONT
+        };
         let timeout = if running { idle_time } else { running_time };
         search_tree(&process_tree, &|node: &TreeNode| {
             unsafe { libc::kill(node.pid as i32, sig) };
@@ -31,8 +38,9 @@ fn linux_get_cpu_usage(pid: usize, node: TreeNode, old_total_time: u32) -> f32 {
     let old_proc_times = node.utime + node.stime;
     let proc_times = utime + stime;
     let total_time = linux_get_cpu_time_total(cpu_stats);
-    let cpu_usage = unsafe { libc::sysconf(libc::_SC_NPROCESSORS_ONLN) as f32 } *
-        100.0 * ((proc_times - old_proc_times) as f32 / (total_time - old_total_time) as f32);
+    let cpu_usage = unsafe { libc::sysconf(libc::_SC_NPROCESSORS_ONLN) as f32 }
+        * 100.0
+        * ((proc_times - old_proc_times) as f32 / (total_time - old_total_time) as f32);
     return cpu_usage;
 }
 

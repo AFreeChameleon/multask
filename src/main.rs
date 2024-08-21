@@ -1,6 +1,9 @@
+use commands::{create, delete, health, help, logs, ls, restart, start, stop};
+use mult_lib::{
+    colors::set_virtual_terminal,
+    error::{print_error, MultError},
+};
 use std::env::args;
-use commands::{create, delete, ls, start, stop, logs, help, restart, health};
-use mult_lib::{colors::set_virtual_terminal, error::{print_error, MultError}};
 
 mod commands;
 
@@ -20,7 +23,7 @@ fn main() {
             "help" => help::run(),
             "ls" => ls::run(),
             "health" => health::run(),
-            _ => Err((MultError::MissingCommand, None))
+            _ => Err((MultError::MissingCommand, None)),
         } {
             print_error(message, descriptor);
         }
@@ -28,4 +31,3 @@ fn main() {
         print_error(MultError::CustomError, Some(NO_MODE_TEXT.to_string()));
     }
 }
-

@@ -1,25 +1,25 @@
 #![windows_subsystem = "windows"]
 
 #[cfg(target_family = "windows")]
+use home::home_dir;
+#[cfg(target_family = "windows")]
+use mult_lib::command::{CommandData, CommandManager};
+#[cfg(target_family = "windows")]
+use mult_lib::error::{MultError, MultErrorTuple};
+#[cfg(target_family = "windows")]
 use std::{
-    thread,
     env,
     fs::File,
     io::{BufRead, BufReader, Write},
     os::windows::process::CommandExt,
     path::Path,
+    process,
     process::{Command, Stdio},
+    thread,
     time::{SystemTime, UNIX_EPOCH},
-    process
 };
 #[cfg(target_family = "windows")]
-use home::home_dir;
-#[cfg(target_family = "windows")]
 use sysinfo::{Pid, System};
-#[cfg(target_family = "windows")]
-use mult_lib::command::{CommandManager, CommandData};
-#[cfg(target_family = "windows")]
-use mult_lib::error::{MultError, MultErrorTuple};
 
 // Usage: mult_spawn process_dir command
 #[cfg(target_family = "windows")]
@@ -37,7 +37,7 @@ fn main() -> Result<(), MultErrorTuple> {
 
     let current_dir = match env::current_dir() {
         Ok(val) => val,
-        Err(_) => home_dir().unwrap()
+        Err(_) => home_dir().unwrap(),
     };
 
     let sys = System::new_all();
@@ -52,17 +52,17 @@ fn main() -> Result<(), MultErrorTuple> {
         pid: process::id(),
         dir: current_dir.display().to_string(),
         name: process_name.to_string(),
-        starttime: 0
+        starttime: 0,
     };
     CommandManager::write_command_data(data, process_dir);
 
     let stdout = child.stdout.take().expect("Failed to take stdout.");
     let stderr = child.stderr.take().expect("Failed to take stderr.");
-    
-    let mut stdout_file = File::create(process_dir.join("stdout.out"))
-        .expect("Could not open stdout file.");
-    let mut stderr_file = File::create(process_dir.join("stderr.err"))
-        .expect("Could not open stderr file.");
+
+    let mut stdout_file =
+        File::create(process_dir.join("stdout.out")).expect("Could not open stdout file.");
+    let mut stderr_file =
+        File::create(process_dir.join("stderr.err")).expect("Could not open stderr file.");
 
     thread::spawn(move || {
         let reader = BufReader::new(stdout);
@@ -72,12 +72,9 @@ fn main() -> Result<(), MultErrorTuple> {
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_millis();
-            let formatted_line = format!(
-                "{:}|{}\n",
-                now,
-                line.expect("Problem reading stdout.")
-            ); 
-            stdout_file.write_all(formatted_line.as_bytes())
+            let formatted_line = format!("{:}|{}\n", now, line.expect("Problem reading stdout."));
+            stdout_file
+                .write_all(formatted_line.as_bytes())
                 .expect("Problem writing to stdout.");
         }
     });
@@ -90,12 +87,9 @@ fn main() -> Result<(), MultErrorTuple> {
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_millis();
-            let formatted_line = format!(
-                "{:}|{}\n",
-                now,
-                line.expect("Problem reading stderr.")
-            ); 
-            stderr_file.write_all(formatted_line.as_bytes())
+            let formatted_line = format!("{:}|{}\n", now, line.expect("Problem reading stderr."));
+            stderr_file
+                .write_all(formatted_line.as_bytes())
                 .expect("Problem writing to stderr.");
         }
     });

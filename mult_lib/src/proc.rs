@@ -10,14 +10,20 @@ use std::u32;
 
 use sysinfo::{Pid, System};
 
-use crate::tree::compress_tree;
-use crate::{error::{MultError, MultErrorTuple}, tree::TreeNode};
 #[cfg(target_family = "unix")]
-use crate::linux::proc::{linux_get_proc_name, linux_get_process_memory, linux_get_process_runtime, linux_get_process_stats, linux_proc_exists};
+use crate::linux::proc::{
+    linux_get_proc_name, linux_get_process_memory, linux_get_process_runtime,
+    linux_get_process_stats, linux_proc_exists,
+};
+use crate::tree::compress_tree;
+use crate::{
+    error::{MultError, MultErrorTuple},
+    tree::TreeNode,
+};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct UsageStats {
-    pub cpu_usage: f32
+    pub cpu_usage: f32,
 }
 
 pub fn get_proc_name(pid: u32) -> Result<String, MultErrorTuple> {
@@ -57,7 +63,7 @@ pub fn kill_all_processes(ppid: u32) -> Result<(), MultErrorTuple> {
         if let Some(process) = sys.process(Pid::from_u32(pid as u32)) {
             process.kill();
         } else {
-            return Err((MultError::ProcessNotRunning, None))
+            return Err((MultError::ProcessNotRunning, None));
         }
     }
     Ok(())
@@ -80,10 +86,10 @@ pub fn read_usage_stats(task_id: u32) -> Result<HashMap<usize, UsageStats>, Mult
         .join(task_id.to_string());
     let usage_file = process_dir.join("r_usage.bin");
     if usage_file.exists() {
-        let encoded: Vec<u8> = fs::read(usage_file).unwrap(); 
+        let encoded: Vec<u8> = fs::read(usage_file).unwrap();
         let decoded: HashMap<usize, UsageStats> = match bincode::deserialize(&encoded[..]) {
             Ok(val) => val,
-            Err(_) => return Err((MultError::TaskBinFileUnreadable, None))
+            Err(_) => return Err((MultError::TaskBinFileUnreadable, None)),
         };
         return Ok(decoded);
     }
@@ -99,7 +105,12 @@ pub fn proc_exists(pid: i32) -> bool {
 pub fn get_all_processes(pid: usize) -> TreeNode {
     #[cfg(target_os = "linux")]
     return linux_get_all_processes(pid);
-    return TreeNode { pid: usize::MIN, utime: u32::MIN, stime: u32::MIN, children: Vec::new() }
+    return TreeNode {
+        pid: usize::MIN,
+        utime: u32::MIN,
+        stime: u32::MIN,
+        children: Vec::new(),
+    };
 }
 
 pub fn get_process_runtime(starttime: u32) -> f64 {

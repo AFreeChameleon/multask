@@ -4,8 +4,8 @@ use mult_lib::args::parse_args;
 use mult_lib::error::{print_success, MultErrorTuple};
 use mult_lib::proc::kill_all_processes;
 
-use mult_lib::task::TaskManager;
 use mult_lib::command::CommandManager;
+use mult_lib::task::TaskManager;
 
 pub fn run() -> Result<(), MultErrorTuple> {
     let args = env::args();
@@ -20,4 +20,3 @@ pub fn run() -> Result<(), MultErrorTuple> {
     }
     Ok(())
 }
-
