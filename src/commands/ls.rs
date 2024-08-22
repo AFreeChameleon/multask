@@ -8,7 +8,7 @@ use prettytable::Table;
 use mult_lib::error::{MultError, MultErrorTuple};
 use mult_lib::table::{MainHeaders, ProcessHeaders, TableManager};
 use mult_lib::task::{Task, TaskManager};
-use mult_lib::command::CommandManager;
+use mult_lib::command::{CommandData, CommandManager};
 
 const WATCH_FLAG: &str = "-w";
 const LIST_CHILDREN_FLAG: &str = "-a";
@@ -74,26 +74,12 @@ pub fn setup_table(table: &mut TableManager, parsed_args: &ParsedArgs) -> Result
             id: task.id,
             command: command.command.clone(),
         };
-        let proc_stats = get_process_stats(command.pid as usize);
-        if proc_stats.len() == 0 || command.starttime != proc_stats[21].parse().unwrap() {
-            table.insert_row(main_headers, None);
+        // Get memory stats
+        let process_headers_opt = get_process_headers(command.pid as usize, command.starttime, &task, true);
+        if process_headers_opt.is_none() {
             continue;
         }
-        let mut cpu_usage = 0.0;
-        let usage_stats = read_usage_stats(task.id)?;
-        if let Some(stats) = usage_stats.get(&(command.pid as usize)) {
-            cpu_usage = (stats.cpu_usage * 100.0).round() / 100.0;
-        }
-        // Get memory stats
-        let mut process_headers = ProcessHeaders {
-            pid: command.pid.to_string(),
-            memory: get_process_memory(&(command.pid as usize)),
-            cpu: format!("{}%", cpu_usage),
-            runtime: get_readable_runtime(
-                get_process_runtime(proc_stats[21].parse().unwrap()) as u64
-            ),
-            status: color_string(OK_GREEN, "Running").to_string()
-        };
+        let mut process_headers = process_headers_opt.unwrap();
         let process_tree = get_all_processes(command.pid as usize);
 
         let mut all_processes = vec![];
@@ -105,32 +91,26 @@ pub fn setup_table(table: &mut TableManager, parsed_args: &ParsedArgs) -> Result
                     if !proc_exists(*child_process_id as i32) {
                         continue;
                     }
-                    let child_proc_stats = get_process_stats(*child_process_id);
-                    let mut child_cpu_usage = 0.0;
-                    let child_usage_stats = read_usage_stats(task.id)?;
-                    if let Some(stats) = child_usage_stats.get(child_process_id) {
-                        child_cpu_usage = (stats.cpu_usage * 100.0).round() / 100.0;
+                    if let Some(child_process_headers) = get_process_headers(command.pid as usize, command.starttime, &task, false) {
+                        main_headers.command.push_str(
+                            &format!("\n {}", get_proc_comm(*child_process_id as u32)?)
+                        );
+                        process_headers.pid.push_str(
+                            &format!("\n{}", child_process_headers.pid)
+                        );
+                        process_headers.memory.push_str(
+                            &format!("\n{}", child_process_headers.memory)
+                        );
+                        process_headers.cpu.push_str(
+                            &child_process_headers.cpu
+                        );
+                        process_headers.runtime.push_str(
+                            &format!("\n{}", child_process_headers.runtime)
+                        );
+                        process_headers.status.push_str(
+                            &format!("\n{}", color_string(OK_GREEN, "Running"))
+                        );
                     }
-                    main_headers.command.push_str(
-                        &format!("\n {}", get_proc_comm(*child_process_id as u32)?)
-                    );
-                    process_headers.pid.push_str(
-                        &format!("\n{}", child_process_id.to_string())
-                    );
-                    process_headers.memory.push_str(
-                        &format!("\n{}", get_process_memory(child_process_id))
-                    );
-                    process_headers.cpu.push_str(
-                        &format!("\n{}%", child_cpu_usage)
-                    );
-                    process_headers.runtime.push_str(
-                        &format!("\n{}", get_readable_runtime(
-                            get_process_runtime(child_proc_stats[21].parse().unwrap()) as u64
-                        ))
-                    );
-                    process_headers.status.push_str(
-                        &format!("\n{}", color_string(OK_GREEN, "Running"))
-                    );
                 }
             } else {
                 main_headers.command.push_str(
@@ -144,3 +124,33 @@ pub fn setup_table(table: &mut TableManager, parsed_args: &ParsedArgs) -> Result
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
+fn linux_get_process_headers(pid: usize, starttime: u32, task: &Task, is_main_process: bool) -> Option<ProcessHeaders> {
+    let proc_stats = get_process_stats(pid as usize);
+    if is_main_process && (proc_stats.len() == 0 || starttime != proc_stats[21].parse().unwrap()) {
+        return None;
+    }
+    let mut cpu_usage = 0.0;
+    let usage_stats = match read_usage_stats(task.id) {
+        Ok(val) => val,
+        Err(_) => return None
+    };
+    if let Some(stats) = usage_stats.get(&(pid as usize)) {
+        cpu_usage = (stats.cpu_usage * 100.0).round() / 100.0;
+    }
+    // Get memory stats
+    Some(ProcessHeaders {
+        pid: pid.to_string(),
+        memory: get_process_memory(&(pid as usize)),
+        cpu: format!("{}%", cpu_usage),
+        runtime: get_readable_runtime(
+            get_process_runtime(proc_stats[21].parse().unwrap()) as u64
+        ),
+        status: color_string(OK_GREEN, "Running").to_string()
+    })
+}
+
+fn get_process_headers(pid: usize, starttime: u32, task: &Task, is_main_process: bool) -> Option<ProcessHeaders> {
+    #[cfg(target_os = "linux")]
+    return linux_get_process_headers(pid, starttime, task, is_main_process);
+}
