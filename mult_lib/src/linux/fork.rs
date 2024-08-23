@@ -45,6 +45,8 @@ macro_rules! spawn_logger {
     }};
 }
 
+const SUPPORTED_SHELLS: [&str; 3] = ["/sh", "/bash", "/zsh"];
+
 pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), MultErrorTuple> {
     let process_id;
     let sid;
@@ -124,8 +126,15 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
 
 fn run_command(command: &str, process_dir: &Path) -> Result<Child, MultErrorTuple> {
     let shell_path = match env::var("SHELL") {
-        Ok(val) => val,
-        Err(_) => return Err((MultError::OSNotSupported, None)),
+        Ok(val) => {
+            if SUPPORTED_SHELLS
+                .into_iter().find(|shell_name| val.ends_with(shell_name)).is_some() {
+                val
+            } else {
+                "/bin/bash".to_string()
+            }
+        },
+        Err(_) => return Err((MultError::OSNotSupported, None))
     };
     let mut child = Command::new(shell_path)
         .args(["-ic", &command])
