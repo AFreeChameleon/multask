@@ -129,6 +129,37 @@ pub fn setup_table(
     Ok(())
 }
 
+fn get_process_headers(pid: usize, starttime: u32, task: &Task, is_main_process: bool) -> Option<ProcessHeaders> {
+    #[cfg(target_os = "linux")]
+    return linux_get_process_headers(pid, starttime, task, is_main_process);
+    #[cfg(target_os = "windows")]
+    return win_get_process_headers(pid, starttime, task, is_main_process);
+    None
+}
+
+#[cfg(target_os = "windows")]
+fn win_get_process_headers(pid: usize, starttime: u32, task: &Task, is_main_process: bool) -> Option<ProcessHeaders> {
+    use windows_sys::Win32::{Storage::FileSystem::READ_CONTROL, System::{JobObjects::{IsProcessInJob, OpenJobObjectA}, Threading::OpenProcess}};
+
+    // Check if job object exists already
+    let job = unsafe { OpenJobObjectA(
+        0x1F001F, // JOB_OBJECT_ALL_ACCESS
+        0,
+        format!("mult-{}", task.id).as_ptr(),
+    ) };
+    let process = unsafe { OpenProcess(READ_CONTROL, 1, pid as u32) };
+    if process.is_null() {
+        return None;
+    }
+    let mut is_process_in_job = 0;
+    unsafe { IsProcessInJob(process, job, &mut is_process_in_job) };
+    if is_process_in_job == 0 {
+        return None
+    }
+
+    None
+}
+
 #[cfg(target_os = "linux")]
 fn linux_get_process_headers(pid: usize, starttime: u32, task: &Task, is_main_process: bool) -> Option<ProcessHeaders> {
     let proc_stats = get_process_stats(pid as usize);
@@ -153,10 +184,4 @@ fn linux_get_process_headers(pid: usize, starttime: u32, task: &Task, is_main_pr
         ),
         status: color_string(OK_GREEN, "Running").to_string()
     })
-}
-
-fn get_process_headers(pid: usize, starttime: u32, task: &Task, is_main_process: bool) -> Option<ProcessHeaders> {
-    #[cfg(target_os = "linux")]
-    return linux_get_process_headers(pid, starttime, task, is_main_process);
-    None
 }

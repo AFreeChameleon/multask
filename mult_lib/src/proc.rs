@@ -15,6 +15,10 @@ use crate::linux::proc::{
     linux_get_proc_name, linux_get_process_memory, linux_get_process_runtime,
     linux_get_process_stats, linux_proc_exists,
 };
+#[cfg(target_family = "windows")]
+use crate::windows::proc::{
+    win_get_process_stats
+};
 use crate::tree::compress_tree;
 use crate::{
     error::{MultError, MultErrorTuple},
@@ -135,6 +139,8 @@ pub fn get_process_starttime(pid: usize) -> f64 {
 pub fn get_process_stats(pid: usize) -> Vec<String> {
     #[cfg(target_os = "linux")]
     return linux_get_process_stats(pid);
+    #[cfg(target_os = "windows")]
+    return win_get_process_stats(pid);
     return Vec::new();
 }
 

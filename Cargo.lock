@@ -302,6 +302,7 @@ dependencies = [
  "prettytable",
  "sysinfo",
  "term",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
