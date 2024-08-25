@@ -1,8 +1,8 @@
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TreeNode {
     pub pid: usize,
-    pub utime: u32,
-    pub stime: u32,
+    pub utime: u64,
+    pub stime: u64,
     pub children: Vec<TreeNode>,
 }
 

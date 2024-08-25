@@ -22,6 +22,7 @@ use mult_lib::{
         get_all_processes, get_proc_name, get_process_stats, linux_get_cpu_stats, proc_exists,
         save_task_processes, save_usage_stats, UsageStats,
     },
+    linux::proc::{linux_get_all_processes},
     tree::{search_tree, TreeNode},
 };
 
@@ -94,7 +95,7 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
     let mut cpu_time_total;
     loop {
         // Get usage metrics
-        let process_tree = get_all_processes(child.id() as usize);
+        let process_tree = linux_get_all_processes(child.id() as usize);
         save_task_processes(&files.process_dir, &process_tree);
         cpu_time_total = linux_get_cpu_time_total(linux_get_cpu_stats());
 

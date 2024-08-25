@@ -111,8 +111,8 @@ pub fn get_all_processes(pid: usize) -> TreeNode {
     return linux_get_all_processes(pid);
     return TreeNode {
         pid: usize::MIN,
-        utime: u32::MIN,
-        stime: u32::MIN,
+        utime: u64::MIN,
+        stime: u64::MIN,
         children: Vec::new(),
     };
 }

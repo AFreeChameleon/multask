@@ -1,12 +1,7 @@
 #![cfg(target_family = "windows")]
 
-use crate::{
-    command::MemStats,
-    error::{print_error, MultError, MultErrorTuple},
-    task::Files,
-};
 use home;
-use std::{env, ffi::c_void, path::Path, process::Command};
+use std::{env, ffi::c_void, path::Path, process::Command, thread};
 use windows_sys::Win32::{
     Foundation::CloseHandle,
     System::{
@@ -14,11 +9,15 @@ use windows_sys::Win32::{
             AssignProcessToJobObject, CreateJobObjectA, JobObjectCpuRateControlInformation, JobObjectExtendedLimitInformation, JobObjectNotificationLimitInformation, OpenJobObjectA, SetInformationJobObject, TerminateJobObject, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOBOBJECT_NOTIFICATION_LIMIT_INFORMATION, JOB_OBJECT_CPU_RATE_CONTROL_ENABLE, JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP, JOB_OBJECT_CPU_RATE_CONTROL_MIN_MAX_RATE
         },
         Threading::{
-            CreateProcessA, WaitForSingleObject, CREATE_NO_WINDOW, INFINITE, PROCESS_INFORMATION,
-            STARTUPINFOA,
+            CreateProcessA, GetProcessId, WaitForSingleObject, CREATE_NO_WINDOW, INFINITE, PROCESS_INFORMATION, STARTUPINFOA
         },
     },
 };
+use crate::{
+    command::MemStats, error::{print_error, MultError, MultErrorTuple}, proc::{get_all_processes, save_task_processes}, task::Files
+};
+
+use super::proc::win_get_all_processes;
 
 pub fn run_daemon(
     files: Files,
@@ -97,6 +96,38 @@ pub fn run_daemon(
                 );
             }
             AssignProcessToJobObject(job, process_info.hProcess);
+            let pid = GetProcessId(process_info.hProcess);
+            thread::spawn(move || {
+                loop {
+                    // Get usage metrics
+                    let process_tree = win_get_all_processes(job, pid);
+                    save_task_processes(&files.process_dir, &process_tree);
+                    cpu_time_total = linux_get_cpu_time_total(linux_get_cpu_stats());
+            
+                    // Sleep for measuring usage over time
+                    thread::sleep(Duration::from_secs(1));
+            
+                    // Check for any alive processes
+                    let usage_stats = Arc::new(Mutex::new(HashMap::new()));
+                    let keep_running = Arc::new(Mutex::new(true));
+                    search_tree(&process_tree, &|node: &TreeNode| {
+                        if proc_exists(node.pid as i32) {
+                            *keep_running.lock().unwrap() = true;
+                            // Set cpu usage down here
+                            usage_stats.lock().unwrap().insert(
+                                node.pid,
+                                UsageStats {
+                                    cpu_usage: get_cpu_usage(node.pid, node.clone(), cpu_time_total),
+                                },
+                            );
+                        }
+                    });
+                    if !*keep_running.lock().unwrap() {
+                        break;
+                    }
+                    save_usage_stats(&files.process_dir, &usage_stats.lock().unwrap());
+                }
+            });
             WaitForSingleObject(process_info.hProcess, INFINITE);
             CloseHandle(process_info.hProcess);
             CloseHandle(process_info.hThread);

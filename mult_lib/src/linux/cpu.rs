@@ -5,6 +5,7 @@ use libc;
 
 use crate::{
     proc::{get_all_processes, linux_get_cpu_stats, linux_get_process_stats},
+    linux::proc::{linux_get_all_processes},
     tree::{search_tree, TreeNode},
 };
 
@@ -15,7 +16,7 @@ pub fn linux_split_limit_cpu(pid: i32, limit: f32) {
     let idle_time = MILS_IN_SECOND - running_time;
     let mut running = true;
     loop {
-        let process_tree = get_all_processes(pid as usize);
+        let process_tree = linux_get_all_processes(pid as usize);
         let sig = if running {
             libc::SIGSTOP
         } else {
