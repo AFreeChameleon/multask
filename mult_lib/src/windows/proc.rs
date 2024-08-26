@@ -23,6 +23,8 @@ pub fn win_get_all_processes(job: &mut c_void, pid: u32) -> TreeNode {
         ptr::null_mut()
     ) } == 0 {
         // Job does not exist
+        print_error(MultError::ProcessNotExists, None);
+        return TreeNode::empty();
     }
     let mut stats = win_get_process_stats(pid as usize);
     let mut head_node = TreeNode {

@@ -26,20 +26,16 @@ pub fn run_daemon(
 ) -> Result<(), MultErrorTuple> {
     if let Ok(exe_dir) = env::current_exe() {
         let spawn_dir = Path::new(&exe_dir).parent().unwrap();
-        let current_dir = match env::current_dir() {
-            Ok(val) => val,
-            Err(_) => home::home_dir().unwrap(),
-        };
-        let startup_info = STARTUPINFOA::empty();
         let mut command_line = format!(
-            "{} {} \"{}\"",
+            "{} {} \"{}\" {}",
             spawn_dir.join("mult_spawn.exe").display().to_string(),
             files.process_dir.display().to_string(),
-            command
+            command,
+            task_id
         );
         unsafe {
-            let mut process_info = mem::zeroed();
-            let mut si: STARTUPINFOEXA = unsafe { std::mem::zeroed() };
+            let mut process_info = std::mem::zeroed();
+            let mut si: STARTUPINFOEXA = std::mem::zeroed();
             si.StartupInfo.cb = std::mem::size_of::<STARTUPINFOEXA>() as u32;
             if CreateProcessA(
                 ptr::null(),
@@ -63,7 +59,10 @@ pub fn run_daemon(
                 format!("mult-{}", task_id).as_ptr(),
             );
             if job.is_null() {
-                job = CreateJobObjectA(std::mem::zeroed(), format!("mult-{}", task_id).as_ptr());
+                job = CreateJobObjectA(
+                    std::mem::zeroed(),
+                    format!("mult-{}", task_id).as_ptr()
+                );
             }
             if flags.memory_limit != -1 {
                 let job_limit_info = JOBOBJECT_NOTIFICATION_LIMIT_INFORMATION {
@@ -98,45 +97,6 @@ pub fn run_daemon(
                 );
             }
             AssignProcessToJobObject(job, process_info.hProcess);
-            let pid = GetProcessId(process_info.hProcess);
-            let job_handle = &mut *job;
-            thread::spawn(move || {
-                let mut cpu_time_total: FILETIME = unsafe { mem::zeroed() };
-                loop {
-                    // Get usage metrics
-                    let process_tree = win_get_all_processes(job_handle, pid);
-                    save_task_processes(&files.process_dir, &process_tree);
-                    unsafe { GetSystemTimeAsFileTime(&mut cpu_time_total) };
-            
-                    // Sleep for measuring usage over time
-                    thread::sleep(Duration::from_secs(1));
-            
-                    // Check for any alive processes
-                    let usage_stats = Arc::new(Mutex::new(HashMap::new()));
-                    let keep_running = Arc::new(Mutex::new(true));
-                    search_tree(&process_tree, &|node: &TreeNode| {
-                        *keep_running.lock().unwrap() = true;
-                        // Set cpu usage down here
-                        usage_stats.lock().unwrap().insert(
-                            node.pid,
-                            UsageStats {
-                                cpu_usage: win_get_cpu_usage(
-                                    node.pid,
-                                    combine_filetime(&cpu_time_total),
-                                    node.clone()
-                                ) as f32,
-                            },
-                        );
-                    });
-                    if !*keep_running.lock().unwrap() {
-                        break;
-                    }
-                    save_usage_stats(&files.process_dir, &usage_stats.lock().unwrap());
-                }
-            });
-            WaitForSingleObject(process_info.hProcess, INFINITE);
-            CloseHandle(process_info.hProcess);
-            CloseHandle(process_info.hThread);
         }
     } else {
         return Err((MultError::ExeDirNotFound, None));
