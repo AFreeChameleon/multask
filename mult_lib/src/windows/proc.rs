@@ -13,10 +13,10 @@ fn convert_filetime64_to_unix_epoch(filetime64: u64) -> u64 {
     return (filetime64 / 10000000) - 11644473600;
 }
 
-pub fn win_get_all_processes(job: u32, pid: u32) -> TreeNode {
+pub fn win_get_all_processes(job: &mut c_void, pid: u32) -> TreeNode {
     let mut result: JOBOBJECT_BASIC_PROCESS_ID_LIST = JOBOBJECT_BASIC_PROCESS_ID_LIST::empty();
     if unsafe { QueryInformationJobObject(
-        job as *mut c_void,
+        job,
         3, // JobObjectBasicProcessIdList
         &mut result as *mut JOBOBJECT_BASIC_PROCESS_ID_LIST as *mut c_void,
         std::mem::size_of::<JOBOBJECT_BASIC_PROCESS_ID_LIST>() as u32,

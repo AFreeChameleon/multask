@@ -96,7 +96,7 @@ pub fn run_daemon(
             }
             AssignProcessToJobObject(job, process_info.hProcess);
             let pid = GetProcessId(process_info.hProcess);
-            let job_handle: u32 = job as u32;
+            let job_handle = &mut *job;
             thread::spawn(move || {
                 let mut cpu_time_total: FILETIME = unsafe { mem::zeroed() };
                 loop {
