@@ -1,9 +1,9 @@
 #![cfg(target_family = "windows")]
 use std::{ffi::c_longlong, mem::size_of, os::raw::c_void, ptr, time::{SystemTime, UNIX_EPOCH}};
 
-use windows_sys::Win32::{Foundation::FILETIME, Storage::FileSystem::READ_CONTROL, System::{JobObjects::{QueryInformationJobObject, JOBOBJECTINFOCLASS, JOBOBJECT_BASIC_PROCESS_ID_LIST}, Threading::{GetProcessTimes, OpenProcess}}};
+use windows_sys::Win32::{Foundation::{GetLastError, FILETIME}, Storage::FileSystem::READ_CONTROL, System::{JobObjects::{QueryInformationJobObject, JOBOBJECTINFOCLASS, JOBOBJECT_BASIC_PROCESS_ID_LIST}, Threading::{GetProcessTimes, OpenProcess, PROCESS_ALL_ACCESS}}};
 
-use crate::tree::TreeNode;
+use crate::{error::{print_error, MultError}, tree::TreeNode};
 
 pub fn combine_filetime(ft: &FILETIME) -> u64 {
     return ((ft.dwHighDateTime as u64) << 32) | ft.dwLowDateTime as u64;
@@ -44,7 +44,7 @@ pub fn win_get_all_processes(job: &mut c_void, pid: u32) -> TreeNode {
 }
 
 pub fn win_get_process_stats(pid: usize) -> Vec<String> {
-    let process = unsafe { OpenProcess(READ_CONTROL, 1, pid as u32) };
+    let process = unsafe { OpenProcess(PROCESS_ALL_ACCESS, 1, pid as u32) };
     let mut lp_creation_time = FILETIME::empty();
     let mut lp_exit_time = FILETIME::empty();
     let mut lp_kernel_time = FILETIME::empty();
@@ -57,6 +57,8 @@ pub fn win_get_process_stats(pid: usize) -> Vec<String> {
         &mut lp_user_time
     ) } == 0 {
         // Unable to get times
+        print_error(MultError::FailedToReadProcessStats, None);
+        print_error(MultError::WindowsError, unsafe { Some(GetLastError().to_string()) });
         return vec![];
     }
     // Time the process was started

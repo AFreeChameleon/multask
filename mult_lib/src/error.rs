@@ -25,6 +25,9 @@ pub enum MultError {
     CannotReadOutputFile,
     OSNotSupported,
     CustomError,
+    FailedToReadProcessStats,
+    // Windows only
+    WindowsError,
     // Linux only
     ForkFailed,
     SetSidFailed,
@@ -75,6 +78,8 @@ pub fn print_error(error: MultError, descriptor: Option<String>) {
         }
         MultError::CustomError => format!("{}", descriptor.unwrap()),
         MultError::CgroupsMissing => "Cgroups is missing.".to_string(),
+        MultError::FailedToReadProcessStats => "Failed to read the process' stats".to_string(),
+        MultError::WindowsError => format!("Windows error code: {}", descriptor.unwrap())
     };
     println!("{} {}", color_string(ERR_RED, "Error:"), message);
 }

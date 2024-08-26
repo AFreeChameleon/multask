@@ -1,17 +1,17 @@
 #![cfg(target_family = "windows")]
 
 use home;
-use std::{collections::HashMap, env, ffi::c_void, mem, path::Path, process::Command, sync::{Arc, Mutex}, thread, time::Duration};
-use windows_sys::Win32::{
-    Foundation::{CloseHandle, FILETIME},
+use std::{collections::HashMap, env, ffi::c_void, mem, path::Path, process::Command, ptr, sync::{Arc, Mutex}, thread, time::Duration};
+use windows_sys::{core::{PSTR, PWSTR}, Win32::{
+    Foundation::{CloseHandle, GetLastError, FILETIME},
     System::{
         JobObjects::{
             AssignProcessToJobObject, CreateJobObjectA, JobObjectCpuRateControlInformation, JobObjectExtendedLimitInformation, JobObjectNotificationLimitInformation, OpenJobObjectA, SetInformationJobObject, TerminateJobObject, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOBOBJECT_NOTIFICATION_LIMIT_INFORMATION, JOB_OBJECT_CPU_RATE_CONTROL_ENABLE, JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP, JOB_OBJECT_CPU_RATE_CONTROL_MIN_MAX_RATE
         }, SystemInformation::GetSystemTimeAsFileTime, Threading::{
-            CreateProcessA, GetProcessId, WaitForSingleObject, CREATE_NO_WINDOW, INFINITE, PROCESS_INFORMATION, STARTUPINFOA
+            CreateProcessA, CreateProcessW, GetProcessId, WaitForSingleObject, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW, DETACHED_PROCESS, INFINITE, PROCESS_INFORMATION, STARTUPINFOA, STARTUPINFOEXW
         }
     },
-};
+}};
 use crate::{
     command::MemStats, error::{print_error, MultError, MultErrorTuple}, proc::{get_all_processes, proc_exists, save_task_processes, save_usage_stats, UsageStats}, task::Files, tree::{search_tree, TreeNode}
 };
@@ -31,26 +31,29 @@ pub fn run_daemon(
             Err(_) => home::home_dir().unwrap(),
         };
         let startup_info = STARTUPINFOA::empty();
-        let mut process_info = PROCESS_INFORMATION::empty();
+        let mut command_line: Vec<u16> = format!(
+            "{} {} {}",
+            spawn_dir.join("mult_spawn.exe").display().to_string(),
+            files.process_dir.display().to_string(),
+            command
+        ).encode_utf16().collect();
         unsafe {
-            if CreateProcessA(
-                std::mem::zeroed(),
-                format!(
-                    "{} {} {}",
-                    spawn_dir.join("mult_spawn.exe").display().to_string(),
-                    files.process_dir.display().to_string(),
-                    command
-                )
-                .as_mut_ptr(),
-                std::mem::zeroed(),
-                std::mem::zeroed(),
-                std::mem::zeroed(),
-                CREATE_NO_WINDOW,
-                std::mem::zeroed(),
-                current_dir.display().to_string().as_ptr(),
-                &startup_info,
+            let mut process_info = mem::zeroed();
+            let mut si: STARTUPINFOEXW = unsafe { std::mem::zeroed() };
+            si.StartupInfo.cb = std::mem::size_of::<STARTUPINFOEXW>() as u32;
+            if CreateProcessW(
+                ptr::null(),
+                command_line.as_mut_ptr(),
+                ptr::null(),
+                ptr::null(),
+                0,
+                CREATE_NO_WINDOW | DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
+                ptr::null(),
+                ptr::null(),
+                &si.StartupInfo,
                 &mut process_info,
             ) == 0 {
+                print_error(MultError::WindowsError, Some(GetLastError().to_string()));
                 return Err((MultError::ExeDirNotFound, None))
             }
             // Check if job object exists already
