@@ -1,23 +1,22 @@
 #![cfg(target_family = "windows")]
 
 use home;
-use std::{env, ffi::c_void, path::Path, process::Command, thread};
+use std::{collections::HashMap, env, ffi::c_void, mem, path::Path, process::Command, sync::{Arc, Mutex}, thread, time::Duration};
 use windows_sys::Win32::{
-    Foundation::CloseHandle,
+    Foundation::{CloseHandle, FILETIME},
     System::{
         JobObjects::{
             AssignProcessToJobObject, CreateJobObjectA, JobObjectCpuRateControlInformation, JobObjectExtendedLimitInformation, JobObjectNotificationLimitInformation, OpenJobObjectA, SetInformationJobObject, TerminateJobObject, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOBOBJECT_NOTIFICATION_LIMIT_INFORMATION, JOB_OBJECT_CPU_RATE_CONTROL_ENABLE, JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP, JOB_OBJECT_CPU_RATE_CONTROL_MIN_MAX_RATE
-        },
-        Threading::{
+        }, SystemInformation::GetSystemTimeAsFileTime, Threading::{
             CreateProcessA, GetProcessId, WaitForSingleObject, CREATE_NO_WINDOW, INFINITE, PROCESS_INFORMATION, STARTUPINFOA
-        },
+        }
     },
 };
 use crate::{
-    command::MemStats, error::{print_error, MultError, MultErrorTuple}, proc::{get_all_processes, save_task_processes}, task::Files
+    command::MemStats, error::{print_error, MultError, MultErrorTuple}, proc::{get_all_processes, proc_exists, save_task_processes, save_usage_stats, UsageStats}, task::Files, tree::{search_tree, TreeNode}
 };
 
-use super::proc::win_get_all_processes;
+use super::{cpu::win_get_cpu_usage, proc::{combine_filetime, win_get_all_processes}};
 
 pub fn run_daemon(
     files: Files,
@@ -97,12 +96,14 @@ pub fn run_daemon(
             }
             AssignProcessToJobObject(job, process_info.hProcess);
             let pid = GetProcessId(process_info.hProcess);
+            let job_handle: u32 = job as u32;
             thread::spawn(move || {
+                let mut cpu_time_total: FILETIME = unsafe { mem::zeroed() };
                 loop {
                     // Get usage metrics
-                    let process_tree = win_get_all_processes(job, pid);
+                    let process_tree = win_get_all_processes(job_handle, pid);
                     save_task_processes(&files.process_dir, &process_tree);
-                    cpu_time_total = linux_get_cpu_time_total(linux_get_cpu_stats());
+                    unsafe { GetSystemTimeAsFileTime(&mut cpu_time_total) };
             
                     // Sleep for measuring usage over time
                     thread::sleep(Duration::from_secs(1));
@@ -111,16 +112,18 @@ pub fn run_daemon(
                     let usage_stats = Arc::new(Mutex::new(HashMap::new()));
                     let keep_running = Arc::new(Mutex::new(true));
                     search_tree(&process_tree, &|node: &TreeNode| {
-                        if proc_exists(node.pid as i32) {
-                            *keep_running.lock().unwrap() = true;
-                            // Set cpu usage down here
-                            usage_stats.lock().unwrap().insert(
-                                node.pid,
-                                UsageStats {
-                                    cpu_usage: get_cpu_usage(node.pid, node.clone(), cpu_time_total),
-                                },
-                            );
-                        }
+                        *keep_running.lock().unwrap() = true;
+                        // Set cpu usage down here
+                        usage_stats.lock().unwrap().insert(
+                            node.pid,
+                            UsageStats {
+                                cpu_usage: win_get_cpu_usage(
+                                    node.pid,
+                                    combine_filetime(&cpu_time_total),
+                                    node.clone()
+                                ) as f32,
+                            },
+                        );
                     });
                     if !*keep_running.lock().unwrap() {
                         break;

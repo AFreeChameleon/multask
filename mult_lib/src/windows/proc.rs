@@ -5,7 +5,7 @@ use windows_sys::Win32::{Foundation::FILETIME, Storage::FileSystem::READ_CONTROL
 
 use crate::tree::TreeNode;
 
-fn combine_filetime(ft: &FILETIME) -> u64 {
+pub fn combine_filetime(ft: &FILETIME) -> u64 {
     return ((ft.dwHighDateTime as u64) << 32) | ft.dwLowDateTime as u64;
 }
 
@@ -13,10 +13,10 @@ fn convert_filetime64_to_unix_epoch(filetime64: u64) -> u64 {
     return (filetime64 / 10000000) - 11644473600;
 }
 
-pub fn win_get_all_processes(job: *mut c_void, pid: u32) -> TreeNode {
+pub fn win_get_all_processes(job: u32, pid: u32) -> TreeNode {
     let mut result: JOBOBJECT_BASIC_PROCESS_ID_LIST = JOBOBJECT_BASIC_PROCESS_ID_LIST::empty();
     if unsafe { QueryInformationJobObject(
-        job,
+        job as *mut c_void,
         3, // JobObjectBasicProcessIdList
         &mut result as *mut JOBOBJECT_BASIC_PROCESS_ID_LIST as *mut c_void,
         std::mem::size_of::<JOBOBJECT_BASIC_PROCESS_ID_LIST>() as u32,
@@ -57,6 +57,7 @@ pub fn win_get_process_stats(pid: usize) -> Vec<String> {
         &mut lp_user_time
     ) } == 0 {
         // Unable to get times
+        return vec![];
     }
     // Time the process was started
     let starttime = convert_filetime64_to_unix_epoch(combine_filetime(&lp_creation_time));
