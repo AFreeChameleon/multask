@@ -15,6 +15,7 @@ use crate::linux::proc::{
     linux_get_proc_name, linux_get_process_memory, linux_get_process_runtime,
     linux_get_process_stats, linux_proc_exists,
 };
+use crate::windows::proc::win_get_all_processes;
 #[cfg(target_family = "windows")]
 use crate::windows::proc::{
     win_get_process_stats
@@ -109,12 +110,7 @@ pub fn proc_exists(pid: i32) -> bool {
 pub fn get_all_processes(pid: usize) -> TreeNode {
     #[cfg(target_os = "linux")]
     return linux_get_all_processes(pid);
-    return TreeNode {
-        pid: usize::MIN,
-        utime: u64::MIN,
-        stime: u64::MIN,
-        children: Vec::new(),
-    };
+    return TreeNode::empty();
 }
 
 pub fn get_process_runtime(starttime: u32) -> f64 {

@@ -5,7 +5,9 @@ use mult_lib::proc::{
     get_readable_runtime, proc_exists, read_usage_stats,
 };
 use mult_lib::tree::compress_tree;
+use mult_lib::windows::proc::win_get_all_processes;
 use prettytable::Table;
+use windows_sys::Win32::System::JobObjects::OpenJobObjectA;
 use std::{env, thread, time::Duration};
 
 use mult_lib::command::CommandManager;
@@ -80,10 +82,19 @@ pub fn setup_table(
         // Get memory stats
         let process_headers_opt = get_process_headers(command.pid as usize, command.starttime, &task, true);
         if process_headers_opt.is_none() {
+            table.insert_row(main_headers, None);
             continue;
         }
         let mut process_headers = process_headers_opt.unwrap();
-        let process_tree = get_all_processes(command.pid as usize);
+        #[cfg(target_os = "linux")]
+        let process_tree = linux_get_all_processes(command.pid as usize);
+        #[cfg(target_os = "windows")]
+        let process_tree = win_get_all_processes(unsafe { &mut *OpenJobObjectA(
+            0x1F001F, // JOB_OBJECT_ALL_ACCESS
+            0,
+            format!("mult-{}", task.id).as_ptr(),
+        ) }, command.pid);
+        
 
         let mut all_processes = vec![];
         compress_tree(&process_tree, &mut all_processes);
@@ -149,11 +160,13 @@ fn win_get_process_headers(pid: usize, starttime: u32, task: &Task, is_main_proc
     ) };
     let process = unsafe { OpenProcess(READ_CONTROL, 1, pid as u32) };
     if process.is_null() {
+        println!("NULL");
         return None;
     }
     let mut is_process_in_job = 0;
     unsafe { IsProcessInJob(process, job, &mut is_process_in_job) };
     if is_process_in_job == 0 {
+        println!("NOT IN JOB");
         return None
     }
 

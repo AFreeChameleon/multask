@@ -19,3 +19,14 @@ pub fn compress_tree(tree: &TreeNode, processes: &mut Vec<usize>) {
         compress_tree(child_node, processes);
     }
 }
+
+impl TreeNode {
+    pub fn empty() -> TreeNode {
+        TreeNode {
+            pid: usize::MIN,
+            utime: u64::MIN,
+            stime: u64::MIN,
+            children: Vec::new(),
+        }
+    }
+}

@@ -8,7 +8,7 @@ use windows_sys::{core::{PSTR, PWSTR}, Win32::{
         JobObjects::{
             AssignProcessToJobObject, CreateJobObjectA, JobObjectCpuRateControlInformation, JobObjectExtendedLimitInformation, JobObjectNotificationLimitInformation, OpenJobObjectA, SetInformationJobObject, TerminateJobObject, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOBOBJECT_NOTIFICATION_LIMIT_INFORMATION, JOB_OBJECT_CPU_RATE_CONTROL_ENABLE, JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP, JOB_OBJECT_CPU_RATE_CONTROL_MIN_MAX_RATE
         }, SystemInformation::GetSystemTimeAsFileTime, Threading::{
-            CreateProcessA, CreateProcessW, GetProcessId, WaitForSingleObject, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW, DETACHED_PROCESS, INFINITE, PROCESS_INFORMATION, STARTUPINFOA, STARTUPINFOEXW
+            CreateProcessA, CreateProcessW, GetProcessId, WaitForSingleObject, CREATE_NEW_CONSOLE, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW, DETACHED_PROCESS, INFINITE, PROCESS_INFORMATION, STARTUPINFOA, STARTUPINFOEXA, STARTUPINFOEXW
         }
     },
 }};
@@ -31,23 +31,23 @@ pub fn run_daemon(
             Err(_) => home::home_dir().unwrap(),
         };
         let startup_info = STARTUPINFOA::empty();
-        let mut command_line: Vec<u16> = format!(
-            "{} {} {}",
+        let mut command_line = format!(
+            "{} {} \"{}\"",
             spawn_dir.join("mult_spawn.exe").display().to_string(),
             files.process_dir.display().to_string(),
             command
-        ).encode_utf16().collect();
+        );
         unsafe {
             let mut process_info = mem::zeroed();
-            let mut si: STARTUPINFOEXW = unsafe { std::mem::zeroed() };
-            si.StartupInfo.cb = std::mem::size_of::<STARTUPINFOEXW>() as u32;
-            if CreateProcessW(
+            let mut si: STARTUPINFOEXA = unsafe { std::mem::zeroed() };
+            si.StartupInfo.cb = std::mem::size_of::<STARTUPINFOEXA>() as u32;
+            if CreateProcessA(
                 ptr::null(),
                 command_line.as_mut_ptr(),
                 ptr::null(),
                 ptr::null(),
                 0,
-                CREATE_NO_WINDOW | DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
+                CREATE_NO_WINDOW,
                 ptr::null(),
                 ptr::null(),
                 &si.StartupInfo,

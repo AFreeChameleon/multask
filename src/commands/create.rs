@@ -28,7 +28,7 @@ pub fn run() -> Result<(), MultErrorTuple> {
         tasks.push(Task { id: new_task_id });
         print_info("Running command...");
         let files = TaskManager::generate_task_files(new_task_id, &tasks);
-
+        println!("{}", arg);
         #[cfg(target_family = "unix")]
         fork::run_daemon(files, arg.to_string(), flags.clone())?;
         #[cfg(target_family = "windows")]
