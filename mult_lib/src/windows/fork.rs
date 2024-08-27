@@ -3,10 +3,10 @@
 use home;
 use std::{collections::HashMap, env, ffi::{c_void, CString}, mem, path::Path, process::Command, ptr, sync::{Arc, Mutex}, thread, time::Duration};
 use windows_sys::{core::{PSTR, PWSTR}, Win32::{
-    Foundation::{CloseHandle, GetLastError, FILETIME}, Security::{self, AllocateAndInitializeSid, Authorization::{SetEntriesInAclA, EXPLICIT_ACCESS_A, SET_ACCESS, TRUSTEE_A, TRUSTEE_IS_GROUP, TRUSTEE_IS_SID}, InitializeSecurityDescriptor, SetSecurityDescriptorDacl, ACL, NO_INHERITANCE, SECURITY_ATTRIBUTES, SECURITY_DESCRIPTOR, SECURITY_WORLD_SID_AUTHORITY}, Storage::FileSystem::{GetFileInformationByHandleEx, GetFinalPathNameByHandleA, FILE_NAME_INFO, FILE_NAME_NORMALIZED, FILE_STANDARD_INFO}, System::{
+    Foundation::{CloseHandle, GetLastError, ERROR_SUCCESS, FILETIME}, Security::{self, AllocateAndInitializeSid, Authorization::{ConvertSidToStringSidA, SetEntriesInAclA, EXPLICIT_ACCESS_A, NO_MULTIPLE_TRUSTEE, SET_ACCESS, TRUSTEE_A, TRUSTEE_IS_GROUP, TRUSTEE_IS_NAME, TRUSTEE_IS_SID, TRUSTEE_IS_USER, TRUSTEE_IS_WELL_KNOWN_GROUP}, InitializeSecurityDescriptor, SetSecurityDescriptorDacl, ACL, NO_INHERITANCE, PSID, SECURITY_ATTRIBUTES, SECURITY_DESCRIPTOR, SECURITY_WORLD_SID_AUTHORITY}, Storage::FileSystem::{GetFileInformationByHandleEx, GetFinalPathNameByHandleA, FILE_NAME_INFO, FILE_NAME_NORMALIZED, FILE_STANDARD_INFO}, System::{
         JobObjects::{
             AssignProcessToJobObject, CreateJobObjectA, JobObjectCpuRateControlInformation, JobObjectExtendedLimitInformation, JobObjectNotificationLimitInformation, OpenJobObjectA, SetInformationJobObject, TerminateJobObject, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOBOBJECT_NOTIFICATION_LIMIT_INFORMATION, JOB_OBJECT_CPU_RATE_CONTROL_ENABLE, JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP, JOB_OBJECT_CPU_RATE_CONTROL_MIN_MAX_RATE
-        }, SystemInformation::GetSystemTimeAsFileTime, SystemServices::SECURITY_WORLD_RID, Threading::{
+        }, Registry::KEY_ALL_ACCESS, SystemInformation::GetSystemTimeAsFileTime, SystemServices::{SECURITY_DESCRIPTOR_REVISION, SECURITY_WORLD_RID}, Threading::{
             CreateProcessA, CreateProcessW, GetProcessId, WaitForSingleObject, CREATE_NEW_CONSOLE, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW, DETACHED_PROCESS, INFINITE, PROCESS_INFORMATION, STARTUPINFOA, STARTUPINFOEXA, STARTUPINFOEXW
         }
     }
@@ -40,6 +40,94 @@ pub fn run_daemon(
             let mut process_info = std::mem::zeroed();
             let mut si: STARTUPINFOEXA = std::mem::zeroed();
             si.StartupInfo.cb = std::mem::size_of::<STARTUPINFOEXA>() as u32;
+            let lp_name = CString::new(format!("mult-{}", task_id)).unwrap();
+            let find_lp_name = CString::new(format!("mult-{}", task_id)).unwrap();
+            // Check if job object exists already
+            let mut job = OpenJobObjectA(
+                0x0001 | 0x0002, // JOB_OBJECT_ALL_ACCESS
+                0,
+                find_lp_name.as_ptr() as *const u8,
+            );
+            if job.is_null() {
+                let mut p_everyone_sid: Box<PSID> = Box::new(mem::zeroed());
+                let mut ptr_p_everyone_sid = Box::into_raw(p_everyone_sid);
+                let res1 = AllocateAndInitializeSid(
+                    &SECURITY_WORLD_SID_AUTHORITY,
+                    1,
+                    SECURITY_WORLD_RID as u32,
+                    0, 0, 0, 0, 0, 0, 0,
+                    // &mut p_everyone_sid as *mut *mut c_void
+                    ptr_p_everyone_sid
+                );
+                if res1 == 0 {
+                    println!("grr1 {:?} {}", 0, GetLastError());
+                }
+                let mut lp_sec_desc: SECURITY_DESCRIPTOR = mem::zeroed();
+                p_everyone_sid = Box::from_raw(ptr_p_everyone_sid);
+                let ea = [EXPLICIT_ACCESS_A {
+                    grfAccessPermissions: KEY_ALL_ACCESS,
+                    grfAccessMode: SET_ACCESS,
+                    grfInheritance: NO_INHERITANCE,
+                    Trustee: TRUSTEE_A {
+                        TrusteeForm: TRUSTEE_IS_SID,
+                        TrusteeType: TRUSTEE_IS_GROUP,
+                        // ptstrName: &mut *p_everyone_sid as *mut c_void as *mut u8,
+                        ptstrName: *p_everyone_sid as *mut u8,
+                        pMultipleTrustee: ptr::null_mut(),
+                        MultipleTrusteeOperation: NO_MULTIPLE_TRUSTEE,
+                    }
+                }];
+                let mut p_acl: Box<*mut ACL> = Box::new(mem::zeroed());
+                let mut ptr_p_acl = Box::into_raw(p_acl);
+                let res2 = SetEntriesInAclA(
+                    1,
+                    &ea as *const EXPLICIT_ACCESS_A,
+                    ptr::null(),
+                    // &mut p_acl as *mut ACL as *mut *mut ACL
+                    ptr_p_acl
+                );
+                if res2 == ERROR_SUCCESS {
+                    println!("grr2 {} {:?} {}", res2, Box::into_raw(p_everyone_sid) as *mut u8, GetLastError());
+                }
+                let c_void_lp_sec_desc = cast_to_c_void::<SECURITY_DESCRIPTOR>(&mut lp_sec_desc);
+                let res3 = InitializeSecurityDescriptor(
+                    c_void_lp_sec_desc,
+                    SECURITY_DESCRIPTOR_REVISION
+                );
+                if res3 == 0 {
+                    println!("grr3 {}", GetLastError());
+                }
+                p_acl = Box::from_raw(ptr_p_acl);
+                let res4 = SetSecurityDescriptorDacl(
+                    c_void_lp_sec_desc,
+                    1,
+                    *p_acl as *const ACL,
+                    0
+                );
+                if res4 == 0 {
+                    println!("grr4 {} {:?} {:?}", lp_sec_desc.Control, lp_sec_desc.Sbz1, lp_sec_desc.Revision);
+                }
+                let lp_job_attributes = SECURITY_ATTRIBUTES {
+                    nLength: mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
+                    bInheritHandle: 0,
+                    lpSecurityDescriptor: c_void_lp_sec_desc
+                };
+                job = CreateJobObjectA(
+                    &lp_job_attributes as *const SECURITY_ATTRIBUTES,
+                    // ptr::null(),
+                    lp_name.as_ptr() as *const u8,
+                );
+                // let mut fp = String::new();
+                // GetFinalPathNameByHandleA(job, fp.as_mut_ptr(), 1024, FILE_NAME_NORMALIZED);
+                // let mut fileinformationclass: FILE_NAME_INFO = unsafe { mem::zeroed() };
+                // GetFileInformationByHandleEx(
+                //     job,
+                //     2,
+                //     cast_to_c_void::<FILE_NAME_INFO>(&mut fileinformationclass),
+                //     mem::size_of::<FILE_NAME_INFO>() as u32
+                // );
+                println!("{:?} {:?} {} {} {}", job, lp_name.as_ptr() as *const u8, GetLastError(), mem::size_of::<SECURITY_ATTRIBUTES>() as u32, mem::size_of_val(&lp_sec_desc));
+            }
             if CreateProcessA(
                 ptr::null(),
                 command_line.as_mut_ptr(),
@@ -55,73 +143,7 @@ pub fn run_daemon(
                 print_error(MultError::WindowsError, Some(GetLastError().to_string()));
                 return Err((MultError::ExeDirNotFound, None))
             }
-            let lp_name = CString::new(format!("mult-{}", task_id)).unwrap();
-            let find_lp_name = CString::new(format!("mult-{}", task_id)).unwrap();
-            // Check if job object exists already
-            let mut job = OpenJobObjectA(
-                0x0001 | 0x0002, // JOB_OBJECT_ALL_ACCESS
-                0,
-                find_lp_name.as_ptr() as *const u8,
-            );
-            if job.is_null() {
-                let mut p_everyone_sid: *mut c_void = mem::zeroed();
-                AllocateAndInitializeSid(
-                    &SECURITY_WORLD_SID_AUTHORITY,
-                    1,
-                    SECURITY_WORLD_RID as u32,
-                    0, 0, 0, 0, 0, 0, 0,
-                    &mut p_everyone_sid
-                );
-                let mut lp_sec_desc: SECURITY_DESCRIPTOR = unsafe { mem::zeroed() };
-                let ea = EXPLICIT_ACCESS_A {
-                    grfAccessPermissions: 0xF003F, // KEY_ALL_ACCESS
-                    grfAccessMode: SET_ACCESS,
-                    grfInheritance: NO_INHERITANCE,
-                    Trustee: TRUSTEE_A {
-                        TrusteeForm: TRUSTEE_IS_SID,
-                        TrusteeType: TRUSTEE_IS_GROUP,
-                        ptstrName: p_everyone_sid as *mut u8,
-                        pMultipleTrustee: ptr::null_mut(),
-                        MultipleTrusteeOperation: mem::zeroed()
-                    }
-                };
-                let mut p_acl: ACL = mem::zeroed();
-                SetEntriesInAclA(
-                    1,
-                    &ea,
-                    ptr::null(),
-                    &mut (&mut p_acl as *mut ACL) as *mut *mut ACL // This is HIDEOUS
-                );
-                InitializeSecurityDescriptor(
-                    cast_to_c_void::<SECURITY_DESCRIPTOR>(&mut lp_sec_desc),
-                    1u32 // 1u32 is SECURITY_DESCRIPTOR_REVISION
-                );
-                SetSecurityDescriptorDacl(
-                    cast_to_c_void::<SECURITY_DESCRIPTOR>(&mut lp_sec_desc),
-                    1,
-                    &p_acl,
-                    0
-                );
-                let lp_job_attributes = SECURITY_ATTRIBUTES {
-                    nLength: mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
-                    bInheritHandle: 0,
-                    lpSecurityDescriptor: cast_to_c_void::<SECURITY_DESCRIPTOR>(&mut lp_sec_desc)
-                };
-                job = CreateJobObjectA(
-                    &lp_job_attributes,
-                    lp_name.as_ptr() as *const u8,
-                );
-                let mut fp = String::new();
-                GetFinalPathNameByHandleA(job, fp.as_mut_ptr(), 1024, FILE_NAME_NORMALIZED);
-                let mut fileinformationclass: FILE_NAME_INFO = unsafe { mem::zeroed() };
-                GetFileInformationByHandleEx(
-                    job,
-                    2,
-                    cast_to_c_void::<FILE_NAME_INFO>(&mut fileinformationclass),
-                    mem::size_of::<FILE_NAME_INFO>() as u32
-                );
-                println!("{:?} {} {:?} {}", job, job.is_null(), fileinformationclass.FileName, GetLastError());
-            }
+            
             if flags.memory_limit != -1 {
                 let job_limit_info = JOBOBJECT_NOTIFICATION_LIMIT_INFORMATION {
                     IoReadBytesLimit: std::mem::zeroed(),
