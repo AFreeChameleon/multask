@@ -1,8 +1,7 @@
 use mult_lib::args::{parse_args, ParsedArgs};
 use mult_lib::colors::{color_string, OK_GREEN};
 use mult_lib::proc::{
-    get_all_processes, get_proc_comm, get_process_memory, get_process_runtime, get_process_stats,
-    get_readable_runtime, proc_exists, read_usage_stats,
+    get_proc_comm, proc_exists,
 };
 use mult_lib::tree::compress_tree;
 use mult_lib::windows::proc::win_get_all_processes;
@@ -149,7 +148,7 @@ fn get_process_headers(pid: usize, starttime: u32, task: &Task, is_main_process:
 }
 
 #[cfg(target_os = "windows")]
-fn win_get_process_headers(pid: usize, starttime: u32, task: &Task, is_main_process: bool) -> Option<ProcessHeaders> {
+fn win_get_process_headers(pid: usize, _starttime: u32, task: &Task, _is_main_process: bool) -> Option<ProcessHeaders> {
     use std::ffi::CString;
 
     use windows_sys::Win32::{Foundation::GetLastError, Storage::FileSystem::READ_CONTROL, System::{JobObjects::{IsProcessInJob, OpenJobObjectA}, Threading::OpenProcess}};
