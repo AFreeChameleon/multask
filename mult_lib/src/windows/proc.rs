@@ -5,6 +5,8 @@ use windows_sys::Win32::{Foundation::{GetLastError, FILETIME}, Storage::FileSyst
 
 use crate::{error::{print_error, MultError}, tree::TreeNode};
 
+use super::fork::cast_to_c_void;
+
 pub fn combine_filetime(ft: &FILETIME) -> u64 {
     return ((ft.dwHighDateTime as u64) << 32) | ft.dwLowDateTime as u64;
 }
@@ -18,7 +20,7 @@ pub fn win_get_all_processes(job: &mut c_void, pid: u32) -> TreeNode {
     if unsafe { QueryInformationJobObject(
         job,
         3, // JobObjectBasicProcessIdList
-        &mut result as *mut JOBOBJECT_BASIC_PROCESS_ID_LIST as *mut c_void,
+        cast_to_c_void::<JOBOBJECT_BASIC_PROCESS_ID_LIST>(&mut result),
         std::mem::size_of::<JOBOBJECT_BASIC_PROCESS_ID_LIST>() as u32,
         ptr::null_mut()
     ) } == 0 {

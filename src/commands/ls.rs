@@ -150,23 +150,29 @@ fn get_process_headers(pid: usize, starttime: u32, task: &Task, is_main_process:
 
 #[cfg(target_os = "windows")]
 fn win_get_process_headers(pid: usize, starttime: u32, task: &Task, is_main_process: bool) -> Option<ProcessHeaders> {
-    use windows_sys::Win32::{Storage::FileSystem::READ_CONTROL, System::{JobObjects::{IsProcessInJob, OpenJobObjectA}, Threading::OpenProcess}};
+    use std::ffi::CString;
+
+    use windows_sys::Win32::{Foundation::GetLastError, Storage::FileSystem::READ_CONTROL, System::{JobObjects::{IsProcessInJob, OpenJobObjectA}, Threading::OpenProcess}};
+
+    let lp_name = CString::new(format!("Global\\mult-{}", task.id)).unwrap();
 
     // Check if job object exists already
     let job = unsafe { OpenJobObjectA(
-        0x1F001F, // JOB_OBJECT_ALL_ACCESS
+        0x0004, // JOB_OBJECT_QUERY
         0,
-        format!("mult-{}", task.id).as_ptr(),
+        lp_name.as_ptr() as *const u8,
     ) };
     let process = unsafe { OpenProcess(READ_CONTROL, 1, pid as u32) };
-    if process.is_null() {
-        println!("NULL");
+    if process.is_null() || job.is_null() {
+        unsafe {
+            println!("NULL {} {:?} {}", GetLastError(), lp_name, format!("Global\\mult-{}", task.id));
+        }
         return None;
     }
     let mut is_process_in_job = 0;
     unsafe { IsProcessInJob(process, job, &mut is_process_in_job) };
     if is_process_in_job == 0 {
-        println!("NOT IN JOB");
+        println!("NOT IN JOB {:?} {} {}", process, job.is_null(), task.id);
         return None
     }
 
