@@ -50,17 +50,16 @@ pub fn run_daemon(
             );
             if job.is_null() {
                 let mut p_everyone_sid: Box<PSID> = Box::new(mem::zeroed());
-                let mut ptr_p_everyone_sid = Box::into_raw(p_everyone_sid);
+                let ptr_p_everyone_sid = Box::into_raw(p_everyone_sid);
                 let res1 = AllocateAndInitializeSid(
                     &SECURITY_WORLD_SID_AUTHORITY,
                     1,
                     SECURITY_WORLD_RID as u32,
                     0, 0, 0, 0, 0, 0, 0,
-                    // &mut p_everyone_sid as *mut *mut c_void
                     ptr_p_everyone_sid
                 );
                 if res1 == 0 {
-                    println!("grr1 {:?} {}", 0, GetLastError());
+                    return Err((MultError::WindowsError, Some(GetLastError().to_string())));
                 }
                 let mut lp_sec_desc: SECURITY_DESCRIPTOR = mem::zeroed();
                 p_everyone_sid = Box::from_raw(ptr_p_everyone_sid);
@@ -71,23 +70,21 @@ pub fn run_daemon(
                     Trustee: TRUSTEE_A {
                         TrusteeForm: TRUSTEE_IS_SID,
                         TrusteeType: TRUSTEE_IS_GROUP,
-                        // ptstrName: &mut *p_everyone_sid as *mut c_void as *mut u8,
                         ptstrName: *p_everyone_sid as *mut u8,
                         pMultipleTrustee: ptr::null_mut(),
                         MultipleTrusteeOperation: NO_MULTIPLE_TRUSTEE,
                     }
                 }];
                 let mut p_acl: Box<*mut ACL> = Box::new(mem::zeroed());
-                let mut ptr_p_acl = Box::into_raw(p_acl);
+                let ptr_p_acl = Box::into_raw(p_acl);
                 let res2 = SetEntriesInAclA(
                     1,
                     &ea as *const EXPLICIT_ACCESS_A,
                     ptr::null(),
-                    // &mut p_acl as *mut ACL as *mut *mut ACL
                     ptr_p_acl
                 );
-                if res2 == ERROR_SUCCESS {
-                    println!("grr2 {} {:?} {}", res2, Box::into_raw(p_everyone_sid) as *mut u8, GetLastError());
+                if res2 != ERROR_SUCCESS {
+                    return Err((MultError::WindowsError, Some(GetLastError().to_string())));
                 }
                 let c_void_lp_sec_desc = cast_to_c_void::<SECURITY_DESCRIPTOR>(&mut lp_sec_desc);
                 let res3 = InitializeSecurityDescriptor(
@@ -105,7 +102,7 @@ pub fn run_daemon(
                     0
                 );
                 if res4 == 0 {
-                    println!("grr4 {} {:?} {:?}", lp_sec_desc.Control, lp_sec_desc.Sbz1, lp_sec_desc.Revision);
+                    return Err((MultError::WindowsError, Some(GetLastError().to_string())));
                 }
                 let lp_job_attributes = SECURITY_ATTRIBUTES {
                     nLength: mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
@@ -114,18 +111,8 @@ pub fn run_daemon(
                 };
                 job = CreateJobObjectA(
                     &lp_job_attributes as *const SECURITY_ATTRIBUTES,
-                    // ptr::null(),
                     lp_name.as_ptr() as *const u8,
                 );
-                // let mut fp = String::new();
-                // GetFinalPathNameByHandleA(job, fp.as_mut_ptr(), 1024, FILE_NAME_NORMALIZED);
-                // let mut fileinformationclass: FILE_NAME_INFO = unsafe { mem::zeroed() };
-                // GetFileInformationByHandleEx(
-                //     job,
-                //     2,
-                //     cast_to_c_void::<FILE_NAME_INFO>(&mut fileinformationclass),
-                //     mem::size_of::<FILE_NAME_INFO>() as u32
-                // );
                 println!("{:?} {:?} {} {} {}", job, lp_name.as_ptr() as *const u8, GetLastError(), mem::size_of::<SECURITY_ATTRIBUTES>() as u32, mem::size_of_val(&lp_sec_desc));
             }
             if CreateProcessA(
