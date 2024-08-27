@@ -6,7 +6,7 @@ use windows_sys::{core::{PSTR, PWSTR}, Win32::{
     Foundation::{CloseHandle, GetLastError, ERROR_SUCCESS, FILETIME}, Security::{self, AllocateAndInitializeSid, Authorization::{ConvertSidToStringSidA, SetEntriesInAclA, EXPLICIT_ACCESS_A, NO_MULTIPLE_TRUSTEE, SET_ACCESS, TRUSTEE_A, TRUSTEE_IS_GROUP, TRUSTEE_IS_NAME, TRUSTEE_IS_SID, TRUSTEE_IS_USER, TRUSTEE_IS_WELL_KNOWN_GROUP}, InitializeSecurityDescriptor, SetSecurityDescriptorDacl, ACL, NO_INHERITANCE, PSID, SECURITY_ATTRIBUTES, SECURITY_DESCRIPTOR, SECURITY_WORLD_SID_AUTHORITY}, Storage::FileSystem::{GetFileInformationByHandleEx, GetFinalPathNameByHandleA, FILE_NAME_INFO, FILE_NAME_NORMALIZED, FILE_STANDARD_INFO}, System::{
         JobObjects::{
             AssignProcessToJobObject, CreateJobObjectA, JobObjectCpuRateControlInformation, JobObjectExtendedLimitInformation, JobObjectNotificationLimitInformation, OpenJobObjectA, SetInformationJobObject, TerminateJobObject, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOBOBJECT_NOTIFICATION_LIMIT_INFORMATION, JOB_OBJECT_CPU_RATE_CONTROL_ENABLE, JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP, JOB_OBJECT_CPU_RATE_CONTROL_MIN_MAX_RATE
-        }, Registry::KEY_ALL_ACCESS, SystemInformation::GetSystemTimeAsFileTime, SystemServices::{SECURITY_DESCRIPTOR_REVISION, SECURITY_WORLD_RID}, Threading::{
+        }, Registry::KEY_ALL_ACCESS, SystemInformation::GetSystemTimeAsFileTime, SystemServices::{DOMAIN_ALIAS_RID_ADMINS, SECURITY_BUILTIN_DOMAIN_RID, SECURITY_DESCRIPTOR_REVISION, SECURITY_WORLD_RID}, Threading::{
             CreateProcessA, CreateProcessW, GetProcessId, WaitForSingleObject, CREATE_NEW_CONSOLE, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW, DETACHED_PROCESS, INFINITE, PROCESS_INFORMATION, STARTUPINFOA, STARTUPINFOEXA, STARTUPINFOEXW
         }
     }
@@ -51,14 +51,13 @@ pub fn run_daemon(
             if job.is_null() {
                 let mut p_everyone_sid: Box<PSID> = Box::new(mem::zeroed());
                 let ptr_p_everyone_sid = Box::into_raw(p_everyone_sid);
-                let res1 = AllocateAndInitializeSid(
+                if AllocateAndInitializeSid(
                     &SECURITY_WORLD_SID_AUTHORITY,
                     1,
-                    SECURITY_WORLD_RID as u32,
-                    0, 0, 0, 0, 0, 0, 0,
+                    SECURITY_BUILTIN_DOMAIN_RID as u32,
+                    DOMAIN_ALIAS_RID_ADMINS as u32, 0, 0, 0, 0, 0, 0,
                     ptr_p_everyone_sid
-                );
-                if res1 == 0 {
+                ) == 0 {
                     return Err((MultError::WindowsError, Some(GetLastError().to_string())));
                 }
                 let mut lp_sec_desc: SECURITY_DESCRIPTOR = mem::zeroed();
@@ -77,31 +76,28 @@ pub fn run_daemon(
                 }];
                 let mut p_acl: Box<*mut ACL> = Box::new(mem::zeroed());
                 let ptr_p_acl = Box::into_raw(p_acl);
-                let res2 = SetEntriesInAclA(
+                if SetEntriesInAclA(
                     1,
                     &ea as *const EXPLICIT_ACCESS_A,
                     ptr::null(),
                     ptr_p_acl
-                );
-                if res2 != ERROR_SUCCESS {
+                ) != ERROR_SUCCESS {
                     return Err((MultError::WindowsError, Some(GetLastError().to_string())));
-                }
+                };
                 let c_void_lp_sec_desc = cast_to_c_void::<SECURITY_DESCRIPTOR>(&mut lp_sec_desc);
-                let res3 = InitializeSecurityDescriptor(
+                if InitializeSecurityDescriptor(
                     c_void_lp_sec_desc,
                     SECURITY_DESCRIPTOR_REVISION
-                );
-                if res3 == 0 {
-                    println!("grr3 {}", GetLastError());
+                ) == 0 {
+                    return Err((MultError::WindowsError, Some(GetLastError().to_string())));
                 }
                 p_acl = Box::from_raw(ptr_p_acl);
-                let res4 = SetSecurityDescriptorDacl(
+                if SetSecurityDescriptorDacl(
                     c_void_lp_sec_desc,
                     1,
                     *p_acl as *const ACL,
                     0
-                );
-                if res4 == 0 {
+                ) == 0 {
                     return Err((MultError::WindowsError, Some(GetLastError().to_string())));
                 }
                 let lp_job_attributes = SECURITY_ATTRIBUTES {
@@ -113,7 +109,9 @@ pub fn run_daemon(
                     &lp_job_attributes as *const SECURITY_ATTRIBUTES,
                     lp_name.as_ptr() as *const u8,
                 );
-                println!("{:?} {:?} {} {} {}", job, lp_name.as_ptr() as *const u8, GetLastError(), mem::size_of::<SECURITY_ATTRIBUTES>() as u32, mem::size_of_val(&lp_sec_desc));
+                if job.is_null() {
+                    return Err((MultError::WindowsError, Some(GetLastError().to_string())));
+                }
             }
             if CreateProcessA(
                 ptr::null(),
