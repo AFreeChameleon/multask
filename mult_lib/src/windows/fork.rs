@@ -6,7 +6,7 @@ use windows_sys::{core::{PSTR, PWSTR}, Win32::{
     Foundation::{CloseHandle, GetLastError, ERROR_SUCCESS, FILETIME}, Security::{self, AllocateAndInitializeSid, Authorization::{ConvertSidToStringSidA, SetEntriesInAclA, EXPLICIT_ACCESS_A, NO_MULTIPLE_TRUSTEE, SET_ACCESS, TRUSTEE_A, TRUSTEE_IS_GROUP, TRUSTEE_IS_NAME, TRUSTEE_IS_SID, TRUSTEE_IS_USER, TRUSTEE_IS_WELL_KNOWN_GROUP}, InitializeSecurityDescriptor, SetSecurityDescriptorDacl, ACL, NO_INHERITANCE, PSID, SECURITY_ATTRIBUTES, SECURITY_DESCRIPTOR, SECURITY_WORLD_SID_AUTHORITY}, Storage::FileSystem::{GetFileInformationByHandleEx, GetFinalPathNameByHandleA, FILE_NAME_INFO, FILE_NAME_NORMALIZED, FILE_STANDARD_INFO}, System::{
         JobObjects::{
             AssignProcessToJobObject, CreateJobObjectA, JobObjectCpuRateControlInformation, JobObjectExtendedLimitInformation, JobObjectNotificationLimitInformation, OpenJobObjectA, SetInformationJobObject, TerminateJobObject, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOBOBJECT_NOTIFICATION_LIMIT_INFORMATION, JOB_OBJECT_CPU_RATE_CONTROL_ENABLE, JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP, JOB_OBJECT_CPU_RATE_CONTROL_MIN_MAX_RATE
-        }, Registry::KEY_ALL_ACCESS, SystemInformation::GetSystemTimeAsFileTime, SystemServices::{DOMAIN_ALIAS_RID_ADMINS, SECURITY_BUILTIN_DOMAIN_RID, SECURITY_DESCRIPTOR_REVISION, SECURITY_WORLD_RID}, Threading::{
+        }, Registry::{KEY_ALL_ACCESS, KEY_READ}, SystemInformation::GetSystemTimeAsFileTime, SystemServices::{DOMAIN_ALIAS_RID_ADMINS, SECURITY_BUILTIN_DOMAIN_RID, SECURITY_DESCRIPTOR_REVISION, SECURITY_WORLD_RID}, Threading::{
             CreateProcessA, CreateProcessW, GetProcessId, WaitForSingleObject, CREATE_NEW_CONSOLE, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW, DETACHED_PROCESS, INFINITE, PROCESS_INFORMATION, STARTUPINFOA, STARTUPINFOEXA, STARTUPINFOEXW
         }
     }
@@ -37,10 +37,7 @@ pub fn run_daemon(
             task_id
         );
         unsafe {
-            let mut process_info = std::mem::zeroed();
-            let mut si: STARTUPINFOEXA = std::mem::zeroed();
-            si.StartupInfo.cb = std::mem::size_of::<STARTUPINFOEXA>() as u32;
-            let lp_name = CString::new(format!("mult-{}", task_id)).unwrap();
+            let lp_name: CString = CString::new(format!("mult-{}", task_id)).unwrap();
             let find_lp_name = CString::new(format!("mult-{}", task_id)).unwrap();
             // Check if job object exists already
             let mut job = OpenJobObjectA(
@@ -54,8 +51,8 @@ pub fn run_daemon(
                 if AllocateAndInitializeSid(
                     &SECURITY_WORLD_SID_AUTHORITY,
                     1,
-                    SECURITY_BUILTIN_DOMAIN_RID as u32,
-                    DOMAIN_ALIAS_RID_ADMINS as u32, 0, 0, 0, 0, 0, 0,
+                    SECURITY_WORLD_RID as u32,
+                    0, 0, 0, 0, 0, 0, 0,
                     ptr_p_everyone_sid
                 ) == 0 {
                     return Err((MultError::WindowsError, Some(GetLastError().to_string())));
@@ -63,12 +60,12 @@ pub fn run_daemon(
                 let mut lp_sec_desc: SECURITY_DESCRIPTOR = mem::zeroed();
                 p_everyone_sid = Box::from_raw(ptr_p_everyone_sid);
                 let ea = [EXPLICIT_ACCESS_A {
-                    grfAccessPermissions: KEY_ALL_ACCESS,
+                    grfAccessPermissions: KEY_READ,
                     grfAccessMode: SET_ACCESS,
                     grfInheritance: NO_INHERITANCE,
                     Trustee: TRUSTEE_A {
                         TrusteeForm: TRUSTEE_IS_SID,
-                        TrusteeType: TRUSTEE_IS_GROUP,
+                        TrusteeType: TRUSTEE_IS_WELL_KNOWN_GROUP,
                         ptstrName: *p_everyone_sid as *mut u8,
                         pMultipleTrustee: ptr::null_mut(),
                         MultipleTrusteeOperation: NO_MULTIPLE_TRUSTEE,
@@ -113,13 +110,16 @@ pub fn run_daemon(
                     return Err((MultError::WindowsError, Some(GetLastError().to_string())));
                 }
             }
+            let mut process_info = std::mem::zeroed();
+            let mut si: STARTUPINFOEXA = std::mem::zeroed();
+            si.StartupInfo.cb = std::mem::size_of::<STARTUPINFOEXA>() as u32;
             if CreateProcessA(
                 ptr::null(),
                 command_line.as_mut_ptr(),
                 ptr::null(),
                 ptr::null(),
                 0,
-                CREATE_NO_WINDOW,
+                CREATE_NO_WINDOW | DETACHED_PROCESS,
                 ptr::null(),
                 ptr::null(),
                 &si.StartupInfo,
@@ -130,20 +130,13 @@ pub fn run_daemon(
             }
             
             if flags.memory_limit != -1 {
-                let job_limit_info = JOBOBJECT_NOTIFICATION_LIMIT_INFORMATION {
-                    IoReadBytesLimit: std::mem::zeroed(),
-                    IoWriteBytesLimit: std::mem::zeroed(),
-                    PerJobUserTimeLimit: std::mem::zeroed(),
-                    JobMemoryLimit: flags.memory_limit as u64,
-                    RateControlTolerance: std::mem::zeroed(),
-                    RateControlToleranceInterval: std::mem::zeroed(),
-                    LimitFlags: std::mem::zeroed(),
-                };
+                let mut job_limit_info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = mem::zeroed();
+                job_limit_info.JobMemoryLimit = flags.memory_limit as usize;
                 SetInformationJobObject(
                     job,
-                    JobObjectNotificationLimitInformation,
+                    JobObjectExtendedLimitInformation,
                     std::ptr::addr_of!(job_limit_info) as *const c_void,
-                    std::mem::size_of::<JOBOBJECT_NOTIFICATION_LIMIT_INFORMATION>() as u32,
+                    std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
                 );
             }
             if flags.cpu_limit != -1 {
