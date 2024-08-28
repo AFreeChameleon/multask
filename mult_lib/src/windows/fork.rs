@@ -37,8 +37,8 @@ pub fn run_daemon(
             task_id
         );
         unsafe {
-            let lp_name: CString = CString::new(format!("mult-{}", task_id)).unwrap();
-            let find_lp_name = CString::new(format!("mult-{}", task_id)).unwrap();
+            let lp_name: CString = CString::new(format!("Global\\mult-{}", task_id)).unwrap();
+            let find_lp_name = CString::new(format!("Global\\BaseNamedObjects\\mult-{}", task_id)).unwrap();
             // Check if job object exists already
             let mut job = OpenJobObjectA(
                 0x0001 | 0x0002, // JOB_OBJECT_ALL_ACCESS
@@ -155,6 +155,14 @@ pub fn run_daemon(
                 );
             }
             AssignProcessToJobObject(job, process_info.hProcess);
+            let mut attempt = OpenJobObjectA(
+                0x0001 | 0x0002, // JOB_OBJECT_ALL_ACCESS
+                0,
+                find_lp_name.as_ptr() as *const u8,
+            );
+            println!("{:?} {}", attempt, find_lp_name.to_str().to_owned().unwrap());
+            WaitForSingleObject(job, INFINITE);
+            CloseHandle(job);
         }
     } else {
         return Err((MultError::ExeDirNotFound, None));
