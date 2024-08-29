@@ -2,7 +2,11 @@
 use home::home_dir;
 use mult_lib::command::{CommandData, CommandManager};
 use mult_lib::error::{MultError, MultErrorTuple};
-use windows_sys::Win32::System::JobObjects::OpenJobObjectA;
+use windows_sys::Win32::Foundation::GetLastError;
+use windows_sys::Win32::System::JobObjects::{AssignProcessToJobObject, CreateJobObjectA, CreateJobObjectW, JobObjectCpuRateControlInformation, JobObjectExtendedLimitInformation, OpenJobObjectA, SetInformationJobObject, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_CPU_RATE_CONTROL_ENABLE, JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP};
+use windows_sys::Win32::System::ProcessStatus::{GetModuleFileNameExA, GetProcessImageFileNameA};
+use std::ffi::{c_void, CString};
+use std::ptr;
 use std::{
     env,
     fs::File,
@@ -14,7 +18,6 @@ use std::{
     thread,
     time::{SystemTime, UNIX_EPOCH},
 };
-use sysinfo::{Pid, System};
 use std::{collections::HashMap, mem, sync::{Arc, Mutex}, time::Duration};
 
 use mult_lib::{proc::{save_task_processes, save_usage_stats, UsageStats}, tree::{search_tree, TreeNode}, windows::{cpu::win_get_cpu_usage, proc::{combine_filetime, win_get_all_processes}}};
@@ -23,10 +26,23 @@ use windows_sys::Win32::{Foundation::{CloseHandle, FILETIME}, System::{SystemInf
 // Usage: mult_spawn process_dir command task_id
 fn main() -> Result<(), MultErrorTuple> {
     let args: Vec<String> = env::args().collect();
-    let dir_string = args[1].clone();
+    let dir_string = &args[1];
     let process_dir = Path::new(&dir_string).to_owned();
-    let command = args[2].clone();
-    let task_id = args[3].clone();
+    let command = &args[2];
+    let task_id = &args[3];
+    let mem_limit = &args[4];
+    let cpu_limit = &args[5];
+
+    let job_name: CString = CString::new(format!("mult-{}", task_id.as_str())).unwrap();
+    let job_handle = create_job(
+        job_name.as_ptr() as *mut u8,
+        mem_limit.parse().unwrap(),
+        cpu_limit.parse().unwrap()
+    )?;
+    
+    let thread_handle = unsafe { GetCurrentThread() };
+    let process_handle = unsafe { GetCurrentProcess() };
+    unsafe { AssignProcessToJobObject(job_handle, process_handle) };
     let mut child = Command::new("cmd")
         .creation_flags(0x08000000)
         .args(&["/c", &command])
@@ -40,15 +56,16 @@ fn main() -> Result<(), MultErrorTuple> {
         Err(_) => home_dir().unwrap(),
     };
 
-    let sys = System::new_all();
-
-    let process = sys.process(Pid::from_u32(process::id()));
-    if process.is_none() {
-        return Err((MultError::ProcessNotExists, None));
+    let mut process_name = String::new();
+    unsafe {
+        GetProcessImageFileNameA(
+            process_handle,
+            process_name.as_mut_ptr(),
+            u32::MAX
+        );
     }
-    let process_name = process.unwrap().name();
     let data = CommandData {
-        command,
+        command: command.to_string(),
         pid: process::id(),
         dir: current_dir.display().to_string(),
         name: process_name.to_string(),
@@ -94,16 +111,12 @@ fn main() -> Result<(), MultErrorTuple> {
         }
     });
 
+    let ptr_job_handle = unsafe { job_handle.as_mut().unwrap() };
     thread::spawn(move || {
         let mut cpu_time_total: FILETIME = unsafe { mem::zeroed() };
-        let job = unsafe { &mut *OpenJobObjectA(
-            0x1F001F, // JOB_OBJECT_ALL_ACCESS
-            0,
-            format!("mult-{}", task_id).as_ptr(),
-        ) };
         loop {
             // Get usage metrics
-            let process_tree = win_get_all_processes(job, process::id());
+            let process_tree = win_get_all_processes(ptr_job_handle, std::process::id());
             save_task_processes(&process_dir, &process_tree);
             unsafe { GetSystemTimeAsFileTime(&mut cpu_time_total) };
     
@@ -133,13 +146,57 @@ fn main() -> Result<(), MultErrorTuple> {
             save_usage_stats(&process_dir, &usage_stats.lock().unwrap());
         }
     });
-    let thread = unsafe { GetCurrentThread() };
-    let process = unsafe { GetCurrentProcess() };
     child.wait().unwrap();
     unsafe {
-        CloseHandle(process);
-        CloseHandle(thread);
+        CloseHandle(process_handle);
+        CloseHandle(thread_handle);
     }
     Ok(())
 }
 
+fn create_job(
+    lp_name: *const u8,
+    mem_limit: i64,
+    cpu_limit: i32
+) -> Result<*mut c_void, MultErrorTuple> {
+    unsafe {
+        let job = CreateJobObjectA(
+            ptr::null(),
+            lp_name,
+        );
+        if job.is_null() {
+            
+            return Err((MultError::WindowsError, Some(GetLastError().to_string())));
+        }
+        if mem_limit != -1 {
+            let mut job_limit_info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = mem::zeroed();
+            job_limit_info.JobMemoryLimit = mem_limit as usize;
+            if SetInformationJobObject(
+                job,
+                JobObjectExtendedLimitInformation,
+                std::ptr::addr_of!(job_limit_info) as *const c_void,
+                std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            ) == 0 {
+                return Err((MultError::WindowsError, Some(GetLastError().to_string())));
+            }
+        }
+        if cpu_limit != -1 {
+            let job_limit_info = JOBOBJECT_CPU_RATE_CONTROL_INFORMATION {
+                ControlFlags: JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP
+                    | JOB_OBJECT_CPU_RATE_CONTROL_ENABLE,
+                Anonymous: JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0 {
+                    CpuRate: (10000 / cpu_limit) as u32,
+                },
+            };
+            if SetInformationJobObject(
+                job,
+                JobObjectCpuRateControlInformation,
+                std::ptr::addr_of!(job_limit_info) as *const c_void,
+                std::mem::size_of::<JOBOBJECT_CPU_RATE_CONTROL_INFORMATION>() as u32,
+            ) == 0 {
+                return Err((MultError::WindowsError, Some(GetLastError().to_string())));
+            }
+        }
+        Ok(job)
+    }
+}

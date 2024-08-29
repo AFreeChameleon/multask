@@ -23,7 +23,6 @@ const FLAGS: [(&str, bool); 2] = [(LINES_FLAG, true), (WATCH_FLAG, false)];
 pub fn run() -> Result<(), MultErrorTuple> {
     let args = env::args();
     let parsed_args = parse_args(&args.collect::<Vec<String>>()[2..], &FLAGS, true)?;
-    println!("{:?}", parsed_args.value_flags);
     // Reading last 15 lines from stdout and stderr
     let mut last_lines_to_print: usize = get_last_lines_to_print(&parsed_args)?;
 

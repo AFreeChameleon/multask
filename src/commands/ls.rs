@@ -163,15 +163,11 @@ fn win_get_process_headers(pid: usize, _starttime: u32, task: &Task, _is_main_pr
     ) };
     let process = unsafe { OpenProcess(READ_CONTROL, 1, pid as u32) };
     if process.is_null() || job.is_null() {
-        unsafe {
-            println!("NULL {} {:?} {}", GetLastError(), lp_name, format!("Global\\mult-{}", task.id));
-        }
         return None;
     }
     let mut is_process_in_job = 0;
     unsafe { IsProcessInJob(process, job, &mut is_process_in_job) };
     if is_process_in_job == 0 {
-        println!("NOT IN JOB {:?} {} {}", process, job.is_null(), task.id);
         return None
     }
 

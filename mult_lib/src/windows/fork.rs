@@ -29,93 +29,23 @@ pub fn run_daemon(
 ) -> Result<(), MultErrorTuple> {
     if let Ok(exe_dir) = env::current_exe() {
         let spawn_dir = Path::new(&exe_dir).parent().unwrap();
-        let mut command_line = format!(
-            "{} {} \"{}\" {}",
+        let command_line = CString::new(format!(
+            "{} {} \"{}\" {} {} {}",
             spawn_dir.join("mult_spawn.exe").display().to_string(),
             files.process_dir.display().to_string(),
             command,
-            task_id
-        );
+            task_id,
+            flags.memory_limit,
+            flags.cpu_limit
+        )).unwrap();
+        let mut command_line_str = command_line.to_str().unwrap().to_owned();
         unsafe {
-            let lp_name: CString = CString::new(format!("Global\\mult-{}", task_id)).unwrap();
-            let find_lp_name = CString::new(format!("Global\\BaseNamedObjects\\mult-{}", task_id)).unwrap();
-            // Check if job object exists already
-            let mut job = OpenJobObjectA(
-                0x0001 | 0x0002, // JOB_OBJECT_ALL_ACCESS
-                0,
-                find_lp_name.as_ptr() as *const u8,
-            );
-            if job.is_null() {
-                let mut p_everyone_sid: Box<PSID> = Box::new(mem::zeroed());
-                let ptr_p_everyone_sid = Box::into_raw(p_everyone_sid);
-                if AllocateAndInitializeSid(
-                    &SECURITY_WORLD_SID_AUTHORITY,
-                    1,
-                    SECURITY_WORLD_RID as u32,
-                    0, 0, 0, 0, 0, 0, 0,
-                    ptr_p_everyone_sid
-                ) == 0 {
-                    return Err((MultError::WindowsError, Some(GetLastError().to_string())));
-                }
-                let mut lp_sec_desc: SECURITY_DESCRIPTOR = mem::zeroed();
-                p_everyone_sid = Box::from_raw(ptr_p_everyone_sid);
-                let ea = [EXPLICIT_ACCESS_A {
-                    grfAccessPermissions: KEY_READ,
-                    grfAccessMode: SET_ACCESS,
-                    grfInheritance: NO_INHERITANCE,
-                    Trustee: TRUSTEE_A {
-                        TrusteeForm: TRUSTEE_IS_SID,
-                        TrusteeType: TRUSTEE_IS_WELL_KNOWN_GROUP,
-                        ptstrName: *p_everyone_sid as *mut u8,
-                        pMultipleTrustee: ptr::null_mut(),
-                        MultipleTrusteeOperation: NO_MULTIPLE_TRUSTEE,
-                    }
-                }];
-                let mut p_acl: Box<*mut ACL> = Box::new(mem::zeroed());
-                let ptr_p_acl = Box::into_raw(p_acl);
-                if SetEntriesInAclA(
-                    1,
-                    &ea as *const EXPLICIT_ACCESS_A,
-                    ptr::null(),
-                    ptr_p_acl
-                ) != ERROR_SUCCESS {
-                    return Err((MultError::WindowsError, Some(GetLastError().to_string())));
-                };
-                let c_void_lp_sec_desc = cast_to_c_void::<SECURITY_DESCRIPTOR>(&mut lp_sec_desc);
-                if InitializeSecurityDescriptor(
-                    c_void_lp_sec_desc,
-                    SECURITY_DESCRIPTOR_REVISION
-                ) == 0 {
-                    return Err((MultError::WindowsError, Some(GetLastError().to_string())));
-                }
-                p_acl = Box::from_raw(ptr_p_acl);
-                if SetSecurityDescriptorDacl(
-                    c_void_lp_sec_desc,
-                    1,
-                    *p_acl as *const ACL,
-                    0
-                ) == 0 {
-                    return Err((MultError::WindowsError, Some(GetLastError().to_string())));
-                }
-                let lp_job_attributes = SECURITY_ATTRIBUTES {
-                    nLength: mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
-                    bInheritHandle: 0,
-                    lpSecurityDescriptor: c_void_lp_sec_desc
-                };
-                job = CreateJobObjectA(
-                    &lp_job_attributes as *const SECURITY_ATTRIBUTES,
-                    lp_name.as_ptr() as *const u8,
-                );
-                if job.is_null() {
-                    return Err((MultError::WindowsError, Some(GetLastError().to_string())));
-                }
-            }
             let mut process_info = std::mem::zeroed();
             let mut si: STARTUPINFOEXA = std::mem::zeroed();
             si.StartupInfo.cb = std::mem::size_of::<STARTUPINFOEXA>() as u32;
             if CreateProcessA(
                 ptr::null(),
-                command_line.as_mut_ptr(),
+                command_line_str.as_mut_ptr() as *mut u8,
                 ptr::null(),
                 ptr::null(),
                 0,
@@ -128,41 +58,6 @@ pub fn run_daemon(
                 print_error(MultError::WindowsError, Some(GetLastError().to_string()));
                 return Err((MultError::ExeDirNotFound, None))
             }
-            
-            if flags.memory_limit != -1 {
-                let mut job_limit_info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = mem::zeroed();
-                job_limit_info.JobMemoryLimit = flags.memory_limit as usize;
-                SetInformationJobObject(
-                    job,
-                    JobObjectExtendedLimitInformation,
-                    std::ptr::addr_of!(job_limit_info) as *const c_void,
-                    std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-                );
-            }
-            if flags.cpu_limit != -1 {
-                let job_limit_info = JOBOBJECT_CPU_RATE_CONTROL_INFORMATION {
-                    ControlFlags: JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP
-                        | JOB_OBJECT_CPU_RATE_CONTROL_ENABLE,
-                    Anonymous: JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0 {
-                        CpuRate: (10000 / flags.cpu_limit) as u32,
-                    },
-                };
-                SetInformationJobObject(
-                    job,
-                    JobObjectCpuRateControlInformation,
-                    std::ptr::addr_of!(job_limit_info) as *const c_void,
-                    std::mem::size_of::<JOBOBJECT_NOTIFICATION_LIMIT_INFORMATION>() as u32,
-                );
-            }
-            AssignProcessToJobObject(job, process_info.hProcess);
-            let mut attempt = OpenJobObjectA(
-                0x0001 | 0x0002, // JOB_OBJECT_ALL_ACCESS
-                0,
-                find_lp_name.as_ptr() as *const u8,
-            );
-            println!("{:?} {} {}", attempt, find_lp_name.to_str().to_owned().unwrap(), GetLastError());
-            WaitForSingleObject(job, INFINITE);
-            // CloseHandle(job);
         }
     } else {
         return Err((MultError::ExeDirNotFound, None));
