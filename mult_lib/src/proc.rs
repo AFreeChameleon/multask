@@ -15,7 +15,7 @@ use crate::linux::proc::{
     linux_get_proc_name, linux_get_process_memory, linux_get_process_runtime,
     linux_get_process_stats, linux_proc_exists,
 };
-use crate::windows::proc::win_get_all_processes;
+use crate::windows::proc::{win_get_all_processes, win_get_memory_usage};
 #[cfg(target_family = "windows")]
 use crate::windows::proc::{
     win_get_process_stats
@@ -143,5 +143,7 @@ pub fn get_process_stats(pid: usize) -> Vec<String> {
 pub fn get_process_memory(pid: &usize) -> String {
     #[cfg(target_os = "linux")]
     return linux_get_process_memory(pid);
+    #[cfg(target_os = "windows")]
+    return win_get_memory_usage(pid);
     return String::new();
 }

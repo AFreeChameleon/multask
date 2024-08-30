@@ -151,27 +151,47 @@ fn get_process_headers(pid: usize, starttime: u32, task: &Task, is_main_process:
 fn win_get_process_headers(pid: usize, _starttime: u32, task: &Task, _is_main_process: bool) -> Option<ProcessHeaders> {
     use std::ffi::CString;
 
-    use windows_sys::Win32::{Foundation::GetLastError, Storage::FileSystem::READ_CONTROL, System::{JobObjects::{IsProcessInJob, OpenJobObjectA}, Threading::OpenProcess}};
+    use mult_lib::{error::print_error, proc::read_usage_stats, windows::proc::{win_get_memory_usage, win_get_process_runtime, win_get_process_stats}};
+    use windows_sys::Win32::{Foundation::GetLastError, Storage::FileSystem::READ_CONTROL, System::{JobObjects::{IsProcessInJob, OpenJobObjectA}, Threading::{OpenProcess, PROCESS_QUERY_INFORMATION}}};
 
     let lp_name = CString::new(format!("Global\\mult-{}", task.id)).unwrap();
 
     // Check if job object exists already
     let job = unsafe { OpenJobObjectA(
-        0x0004, // JOB_OBJECT_QUERY
+        0x1F001F, // JOB_OBJECT_QUERY
         0,
-        lp_name.as_ptr() as *const u8,
+        lp_name.as_bytes_with_nul().as_ptr() as *const u8,
     ) };
-    let process = unsafe { OpenProcess(READ_CONTROL, 1, pid as u32) };
+    let process = unsafe { OpenProcess(PROCESS_QUERY_INFORMATION, 1, pid as u32) };
     if process.is_null() || job.is_null() {
         return None;
     }
-    let mut is_process_in_job = 0;
-    unsafe { IsProcessInJob(process, job, &mut is_process_in_job) };
+    let mut is_process_in_job: i32 = 0;
+    unsafe {
+        if IsProcessInJob(process, job, &mut is_process_in_job) == 0 {
+            print_error(MultError::WindowsError, Some(GetLastError().to_string()));
+            return None;
+        }
+    }
     if is_process_in_job == 0 {
-        return None
+        return None;
     }
 
-    None
+    let usage_stats = read_usage_stats(task.id).unwrap();
+    let proc_stats = win_get_process_stats(pid);
+    if proc_stats.len() == 0 {
+        return None;
+    }
+
+    Some(ProcessHeaders {
+        pid: pid.to_string(),
+        memory: win_get_memory_usage(&(pid as usize)),
+        cpu: format!("{}%", read_usage_stats(task_id)),
+        runtime: get_readable_runtime(
+            win_get_process_runtime(proc_stats[2].parse().unwrap())
+        ),
+        status: color_string(OK_GREEN, "Running").to_string()
+    })
 }
 
 #[cfg(target_os = "linux")]

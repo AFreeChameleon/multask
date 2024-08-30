@@ -38,7 +38,7 @@ pub fn run_daemon(
             flags.memory_limit,
             flags.cpu_limit
         )).unwrap();
-        let mut command_line_str = command_line.to_str().unwrap().to_owned();
+        let mut command_line_str: Vec<u8> = command_line.as_bytes_with_nul().to_owned();
         unsafe {
             let mut process_info = std::mem::zeroed();
             let mut si: STARTUPINFOEXA = std::mem::zeroed();

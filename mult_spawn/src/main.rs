@@ -6,7 +6,7 @@ use windows_sys::Win32::Foundation::GetLastError;
 use windows_sys::Win32::System::JobObjects::{AssignProcessToJobObject, CreateJobObjectA, CreateJobObjectW, JobObjectCpuRateControlInformation, JobObjectExtendedLimitInformation, OpenJobObjectA, SetInformationJobObject, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_CPU_RATE_CONTROL_ENABLE, JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP};
 use windows_sys::Win32::System::ProcessStatus::{GetModuleFileNameExA, GetProcessImageFileNameA};
 use std::ffi::{c_void, CString};
-use std::ptr;
+use std::{fs, ptr};
 use std::{
     env,
     fs::File,
@@ -33,7 +33,8 @@ fn main() -> Result<(), MultErrorTuple> {
     let mem_limit = &args[4];
     let cpu_limit = &args[5];
 
-    let job_name: CString = CString::new(format!("mult-{}", task_id.as_str())).unwrap();
+    fs::write(format!("hi"), format!("{:?} {} {}", args, mem_limit, cpu_limit)).unwrap();
+    let job_name: CString = CString::new(format!("Global\\mult-{}", task_id.as_str())).unwrap();
     let job_handle = create_job(
         job_name.as_ptr() as *mut u8,
         mem_limit.parse().unwrap(),

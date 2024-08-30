@@ -1,7 +1,7 @@
 #![cfg(target_family = "windows")]
-use std::{ffi::c_longlong, mem::size_of, os::raw::c_void, ptr, time::{SystemTime, UNIX_EPOCH}};
+use std::{ffi::c_longlong, mem::{self, size_of}, os::raw::c_void, ptr, time::{SystemTime, UNIX_EPOCH}};
 
-use windows_sys::Win32::{Foundation::{GetLastError, FILETIME}, Storage::FileSystem::READ_CONTROL, System::{JobObjects::{QueryInformationJobObject, JOBOBJECTINFOCLASS, JOBOBJECT_BASIC_PROCESS_ID_LIST}, Threading::{GetProcessTimes, OpenProcess, PROCESS_ALL_ACCESS}}};
+use windows_sys::Win32::{Foundation::{GetLastError, FILETIME}, Storage::FileSystem::READ_CONTROL, System::{JobObjects::{QueryInformationJobObject, JOBOBJECTINFOCLASS, JOBOBJECT_BASIC_PROCESS_ID_LIST}, ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS}, Threading::{GetProcessTimes, OpenProcess, PROCESS_ALL_ACCESS, PROCESS_QUERY_INFORMATION}}};
 
 use crate::{error::{print_error, MultError}, tree::TreeNode};
 
@@ -69,7 +69,25 @@ pub fn win_get_process_stats(pid: usize) -> Vec<String> {
     let starttime = convert_filetime64_to_unix_epoch(combine_filetime(&lp_creation_time));
     let kernel_time = combine_filetime(&lp_kernel_time);
     let user_time = combine_filetime(&lp_user_time);
-    vec![kernel_time.to_string(), user_time.to_string()]
+    vec![kernel_time.to_string(), user_time.to_string(), starttime.to_string()]
+}
+
+pub fn win_get_memory_usage(pid: &usize) -> String {
+    let process = unsafe { OpenProcess(PROCESS_QUERY_INFORMATION, 1, pid.to_owned() as u32) };
+    if process.is_null() {
+        return "0 b".to_string();
+    }
+    unsafe {
+        let mut mem_info: PROCESS_MEMORY_COUNTERS = mem::zeroed();
+        GetProcessMemoryInfo(process, &mut mem_info, mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32);
+        return format!("{} b", mem_info.WorkingSetSize);
+    }
+}
+
+pub fn win_get_process_runtime(starttime: u64) -> u64 {
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+    let runtime = now - convert_filetime64_to_unix_epoch(starttime);
+    runtime
 }
 
 trait Empty<T> {

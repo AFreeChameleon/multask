@@ -1,4 +1,4 @@
-use std::env;
+use std::{env, fs::File};
 
 use mult_lib::args::{parse_args, ParsedArgs};
 use mult_lib::command::MemStats;
