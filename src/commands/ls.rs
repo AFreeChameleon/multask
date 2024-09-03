@@ -7,6 +7,7 @@ use mult_lib::tree::compress_tree;
 use mult_lib::windows::proc::win_get_all_processes;
 use prettytable::Table;
 use windows_sys::Win32::System::JobObjects::OpenJobObjectA;
+use std::ffi::CString;
 use std::{env, thread, time::Duration};
 
 use mult_lib::command::CommandManager;
@@ -88,12 +89,17 @@ pub fn setup_table(
         #[cfg(target_os = "linux")]
         let process_tree = linux_get_all_processes(command.pid as usize);
         #[cfg(target_os = "windows")]
-        let process_tree = win_get_all_processes(unsafe { &mut *OpenJobObjectA(
+        let process_tree = win_get_all_processes(unsafe { OpenJobObjectA(
             0x1F001F, // JOB_OBJECT_ALL_ACCESS
             0,
-            format!("mult-{}", task.id).as_ptr(),
+            CString::new(format!("Global\\mult-{}", task.id)).unwrap().as_bytes_with_nul().as_ptr() as *const u8,
         ) }, command.pid);
         
+        println!("{:?}", unsafe { OpenJobObjectA(
+            0x1F001F, // JOB_OBJECT_ALL_ACCESS
+            0,
+            CString::new(format!("Global\\mult-{}", task.id)).unwrap().as_bytes_with_nul().as_ptr() as *const u8,
+        ) });
 
         let mut all_processes = vec![];
         compress_tree(&process_tree, &mut all_processes);
@@ -151,7 +157,7 @@ fn get_process_headers(pid: usize, starttime: u32, task: &Task, is_main_process:
 fn win_get_process_headers(pid: usize, _starttime: u32, task: &Task, _is_main_process: bool) -> Option<ProcessHeaders> {
     use std::ffi::CString;
 
-    use mult_lib::{error::print_error, proc::read_usage_stats, windows::proc::{win_get_memory_usage, win_get_process_runtime, win_get_process_stats}};
+    use mult_lib::{error::print_error, proc::{get_readable_runtime, read_usage_stats}, windows::proc::{win_get_memory_usage, win_get_process_runtime, win_get_process_stats}};
     use windows_sys::Win32::{Foundation::GetLastError, Storage::FileSystem::READ_CONTROL, System::{JobObjects::{IsProcessInJob, OpenJobObjectA}, Threading::{OpenProcess, PROCESS_QUERY_INFORMATION}}};
 
     let lp_name = CString::new(format!("Global\\mult-{}", task.id)).unwrap();
@@ -177,16 +183,23 @@ fn win_get_process_headers(pid: usize, _starttime: u32, task: &Task, _is_main_pr
         return None;
     }
 
-    let usage_stats = read_usage_stats(task.id).unwrap();
     let proc_stats = win_get_process_stats(pid);
     if proc_stats.len() == 0 {
         return None;
+    }
+    let mut cpu_usage = 0.0;
+    let usage_stats = match read_usage_stats(task.id) {
+        Ok(val) => val,
+        Err(_) => return None
+    };
+    if let Some(stats) = usage_stats.get(&(pid as usize)) {
+        cpu_usage = (stats.cpu_usage * 100.0).round() / 100.0;
     }
 
     Some(ProcessHeaders {
         pid: pid.to_string(),
         memory: win_get_memory_usage(&(pid as usize)),
-        cpu: format!("{}%", read_usage_stats(task_id)),
+        cpu: format!("{}%", cpu_usage),
         runtime: get_readable_runtime(
             win_get_process_runtime(proc_stats[2].parse().unwrap())
         ),

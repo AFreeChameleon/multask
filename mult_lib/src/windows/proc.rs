@@ -15,19 +15,26 @@ fn convert_filetime64_to_unix_epoch(filetime64: u64) -> u64 {
     return (filetime64 / 10000000) - 11644473600;
 }
 
-pub fn win_get_all_processes(job: &mut c_void, pid: u32) -> TreeNode {
-    let mut result: JOBOBJECT_BASIC_PROCESS_ID_LIST = JOBOBJECT_BASIC_PROCESS_ID_LIST::empty();
+pub fn win_get_all_processes(job: *mut c_void, pid: u32) -> TreeNode {
+    let mut result = JOBOBJECT_BASIC_PROCESS_ID_LIST::empty();
+    #[repr(C)]
+    struct Jobs {
+        header: JOBOBJECT_BASIC_PROCESS_ID_LIST,
+        list: [usize; 1024],
+    }
+    let mut jobs: Jobs = unsafe { mem::zeroed() };
     if unsafe { QueryInformationJobObject(
         job,
         3, // JobObjectBasicProcessIdList
-        cast_to_c_void::<JOBOBJECT_BASIC_PROCESS_ID_LIST>(&mut result),
-        std::mem::size_of::<JOBOBJECT_BASIC_PROCESS_ID_LIST>() as u32,
+        cast_to_c_void::<Jobs>(&mut jobs),
+        mem::size_of_val(&jobs) as u32,
         ptr::null_mut()
     ) } == 0 {
         // Job does not exist
-        print_error(MultError::ProcessNotExists, None);
+        print_error(MultError::WindowsError, unsafe { Some(GetLastError().to_string()) });
         return TreeNode::empty();
     }
+    let list = &jobs.list[..jobs.header.NumberOfProcessIdsInList as usize];
     let mut stats = win_get_process_stats(pid as usize);
     let mut head_node = TreeNode {
         pid: pid as usize,
@@ -35,10 +42,10 @@ pub fn win_get_all_processes(job: &mut c_void, pid: u32) -> TreeNode {
         utime: stats[1].parse().unwrap(),
         children: Vec::new()
     };
-    for child_pid in result.ProcessIdList {
-        stats = win_get_process_stats(child_pid as usize);
+    for child_pid in list {
+        stats = win_get_process_stats(*child_pid);
         head_node.children.push(TreeNode {
-            pid: child_pid,
+            pid: *child_pid,
             stime: stats[0].parse().unwrap(),
             utime: stats[1].parse().unwrap(),
             children: Vec::new()
@@ -86,7 +93,7 @@ pub fn win_get_memory_usage(pid: &usize) -> String {
 
 pub fn win_get_process_runtime(starttime: u64) -> u64 {
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-    let runtime = now - convert_filetime64_to_unix_epoch(starttime);
+    let runtime = now - starttime;
     runtime
 }
 
@@ -106,9 +113,9 @@ impl Empty<FILETIME> for FILETIME {
 impl Empty<JOBOBJECT_BASIC_PROCESS_ID_LIST> for JOBOBJECT_BASIC_PROCESS_ID_LIST {
     fn empty() -> JOBOBJECT_BASIC_PROCESS_ID_LIST {
         JOBOBJECT_BASIC_PROCESS_ID_LIST {
-            NumberOfAssignedProcesses: 0,
-            NumberOfProcessIdsInList: 0,
-            ProcessIdList: [0]
+            NumberOfAssignedProcesses: 24,
+            NumberOfProcessIdsInList: 24,
+            ProcessIdList: [0; 1]
         }
     }
 }
