@@ -57,7 +57,7 @@ fn main() -> Result<(), MultErrorTuple> {
         Err(_) => home_dir().unwrap(),
     };
 
-    let mut process_name = String::new();
+    let mut process_name: Vec<u8> = Vec::with_capacity(1024);
     unsafe {
         GetProcessImageFileNameA(
             process_handle,
@@ -69,7 +69,7 @@ fn main() -> Result<(), MultErrorTuple> {
         command: command.to_string(),
         pid: process::id(),
         dir: current_dir.display().to_string(),
-        name: process_name.to_string(),
+        name: String::from_utf8(process_name).unwrap(),
         starttime: 0,
     };
     CommandManager::write_command_data(data, &process_dir);

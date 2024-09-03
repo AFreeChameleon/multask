@@ -13,9 +13,9 @@ use sysinfo::{Pid, System};
 #[cfg(target_family = "unix")]
 use crate::linux::proc::{
     linux_get_proc_name, linux_get_process_memory, linux_get_process_runtime,
-    linux_get_process_stats, linux_proc_exists,
+    linux_get_process_stats, linux_proc_exists, linux_get_proc_comm
 };
-use crate::windows::proc::{win_get_all_processes, win_get_memory_usage};
+use crate::windows::proc::{win_get_all_processes, win_get_memory_usage, win_get_proc_name, win_proc_exists};
 #[cfg(target_family = "windows")]
 use crate::windows::proc::{
     win_get_process_stats
@@ -38,20 +38,11 @@ pub fn get_proc_name(pid: u32) -> Result<String, MultErrorTuple> {
 }
 
 pub fn get_proc_comm(pid: u32) -> Result<String, MultErrorTuple> {
-    let mut proc_comm = String::new();
-    let mut proc_file = match File::open(format!("/proc/{}/comm", pid)) {
-        Ok(val) => val,
-        Err(_) => {
-            return Err((MultError::ProcessDirNotExist, None));
-        }
-    };
-    match proc_file.read_to_string(&mut proc_comm) {
-        Ok(_) => (),
-        Err(_) => {
-            return Err((MultError::ProcessDirNotExist, None));
-        }
-    };
-    Ok(proc_comm.trim().to_string())
+    #[cfg(target_os = "linux")]
+    Ok(linux_get_proc_comm(pid)?);
+    #[cfg(target_os = "windows")]
+    return win_get_proc_name(pid);
+    Ok(String::new())
 }
 
 pub fn kill_all_processes(ppid: u32) -> Result<(), MultErrorTuple> {
@@ -104,6 +95,8 @@ pub fn read_usage_stats(task_id: u32) -> Result<HashMap<usize, UsageStats>, Mult
 pub fn proc_exists(pid: i32) -> bool {
     #[cfg(target_family = "unix")]
     return linux_proc_exists(pid);
+    #[cfg(target_os = "windows")]
+    return win_proc_exists(pid);
     return false;
 }
 

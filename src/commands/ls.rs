@@ -94,12 +94,6 @@ pub fn setup_table(
             0,
             CString::new(format!("Global\\mult-{}", task.id)).unwrap().as_bytes_with_nul().as_ptr() as *const u8,
         ) }, command.pid);
-        
-        println!("{:?}", unsafe { OpenJobObjectA(
-            0x1F001F, // JOB_OBJECT_ALL_ACCESS
-            0,
-            CString::new(format!("Global\\mult-{}", task.id)).unwrap().as_bytes_with_nul().as_ptr() as *const u8,
-        ) });
 
         let mut all_processes = vec![];
         compress_tree(&process_tree, &mut all_processes);
@@ -112,9 +106,9 @@ pub fn setup_table(
                     if !proc_exists(*child_process_id as i32) {
                         continue;
                     }
-                    if let Some(child_process_headers) = get_process_headers(command.pid as usize, command.starttime, &task, false) {
+                    if let Some(child_process_headers) = get_process_headers(*child_process_id, command.starttime, &task, false) {
                         main_headers.command.push_str(
-                            &format!("\n {}", get_proc_comm(*child_process_id as u32)?)
+                            &format!("\n  {}", get_proc_comm(*child_process_id as u32)?)
                         );
                         process_headers.pid.push_str(
                             &format!("\n{}", child_process_headers.pid)
@@ -123,7 +117,7 @@ pub fn setup_table(
                             &format!("\n{}", child_process_headers.memory)
                         );
                         process_headers.cpu.push_str(
-                            &child_process_headers.cpu
+                            &format!("\n{}", &child_process_headers.cpu)
                         );
                         process_headers.runtime.push_str(
                             &format!("\n{}", child_process_headers.runtime)
@@ -154,7 +148,7 @@ fn get_process_headers(pid: usize, starttime: u32, task: &Task, is_main_process:
 }
 
 #[cfg(target_os = "windows")]
-fn win_get_process_headers(pid: usize, _starttime: u32, task: &Task, _is_main_process: bool) -> Option<ProcessHeaders> {
+fn win_get_process_headers(pid: usize, _starttime: u32, task: &Task, is_main_process: bool) -> Option<ProcessHeaders> {
     use std::ffi::CString;
 
     use mult_lib::{error::print_error, proc::{get_readable_runtime, read_usage_stats}, windows::proc::{win_get_memory_usage, win_get_process_runtime, win_get_process_stats}};
@@ -169,7 +163,7 @@ fn win_get_process_headers(pid: usize, _starttime: u32, task: &Task, _is_main_pr
         lp_name.as_bytes_with_nul().as_ptr() as *const u8,
     ) };
     let process = unsafe { OpenProcess(PROCESS_QUERY_INFORMATION, 1, pid as u32) };
-    if process.is_null() || job.is_null() {
+    if process.is_null() || (is_main_process && job.is_null()) {
         return None;
     }
     let mut is_process_in_job: i32 = 0;

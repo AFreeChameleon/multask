@@ -1,9 +1,9 @@
 #![cfg(target_family = "windows")]
 use std::{ffi::c_longlong, mem::{self, size_of}, os::raw::c_void, ptr, time::{SystemTime, UNIX_EPOCH}};
 
-use windows_sys::Win32::{Foundation::{GetLastError, FILETIME}, Storage::FileSystem::READ_CONTROL, System::{JobObjects::{QueryInformationJobObject, JOBOBJECTINFOCLASS, JOBOBJECT_BASIC_PROCESS_ID_LIST}, ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS}, Threading::{GetProcessTimes, OpenProcess, PROCESS_ALL_ACCESS, PROCESS_QUERY_INFORMATION}}};
+use windows_sys::Win32::{Foundation::{GetLastError, FILETIME, STILL_ACTIVE}, Storage::FileSystem::READ_CONTROL, System::{JobObjects::{QueryInformationJobObject, JOBOBJECTINFOCLASS, JOBOBJECT_BASIC_PROCESS_ID_LIST}, ProcessStatus::{GetProcessImageFileNameA, GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS}, Threading::{GetExitCodeProcess, GetProcessTimes, OpenProcess, PROCESS_ALL_ACCESS, PROCESS_QUERY_INFORMATION}}};
 
-use crate::{error::{print_error, MultError}, tree::TreeNode};
+use crate::{error::{print_error, MultError, MultErrorTuple}, tree::TreeNode};
 
 use super::fork::cast_to_c_void;
 
@@ -81,6 +81,41 @@ pub fn win_get_process_stats(pid: usize) -> Vec<String> {
     let kernel_time = combine_filetime(&lp_kernel_time);
     let user_time = combine_filetime(&lp_user_time);
     vec![kernel_time.to_string(), user_time.to_string(), starttime.to_string()]
+}
+
+pub fn win_get_proc_name(pid: u32) -> Result<String, MultErrorTuple> {
+    let mut process_name: [u8; 1024] = [0; 1024];
+    let process_handle = unsafe { OpenProcess(PROCESS_QUERY_INFORMATION, 1, pid as u32) };
+    if unsafe {
+        GetProcessImageFileNameA(
+            process_handle,
+            process_name.as_mut_ptr(),
+            1024
+        )
+    } == 0 {
+        return Ok(String::new());
+    }
+    let exe_name = String::from_utf8(
+        process_name.split(|pchar| { *pchar == b'\\' }).last().unwrap().to_vec()
+    ).unwrap().trim_matches(char::from(0)).to_owned();
+    Ok(exe_name)
+}
+
+pub fn win_proc_exists(pid: i32) -> bool {
+    let process_handle = unsafe { OpenProcess(PROCESS_QUERY_INFORMATION, 1, pid as u32) };
+    if process_handle.is_null() {
+        return false;
+    }
+    let mut exit_code: u32 = 0;
+    if unsafe {
+        GetExitCodeProcess(process_handle, &mut exit_code as *mut u32)
+    } == 0 {
+        return false;
+    }
+    if exit_code != STILL_ACTIVE as u32 {
+        return false;
+    }
+    return true;
 }
 
 pub fn win_get_memory_usage(pid: &usize) -> String {
