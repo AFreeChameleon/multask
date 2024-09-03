@@ -42,10 +42,14 @@ pub fn win_get_all_processes(job: *mut c_void, pid: u32) -> TreeNode {
         utime: stats[1].parse().unwrap(),
         children: Vec::new()
     };
-    for child_pid in list {
-        stats = win_get_process_stats(*child_pid);
+    for child_pid_ref in list {
+        let child_pid = child_pid_ref.to_owned();
+        if child_pid == (pid as usize) || child_pid == 0 {
+            continue;
+        }
+        stats = win_get_process_stats(child_pid);
         head_node.children.push(TreeNode {
-            pid: *child_pid,
+            pid: child_pid,
             stime: stats[0].parse().unwrap(),
             utime: stats[1].parse().unwrap(),
             children: Vec::new()
