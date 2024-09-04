@@ -196,7 +196,6 @@ fn win_get_process_headers(
     };
     let process = unsafe { OpenProcess(PROCESS_QUERY_INFORMATION, 1, pid as u32) };
     if process.is_null() || (is_main_process && job.is_null()) {
-        println!("{:?} {:?} {:?}", process, job, lp_name);
         return None;
     }
     let mut is_process_in_job: i32 = 0;

@@ -27,7 +27,7 @@ use windows_sys::Win32::{
 };
 
 use crate::{
-    error::{print_error, MultError, MultErrorTuple},
+    error::{print_error, print_warning, MultError, MultErrorTuple},
     tree::{compress_tree, TreeNode},
 };
 
@@ -195,17 +195,16 @@ pub fn win_kill_all_processes(ppid: u32, task_id: u32) -> Result<(), MultErrorTu
     for pid in all_processes {
         win_kill_process(pid as u32)?;
     }
+    if job.is_null() {
+        return Ok(());
+    }
     Ok(())
 }
 
 pub fn win_kill_process(pid: u32) -> Result<(), MultErrorTuple> {
-    let process = unsafe { OpenProcess(PROCESS_TERMINATE, 0, pid) };
-    if process.is_null() {
-        return Ok(());
-    }
     let mut process_name = [0; 1024];
     let process_handle = unsafe {
-        OpenProcess(PROCESS_QUERY_INFORMATION | SYNCHRONIZE, 1, pid as u32)
+        OpenProcess(PROCESS_TERMINATE | PROCESS_QUERY_INFORMATION | SYNCHRONIZE, 1, pid as u32)
     };
     if unsafe { GetProcessImageFileNameW(process_handle, process_name.as_mut_ptr(), 1024) } == 0 {
         return unsafe { Err((MultError::WindowsError, Some(GetLastError().to_string()))) };
@@ -226,7 +225,15 @@ pub fn win_kill_process(pid: u32) -> Result<(), MultErrorTuple> {
             ));
         }
     }
-    unsafe { TerminateProcess(process_handle, 1) };
+    if unsafe { TerminateProcess(process_handle, 1) } == 0 {
+        unsafe {
+            print_warning(&format!("Failed to kill process: {}. error code: {}", pid, GetLastError()));
+        }
+    }
+    // if unsafe { WaitForSingleObject(process_handle, INFINITE) } != 0 {
+    //     println!("GRUH");
+    //     return unsafe { Err((MultError::WindowsError, Some(GetLastError().to_string()))) };
+    // }
     Ok(())
 }
 
