@@ -230,10 +230,6 @@ pub fn win_kill_process(pid: u32) -> Result<(), MultErrorTuple> {
             print_warning(&format!("Failed to kill process: {}. error code: {}", pid, GetLastError()));
         }
     }
-    // if unsafe { WaitForSingleObject(process_handle, INFINITE) } != 0 {
-    //     println!("GRUH");
-    //     return unsafe { Err((MultError::WindowsError, Some(GetLastError().to_string()))) };
-    // }
     Ok(())
 }
 
