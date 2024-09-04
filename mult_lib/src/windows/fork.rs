@@ -41,11 +41,11 @@ pub fn run_daemon(
         let mut command_line_str: Vec<u8> = command_line.as_bytes_with_nul().to_owned();
         unsafe {
             let mut process_info = std::mem::zeroed();
-            let mut si: STARTUPINFOEXA = std::mem::zeroed();
+            let mut si: STARTUPINFOEXW = std::mem::zeroed();
             si.StartupInfo.cb = std::mem::size_of::<STARTUPINFOEXA>() as u32;
-            if CreateProcessA(
+            if CreateProcessW(
                 ptr::null(),
-                command_line_str.as_mut_ptr() as *mut u8,
+                command_line_str.as_mut_ptr() as *mut u16,
                 ptr::null(),
                 ptr::null(),
                 0,

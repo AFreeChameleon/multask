@@ -6,7 +6,7 @@ use mult_lib::proc::{
 use mult_lib::tree::compress_tree;
 use mult_lib::windows::proc::win_get_all_processes;
 use prettytable::Table;
-use windows_sys::Win32::System::JobObjects::OpenJobObjectA;
+use windows_sys::Win32::System::JobObjects::{OpenJobObjectA, OpenJobObjectW};
 use std::ffi::CString;
 use std::{env, thread, time::Duration};
 
@@ -89,10 +89,10 @@ pub fn setup_table(
         #[cfg(target_os = "linux")]
         let process_tree = linux_get_all_processes(command.pid as usize);
         #[cfg(target_os = "windows")]
-        let process_tree = win_get_all_processes(unsafe { OpenJobObjectA(
+        let process_tree = win_get_all_processes(unsafe { OpenJobObjectW(
             0x1F001F, // JOB_OBJECT_ALL_ACCESS
             0,
-            CString::new(format!("Global\\mult-{}", task.id)).unwrap().as_bytes_with_nul().as_ptr() as *const u8,
+            CString::new(format!("Global\\mult-{}", task.id)).unwrap().as_bytes_with_nul().as_ptr() as *const u16,
         ) }, command.pid);
 
         let mut all_processes = vec![];
@@ -152,15 +152,15 @@ fn win_get_process_headers(pid: usize, _starttime: u32, task: &Task, is_main_pro
     use std::ffi::CString;
 
     use mult_lib::{error::print_error, proc::{get_readable_runtime, read_usage_stats}, windows::proc::{win_get_memory_usage, win_get_process_runtime, win_get_process_stats}};
-    use windows_sys::Win32::{Foundation::GetLastError, Storage::FileSystem::READ_CONTROL, System::{JobObjects::{IsProcessInJob, OpenJobObjectA}, Threading::{OpenProcess, PROCESS_QUERY_INFORMATION}}};
+    use windows_sys::Win32::{Foundation::GetLastError, Storage::FileSystem::READ_CONTROL, System::{JobObjects::{IsProcessInJob, OpenJobObjectA, OpenJobObjectW}, Threading::{OpenProcess, PROCESS_QUERY_INFORMATION}}};
 
     let lp_name = CString::new(format!("Global\\mult-{}", task.id)).unwrap();
 
     // Check if job object exists already
-    let job = unsafe { OpenJobObjectA(
+    let job = unsafe { OpenJobObjectW(
         0x1F001F, // JOB_OBJECT_QUERY
         0,
-        lp_name.as_bytes_with_nul().as_ptr() as *const u8,
+        lp_name.as_bytes_with_nul().as_ptr() as *const u16,
     ) };
     let process = unsafe { OpenProcess(PROCESS_QUERY_INFORMATION, 1, pid as u32) };
     if process.is_null() || (is_main_process && job.is_null()) {

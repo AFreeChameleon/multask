@@ -1,7 +1,7 @@
 #![cfg(target_family = "windows")]
-use std::{ffi::c_longlong, mem::{self, size_of}, os::raw::c_void, ptr, time::{SystemTime, UNIX_EPOCH}};
+use std::{ffi::{c_longlong, OsString}, mem::{self, size_of}, os::{raw::c_void, windows::ffi::OsStringExt}, ptr, time::{SystemTime, UNIX_EPOCH}};
 
-use windows_sys::Win32::{Foundation::{GetLastError, FILETIME, STILL_ACTIVE}, Storage::FileSystem::READ_CONTROL, System::{JobObjects::{QueryInformationJobObject, JOBOBJECTINFOCLASS, JOBOBJECT_BASIC_PROCESS_ID_LIST}, ProcessStatus::{GetProcessImageFileNameA, GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS}, Threading::{GetExitCodeProcess, GetProcessTimes, OpenProcess, PROCESS_ALL_ACCESS, PROCESS_QUERY_INFORMATION}}};
+use windows_sys::Win32::{Foundation::{GetLastError, FILETIME, STILL_ACTIVE}, Storage::FileSystem::READ_CONTROL, System::{JobObjects::{QueryInformationJobObject, JOBOBJECTINFOCLASS, JOBOBJECT_BASIC_PROCESS_ID_LIST}, ProcessStatus::{GetProcessImageFileNameA, GetProcessImageFileNameW, GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS}, Threading::{GetExitCodeProcess, GetProcessTimes, OpenProcess, TerminateProcess, WaitForSingleObject, INFINITE, PROCESS_ALL_ACCESS, PROCESS_QUERY_INFORMATION, PROCESS_TERMINATE}}};
 
 use crate::{error::{print_error, MultError, MultErrorTuple}, tree::TreeNode};
 
@@ -16,7 +16,6 @@ fn convert_filetime64_to_unix_epoch(filetime64: u64) -> u64 {
 }
 
 pub fn win_get_all_processes(job: *mut c_void, pid: u32) -> TreeNode {
-    let mut result = JOBOBJECT_BASIC_PROCESS_ID_LIST::empty();
     #[repr(C)]
     struct Jobs {
         header: JOBOBJECT_BASIC_PROCESS_ID_LIST,
@@ -84,10 +83,10 @@ pub fn win_get_process_stats(pid: usize) -> Vec<String> {
 }
 
 pub fn win_get_proc_name(pid: u32) -> Result<String, MultErrorTuple> {
-    let mut process_name: [u8; 1024] = [0; 1024];
+    let mut process_name = [0; 1024];
     let process_handle = unsafe { OpenProcess(PROCESS_QUERY_INFORMATION, 1, pid as u32) };
     if unsafe {
-        GetProcessImageFileNameA(
+        GetProcessImageFileNameW(
             process_handle,
             process_name.as_mut_ptr(),
             1024
@@ -95,9 +94,8 @@ pub fn win_get_proc_name(pid: u32) -> Result<String, MultErrorTuple> {
     } == 0 {
         return Ok(String::new());
     }
-    let exe_name = String::from_utf8(
-        process_name.split(|pchar| { *pchar == b'\\' }).last().unwrap().to_vec()
-    ).unwrap().trim_matches(char::from(0)).to_owned();
+    let split_p_name = process_name.split(|pchar| { *pchar == b'\\'.into() }).last().unwrap().to_vec();
+    let exe_name = String::from_utf16(&split_p_name).unwrap().trim_matches(char::from(0)).to_owned();
     Ok(exe_name)
 }
 
@@ -134,6 +132,44 @@ pub fn win_get_process_runtime(starttime: u64) -> u64 {
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
     let runtime = now - starttime;
     runtime
+}
+
+pub fn win_kill_process(pid: u32) -> Result<(), MultErrorTuple> {
+    let process = unsafe {
+        OpenProcess(PROCESS_TERMINATE, 0, pid)
+    };
+    if process.is_null() {
+        return Ok(());
+    }
+    let mut process_name = [0; 1024];
+    let process_handle = unsafe { OpenProcess(PROCESS_QUERY_INFORMATION, 1, pid as u32) };
+    if unsafe {
+        GetProcessImageFileNameW(
+            process_handle,
+            process_name.as_mut_ptr(),
+            1024
+        )
+    } == 0 {
+        return unsafe { Err((MultError::WindowsError, Some(GetLastError().to_string()))) };
+    }
+    let process_name_str = OsString::from_wide(&process_name[..]);
+
+    // This is why I need to check for it
+    // https://github.com/rust-lang/rust/issues/33145
+    // The gist of it is that all builds on one machine use the same
+    // `mspdbsrv.exe` instance. If we were to kill this instance then we
+    // could erroneously cause other builds to fail.
+    // https://github.com/alexcrichton/rustjob/blob/07d2601c8bf63d06584b2c4e248fd2c65c18d224/src/main.rs#L200
+    if let Some(process_name_str) = process_name_str.to_str() {
+        if process_name_str.contains("mspdbsrv") {
+            return Err((MultError::CustomError, Some("Cannot kill mspdbsrv.exe".to_string())));
+        }
+    }
+    unsafe { TerminateProcess(process_handle, 1) };
+    if unsafe { WaitForSingleObject(process_handle, INFINITE) } != 0 {
+        return unsafe { Err((MultError::WindowsError, Some(GetLastError().to_string()))) };
+    }
+    Ok(())
 }
 
 trait Empty<T> {

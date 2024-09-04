@@ -8,14 +8,12 @@ use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::u32;
 
-use sysinfo::{Pid, System};
-
 #[cfg(target_family = "unix")]
 use crate::linux::proc::{
     linux_get_proc_name, linux_get_process_memory, linux_get_process_runtime,
     linux_get_process_stats, linux_proc_exists, linux_get_proc_comm
 };
-use crate::windows::proc::{win_get_all_processes, win_get_memory_usage, win_get_proc_name, win_proc_exists};
+use crate::windows::proc::{win_get_all_processes, win_get_memory_usage, win_get_proc_name, win_kill_process, win_proc_exists};
 #[cfg(target_family = "windows")]
 use crate::windows::proc::{
     win_get_process_stats
@@ -46,23 +44,19 @@ pub fn get_proc_comm(pid: u32) -> Result<String, MultErrorTuple> {
 }
 
 pub fn kill_all_processes(ppid: u32) -> Result<(), MultErrorTuple> {
-    let sys = System::new_all();
     let process_tree = get_all_processes(ppid as usize);
     let mut all_processes = vec![];
     compress_tree(&process_tree, &mut all_processes);
-    if let Some(process) = sys.process(Pid::from_u32(ppid)) {
-        if let Some(parent_pid) = process.parent() {
-            sys.process(parent_pid).unwrap().kill();
-        }
-    }
     for pid in all_processes {
-        if let Some(process) = sys.process(Pid::from_u32(pid as u32)) {
-            process.kill();
-        } else {
-            return Err((MultError::ProcessNotRunning, None));
-        }
+        kill_process(pid as u32)?;
     }
+    kill_process(ppid)?;
     Ok(())
+}
+
+fn kill_process(pid: u32) -> Result<(), MultErrorTuple> {
+    #[cfg(target_os = "windows")]
+    return win_kill_process(pid);
 }
 
 pub fn save_task_processes(path: &Path, tree: &TreeNode) {

@@ -14,8 +14,7 @@ pub fn win_get_processor_count() -> u32 {
 }
 
 pub fn win_get_cpu_usage(pid: usize, last_time: u64, node: TreeNode) -> u64 {
-    let processor_count = win_get_processor_count();
-    let process = unsafe { OpenProcess(PROCESS_ALL_ACCESS, 0, pid as u32) };
+    let processor_count = win_get_processor_count() as u64;
     let stats = win_get_process_stats(pid);
     if stats.len() == 0 {
         return 0;
@@ -27,6 +26,6 @@ pub fn win_get_cpu_usage(pid: usize, last_time: u64, node: TreeNode) -> u64 {
     let time = combine_filetime(&now);
     let system_time_delta = system_time - last_system_time;
     let time_delta = time - last_time;
-    let usage = (system_time_delta * 100 + time_delta / 2) / time_delta;
+    let usage = ((system_time_delta * 100 + time_delta / 2) / time_delta) / processor_count;
     return usage;
 }

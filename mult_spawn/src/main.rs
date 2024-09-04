@@ -4,7 +4,7 @@ use mult_lib::command::{CommandData, CommandManager};
 use mult_lib::error::{MultError, MultErrorTuple};
 use windows_sys::Win32::Foundation::GetLastError;
 use windows_sys::Win32::System::JobObjects::{AssignProcessToJobObject, CreateJobObjectA, CreateJobObjectW, JobObjectCpuRateControlInformation, JobObjectExtendedLimitInformation, OpenJobObjectA, SetInformationJobObject, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_CPU_RATE_CONTROL_ENABLE, JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP};
-use windows_sys::Win32::System::ProcessStatus::{GetModuleFileNameExA, GetProcessImageFileNameA};
+use windows_sys::Win32::System::ProcessStatus::{GetModuleFileNameExA, GetProcessImageFileNameA, GetProcessImageFileNameW};
 use std::ffi::{c_void, CString};
 use std::{fs, ptr};
 use std::{
@@ -33,10 +33,9 @@ fn main() -> Result<(), MultErrorTuple> {
     let mem_limit = &args[4];
     let cpu_limit = &args[5];
 
-    fs::write(format!("hi"), format!("{:?} {} {}", args, mem_limit, cpu_limit)).unwrap();
     let job_name: CString = CString::new(format!("Global\\mult-{}", task_id.as_str())).unwrap();
     let job_handle = create_job(
-        job_name.as_ptr() as *mut u8,
+        job_name.as_ptr() as *mut u16,
         mem_limit.parse().unwrap(),
         cpu_limit.parse().unwrap()
     )?;
@@ -57,9 +56,9 @@ fn main() -> Result<(), MultErrorTuple> {
         Err(_) => home_dir().unwrap(),
     };
 
-    let mut process_name: Vec<u8> = Vec::with_capacity(1024);
+    let mut process_name: Vec<u16> = Vec::with_capacity(1024);
     unsafe {
-        GetProcessImageFileNameA(
+        GetProcessImageFileNameW(
             process_handle,
             process_name.as_mut_ptr(),
             u32::MAX
@@ -69,7 +68,7 @@ fn main() -> Result<(), MultErrorTuple> {
         command: command.to_string(),
         pid: process::id(),
         dir: current_dir.display().to_string(),
-        name: String::from_utf8(process_name).unwrap(),
+        name: String::from_utf16(&process_name).unwrap(),
         starttime: 0,
     };
     CommandManager::write_command_data(data, &process_dir);
@@ -156,12 +155,12 @@ fn main() -> Result<(), MultErrorTuple> {
 }
 
 fn create_job(
-    lp_name: *const u8,
+    lp_name: *const u16,
     mem_limit: i64,
     cpu_limit: i32
 ) -> Result<*mut c_void, MultErrorTuple> {
     unsafe {
-        let job = CreateJobObjectA(
+        let job = CreateJobObjectW(
             ptr::null(),
             lp_name,
         );
