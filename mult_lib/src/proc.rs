@@ -88,7 +88,7 @@ pub fn proc_exists(pid: i32) -> bool {
     #[cfg(target_family = "unix")]
     return linux_proc_exists(pid);
     #[cfg(target_os = "windows")]
-    return win_proc_exists(pid);
+    return win_proc_exists(pid as u32);
 }
 
 pub fn get_all_processes(pid: usize) -> TreeNode {

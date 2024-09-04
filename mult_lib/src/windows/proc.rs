@@ -140,8 +140,8 @@ pub fn win_get_proc_name(pid: u32) -> Result<String, MultErrorTuple> {
     Ok(exe_name)
 }
 
-pub fn win_proc_exists(pid: i32) -> bool {
-    let process_handle = unsafe { OpenProcess(PROCESS_QUERY_INFORMATION, 1, pid as u32) };
+pub fn win_proc_exists(pid: u32) -> bool {
+    let process_handle = unsafe { OpenProcess(PROCESS_QUERY_INFORMATION, 1, pid) };
     if process_handle.is_null() {
         return false;
     }
@@ -181,12 +181,16 @@ pub fn win_get_process_runtime(starttime: u64) -> u64 {
 }
 
 pub fn win_kill_all_processes(ppid: u32, task_id: u32) -> Result<(), MultErrorTuple> {
+    if !win_proc_exists(ppid) {
+        return Err((MultError::ProcessNotExists, None));
+    }
+    let lp_name = OsString::from(format!("Global\\mult-{}", task_id))
+        .encode_wide().chain(Some(0)).collect::<Vec<u16>>();
     let job = unsafe {
         OpenJobObjectW(
             0x1F001F, // JOB_OBJECT_ALL_ACCESS
-            0,
-            OsString::from(format!("Global\\mult-{}", task_id))
-                .encode_wide().chain(Some(0)).collect::<Vec<u16>>().as_ptr() as *const u16,
+            1,
+            lp_name.as_ptr() as *const u16,
         )
     };
     let process_tree = win_get_all_processes(job, ppid);
@@ -204,7 +208,9 @@ pub fn win_kill_all_processes(ppid: u32, task_id: u32) -> Result<(), MultErrorTu
 pub fn win_kill_process(pid: u32) -> Result<(), MultErrorTuple> {
     let mut process_name = [0; 1024];
     let process_handle = unsafe {
-        OpenProcess(PROCESS_TERMINATE | PROCESS_QUERY_INFORMATION | SYNCHRONIZE, 1, pid as u32)
+        OpenProcess(
+            PROCESS_TERMINATE | PROCESS_QUERY_INFORMATION | SYNCHRONIZE, 1, pid as u32
+        )
     };
     if unsafe { GetProcessImageFileNameW(process_handle, process_name.as_mut_ptr(), 1024) } == 0 {
         return unsafe { Err((MultError::WindowsError, Some(GetLastError().to_string()))) };
