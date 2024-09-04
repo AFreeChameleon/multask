@@ -34,8 +34,13 @@ pub fn run() -> Result<(), MultErrorTuple> {
         .join(".multi-tasker")
         .join("processes")
         .join(task_id.to_string());
+    
     let out_file_path = file_path.join("stdout.out");
     let err_file_path = file_path.join("stderr.err");
+    
+    // let log_file_path = file_path.join("logs.out");
+    // let mut log_file = File::open(&log_file_path).unwrap();
+    // let mut log_pos = fs::metadata(&log_file_path).unwrap().len();
 
     let mut out_file = File::open(&out_file_path).unwrap();
     let mut out_pos = fs::metadata(&out_file_path).unwrap().len();
@@ -47,9 +52,8 @@ pub fn run() -> Result<(), MultErrorTuple> {
     combined_lines.append(&mut read_last_lines(&err_file, last_lines_to_print)?);
     // Sorting lines by time
     let sorted_lines = sort_last_lines(combined_lines)?;
-    print_info(&format!("Printing the last {} lines of logs.", sorted_lines.len()).to_string());
-    last_lines_to_print = sorted_lines.len();
-    for i in 0..last_lines_to_print {
+    print_info(&format!("Printing the last {} lines of logs.", last_lines_to_print).to_string());
+    for i in (sorted_lines.len() - last_lines_to_print)..sorted_lines.len() {
         print!("{}", sorted_lines[i].content);
     }
     if !parsed_args.flags.contains(&WATCH_FLAG.to_string()) {
@@ -150,6 +154,7 @@ fn read_last_lines(file: &File, count: usize) -> Result<VecDeque<String>, MultEr
     Ok(lines_cache)
 }
 
+#[derive(Debug)]
 struct Log {
     time_millis: u128,
     content: String,
