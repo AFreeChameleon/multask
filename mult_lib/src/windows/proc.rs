@@ -1,7 +1,7 @@
 #![cfg(target_family = "windows")]
 use std::{
-    ffi::{c_longlong, OsString},
-    mem::{self, size_of},
+    ffi::OsString,
+    mem,
     os::{raw::c_void, windows::ffi::{OsStrExt, OsStringExt}},
     ptr,
     time::{SystemTime, UNIX_EPOCH},
@@ -9,18 +9,18 @@ use std::{
 
 use windows_sys::Win32::{
     Foundation::{GetLastError, FILETIME, STILL_ACTIVE},
-    Storage::FileSystem::{READ_CONTROL, SYNCHRONIZE},
+    Storage::FileSystem::SYNCHRONIZE,
     System::{
         JobObjects::{
-            OpenJobObjectW, QueryInformationJobObject, JOBOBJECTINFOCLASS, JOBOBJECT_BASIC_PROCESS_ID_LIST
+            OpenJobObjectW, QueryInformationJobObject, JOBOBJECT_BASIC_PROCESS_ID_LIST
         },
         ProcessStatus::{
-            GetProcessImageFileNameA, GetProcessImageFileNameW, GetProcessMemoryInfo,
+            GetProcessImageFileNameW, GetProcessMemoryInfo,
             PROCESS_MEMORY_COUNTERS,
         },
         Threading::{
             GetExitCodeProcess, GetProcessTimes, OpenProcess, TerminateProcess,
-            WaitForSingleObject, INFINITE, PROCESS_ALL_ACCESS, PROCESS_QUERY_INFORMATION,
+            PROCESS_ALL_ACCESS, PROCESS_QUERY_INFORMATION,
             PROCESS_TERMINATE,
         },
     },

@@ -2,13 +2,9 @@ extern crate core;
 extern crate std;
 
 use std::collections::HashMap;
-use std::ffi::OsString;
-use std::fs::{self, File};
-use std::os::windows::ffi::OsStrExt;
+use std::fs;
 use std::path::Path;
 use std::u32;
-
-use windows_sys::Win32::System::JobObjects::OpenJobObjectW;
 
 use crate::error::print_error;
 #[cfg(target_family = "unix")]
@@ -20,7 +16,7 @@ use crate::tree::compress_tree;
 #[cfg(target_family = "windows")]
 use crate::windows::proc::win_get_process_stats;
 use crate::windows::proc::{
-    win_get_all_processes, win_get_memory_usage, win_get_proc_name, win_kill_process, win_proc_exists
+    win_get_memory_usage, win_get_proc_name, win_kill_process, win_proc_exists
 };
 use crate::{
     error::{MultError, MultErrorTuple},
@@ -44,11 +40,9 @@ pub fn get_proc_comm(pid: u32) -> Result<String, MultErrorTuple> {
     Ok(linux_get_proc_comm(pid)?);
     #[cfg(target_os = "windows")]
     return win_get_proc_name(pid);
-    print_error(MultError::OSNotSupported, None);
-    Ok(String::new())
 }
 
-pub fn kill_all_processes(ppid: u32, task_id: u32) -> Result<(), MultErrorTuple> {
+pub fn kill_all_processes(ppid: u32) -> Result<(), MultErrorTuple> {
     let process_tree = get_all_processes(ppid as usize);
     let mut all_processes = vec![];
     compress_tree(&process_tree, &mut all_processes);
@@ -61,7 +55,6 @@ pub fn kill_all_processes(ppid: u32, task_id: u32) -> Result<(), MultErrorTuple>
 fn kill_process(pid: u32) -> Result<(), MultErrorTuple> {
     #[cfg(target_os = "windows")]
     return win_kill_process(pid);
-    print_error(MultError::OSNotSupported, None);
 }
 
 pub fn save_task_processes(path: &Path, tree: &TreeNode) {

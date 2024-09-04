@@ -1,12 +1,9 @@
 #![cfg(target_family = "windows")]
-use std::{mem, ptr};
+use std::mem;
 
 use windows_sys::Win32::{
     Foundation::FILETIME,
-    System::{
-        SystemInformation::{GetSystemInfo, GetSystemTimeAsFileTime, SYSTEM_INFO, SYSTEM_INFO_0},
-        Threading::{OpenProcess, PROCESS_ALL_ACCESS},
-    },
+    System::SystemInformation::{GetSystemInfo, GetSystemTimeAsFileTime, SYSTEM_INFO},
 };
 
 use crate::tree::TreeNode;
