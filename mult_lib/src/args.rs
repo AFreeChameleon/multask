@@ -71,16 +71,18 @@ mod tests {
 
     #[test]
     fn parses_args_allow_values() {
-        let flags = [
-            ("--test-flag", false),
-            ("--test-value-flag", true),
-        ];
-        let sorted_args = parse_args(&[
-            "--test-flag".to_string(),
-            "value with space".to_string(),
-            "--test-value-flag".to_string(),
-            "test-value-flag-value".to_string(),
-        ], &flags, true).unwrap();
+        let flags = [("--test-flag", false), ("--test-value-flag", true)];
+        let sorted_args = parse_args(
+            &[
+                "--test-flag".to_string(),
+                "value with space".to_string(),
+                "--test-value-flag".to_string(),
+                "test-value-flag-value".to_string(),
+            ],
+            &flags,
+            true,
+        )
+        .unwrap();
         assert_eq!(
             sorted_args.value_flags,
             vec![(

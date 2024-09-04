@@ -3,13 +3,11 @@ use std::{thread, time::Duration};
 
 use libc;
 
+#[cfg(target_family = "unix")]
+use crate::linux::cpu::linux_split_limit_cpu;
 use crate::{
     proc,
     tree::{search_tree, TreeNode},
-};
-#[cfg(target_family = "unix")]
-use crate::linux::cpu::{
-    linux_split_limit_cpu
 };
 
 static MILS_IN_SECOND: f32 = 1000.0;

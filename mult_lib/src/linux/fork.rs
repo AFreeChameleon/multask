@@ -18,11 +18,11 @@ use mult_lib::task::Files;
 use mult_lib::{
     cpu::{get_cpu_usage, linux_get_cpu_time_total, split_limit_cpu},
     error::{print_info, MultError, MultErrorTuple},
+    linux::proc::linux_get_all_processes,
     proc::{
         get_all_processes, get_proc_name, get_process_stats, linux_get_cpu_stats, proc_exists,
         save_task_processes, save_usage_stats, UsageStats,
     },
-    linux::proc::{linux_get_all_processes},
     tree::{search_tree, TreeNode},
 };
 
@@ -129,13 +129,16 @@ fn run_command(command: &str, process_dir: &Path) -> Result<Child, MultErrorTupl
     let shell_path = match env::var("SHELL") {
         Ok(val) => {
             if SUPPORTED_SHELLS
-                .into_iter().find(|shell_name| val.ends_with(shell_name)).is_some() {
+                .into_iter()
+                .find(|shell_name| val.ends_with(shell_name))
+                .is_some()
+            {
                 val
             } else {
                 "/bin/bash".to_string()
             }
-        },
-        Err(_) => return Err((MultError::OSNotSupported, None))
+        }
+        Err(_) => return Err((MultError::OSNotSupported, None)),
     };
     let mut child = Command::new(shell_path)
         .args(["-ic", &command])

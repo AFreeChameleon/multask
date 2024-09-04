@@ -2,11 +2,13 @@
 use home::home_dir;
 use mult_lib::command::{CommandData, CommandManager};
 use mult_lib::error::{MultError, MultErrorTuple};
-use windows_sys::Win32::Foundation::GetLastError;
-use windows_sys::Win32::System::JobObjects::{AssignProcessToJobObject, CreateJobObjectA, CreateJobObjectW, JobObjectCpuRateControlInformation, JobObjectExtendedLimitInformation, OpenJobObjectA, SetInformationJobObject, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_CPU_RATE_CONTROL_ENABLE, JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP};
-use windows_sys::Win32::System::ProcessStatus::{GetModuleFileNameExA, GetProcessImageFileNameA, GetProcessImageFileNameW};
 use std::ffi::{c_void, CString};
-use std::{fs, ptr};
+use std::{
+    collections::HashMap,
+    mem,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 use std::{
     env,
     fs::File,
@@ -18,10 +20,34 @@ use std::{
     thread,
     time::{SystemTime, UNIX_EPOCH},
 };
-use std::{collections::HashMap, mem, sync::{Arc, Mutex}, time::Duration};
+use std::{fs, ptr};
+use windows_sys::Win32::Foundation::GetLastError;
+use windows_sys::Win32::System::JobObjects::{
+    AssignProcessToJobObject, CreateJobObjectA, CreateJobObjectW,
+    JobObjectCpuRateControlInformation, JobObjectExtendedLimitInformation, OpenJobObjectA,
+    SetInformationJobObject, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION,
+    JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+    JOB_OBJECT_CPU_RATE_CONTROL_ENABLE, JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP,
+};
+use windows_sys::Win32::System::ProcessStatus::{
+    GetModuleFileNameExA, GetProcessImageFileNameA, GetProcessImageFileNameW,
+};
 
-use mult_lib::{proc::{save_task_processes, save_usage_stats, UsageStats}, tree::{search_tree, TreeNode}, windows::{cpu::win_get_cpu_usage, proc::{combine_filetime, win_get_all_processes}}};
-use windows_sys::Win32::{Foundation::{CloseHandle, FILETIME}, System::{SystemInformation::GetSystemTimeAsFileTime, Threading::{GetCurrentProcess, GetCurrentThread}}};
+use mult_lib::{
+    proc::{save_task_processes, save_usage_stats, UsageStats},
+    tree::{search_tree, TreeNode},
+    windows::{
+        cpu::win_get_cpu_usage,
+        proc::{combine_filetime, win_get_all_processes},
+    },
+};
+use windows_sys::Win32::{
+    Foundation::{CloseHandle, FILETIME},
+    System::{
+        SystemInformation::GetSystemTimeAsFileTime,
+        Threading::{GetCurrentProcess, GetCurrentThread},
+    },
+};
 
 // Usage: mult_spawn process_dir command task_id
 fn main() -> Result<(), MultErrorTuple> {
@@ -37,9 +63,9 @@ fn main() -> Result<(), MultErrorTuple> {
     let job_handle = create_job(
         job_name.as_ptr() as *mut u16,
         mem_limit.parse().unwrap(),
-        cpu_limit.parse().unwrap()
+        cpu_limit.parse().unwrap(),
     )?;
-    
+
     let thread_handle = unsafe { GetCurrentThread() };
     let process_handle = unsafe { GetCurrentProcess() };
     unsafe { AssignProcessToJobObject(job_handle, process_handle) };
@@ -58,11 +84,7 @@ fn main() -> Result<(), MultErrorTuple> {
 
     let mut process_name: Vec<u16> = Vec::with_capacity(1024);
     unsafe {
-        GetProcessImageFileNameW(
-            process_handle,
-            process_name.as_mut_ptr(),
-            u32::MAX
-        );
+        GetProcessImageFileNameW(process_handle, process_name.as_mut_ptr(), u32::MAX);
     }
     let data = CommandData {
         command: command.to_string(),
@@ -119,10 +141,10 @@ fn main() -> Result<(), MultErrorTuple> {
             let process_tree = win_get_all_processes(ptr_job_handle, std::process::id());
             save_task_processes(&process_dir, &process_tree);
             unsafe { GetSystemTimeAsFileTime(&mut cpu_time_total) };
-    
+
             // Sleep for measuring usage over time
             thread::sleep(Duration::from_secs(1));
-    
+
             // Check for any alive processes
             let usage_stats = Arc::new(Mutex::new(HashMap::new()));
             let keep_running = Arc::new(Mutex::new(true));
@@ -135,7 +157,7 @@ fn main() -> Result<(), MultErrorTuple> {
                         cpu_usage: win_get_cpu_usage(
                             node.pid,
                             combine_filetime(&cpu_time_total),
-                            node.clone()
+                            node.clone(),
                         ) as f32,
                     },
                 );
@@ -157,15 +179,11 @@ fn main() -> Result<(), MultErrorTuple> {
 fn create_job(
     lp_name: *const u16,
     mem_limit: i64,
-    cpu_limit: i32
+    cpu_limit: i32,
 ) -> Result<*mut c_void, MultErrorTuple> {
     unsafe {
-        let job = CreateJobObjectW(
-            ptr::null(),
-            lp_name,
-        );
+        let job = CreateJobObjectW(ptr::null(), lp_name);
         if job.is_null() {
-            
             return Err((MultError::WindowsError, Some(GetLastError().to_string())));
         }
         if mem_limit != -1 {
@@ -176,7 +194,8 @@ fn create_job(
                 JobObjectExtendedLimitInformation,
                 std::ptr::addr_of!(job_limit_info) as *const c_void,
                 std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-            ) == 0 {
+            ) == 0
+            {
                 return Err((MultError::WindowsError, Some(GetLastError().to_string())));
             }
         }
@@ -193,7 +212,8 @@ fn create_job(
                 JobObjectCpuRateControlInformation,
                 std::ptr::addr_of!(job_limit_info) as *const c_void,
                 std::mem::size_of::<JOBOBJECT_CPU_RATE_CONTROL_INFORMATION>() as u32,
-            ) == 0 {
+            ) == 0
+            {
                 return Err((MultError::WindowsError, Some(GetLastError().to_string())));
             }
         }

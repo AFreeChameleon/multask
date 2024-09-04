@@ -10,15 +10,16 @@ use std::u32;
 
 #[cfg(target_family = "unix")]
 use crate::linux::proc::{
-    linux_get_proc_name, linux_get_process_memory, linux_get_process_runtime,
-    linux_get_process_stats, linux_proc_exists, linux_get_proc_comm
-};
-use crate::windows::proc::{win_get_all_processes, win_get_memory_usage, win_get_proc_name, win_kill_process, win_proc_exists};
-#[cfg(target_family = "windows")]
-use crate::windows::proc::{
-    win_get_process_stats
+    linux_get_proc_comm, linux_get_proc_name, linux_get_process_memory, linux_get_process_runtime,
+    linux_get_process_stats, linux_proc_exists,
 };
 use crate::tree::compress_tree;
+#[cfg(target_family = "windows")]
+use crate::windows::proc::win_get_process_stats;
+use crate::windows::proc::{
+    win_get_all_processes, win_get_memory_usage, win_get_proc_name, win_kill_process,
+    win_proc_exists,
+};
 use crate::{
     error::{MultError, MultErrorTuple},
     tree::TreeNode,

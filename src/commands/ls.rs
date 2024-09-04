@@ -1,14 +1,12 @@
 use mult_lib::args::{parse_args, ParsedArgs};
 use mult_lib::colors::{color_string, OK_GREEN};
-use mult_lib::proc::{
-    get_proc_comm, proc_exists,
-};
+use mult_lib::proc::{get_proc_comm, proc_exists};
 use mult_lib::tree::compress_tree;
 use mult_lib::windows::proc::win_get_all_processes;
 use prettytable::Table;
-use windows_sys::Win32::System::JobObjects::{OpenJobObjectA, OpenJobObjectW};
 use std::ffi::CString;
 use std::{env, thread, time::Duration};
+use windows_sys::Win32::System::JobObjects::{OpenJobObjectA, OpenJobObjectW};
 
 use mult_lib::command::CommandManager;
 use mult_lib::error::{MultError, MultErrorTuple};
@@ -80,7 +78,8 @@ pub fn setup_table(
             command: command.command.clone(),
         };
         // Get memory stats
-        let process_headers_opt = get_process_headers(command.pid as usize, command.starttime, &task, true);
+        let process_headers_opt =
+            get_process_headers(command.pid as usize, command.starttime, &task, true);
         if process_headers_opt.is_none() {
             table.insert_row(main_headers, None);
             continue;
@@ -89,11 +88,19 @@ pub fn setup_table(
         #[cfg(target_os = "linux")]
         let process_tree = linux_get_all_processes(command.pid as usize);
         #[cfg(target_os = "windows")]
-        let process_tree = win_get_all_processes(unsafe { OpenJobObjectW(
-            0x1F001F, // JOB_OBJECT_ALL_ACCESS
-            0,
-            CString::new(format!("Global\\mult-{}", task.id)).unwrap().as_bytes_with_nul().as_ptr() as *const u16,
-        ) }, command.pid);
+        let process_tree = win_get_all_processes(
+            unsafe {
+                OpenJobObjectW(
+                    0x1F001F, // JOB_OBJECT_ALL_ACCESS
+                    0,
+                    CString::new(format!("Global\\mult-{}", task.id))
+                        .unwrap()
+                        .as_bytes_with_nul()
+                        .as_ptr() as *const u16,
+                )
+            },
+            command.pid,
+        );
 
         let mut all_processes = vec![];
         compress_tree(&process_tree, &mut all_processes);
@@ -106,25 +113,27 @@ pub fn setup_table(
                     if !proc_exists(*child_process_id as i32) {
                         continue;
                     }
-                    if let Some(child_process_headers) = get_process_headers(*child_process_id, command.starttime, &task, false) {
-                        main_headers.command.push_str(
-                            &format!("\n  {}", get_proc_comm(*child_process_id as u32)?)
-                        );
-                        process_headers.pid.push_str(
-                            &format!("\n{}", child_process_headers.pid)
-                        );
-                        process_headers.memory.push_str(
-                            &format!("\n{}", child_process_headers.memory)
-                        );
-                        process_headers.cpu.push_str(
-                            &format!("\n{}", &child_process_headers.cpu)
-                        );
-                        process_headers.runtime.push_str(
-                            &format!("\n{}", child_process_headers.runtime)
-                        );
-                        process_headers.status.push_str(
-                            &format!("\n{}", color_string(OK_GREEN, "Running"))
-                        );
+                    if let Some(child_process_headers) =
+                        get_process_headers(*child_process_id, command.starttime, &task, false)
+                    {
+                        main_headers
+                            .command
+                            .push_str(&format!("\n  {}", get_proc_comm(*child_process_id as u32)?));
+                        process_headers
+                            .pid
+                            .push_str(&format!("\n{}", child_process_headers.pid));
+                        process_headers
+                            .memory
+                            .push_str(&format!("\n{}", child_process_headers.memory));
+                        process_headers
+                            .cpu
+                            .push_str(&format!("\n{}", &child_process_headers.cpu));
+                        process_headers
+                            .runtime
+                            .push_str(&format!("\n{}", child_process_headers.runtime));
+                        process_headers
+                            .status
+                            .push_str(&format!("\n{}", color_string(OK_GREEN, "Running")));
                     }
                 }
             } else {
@@ -139,7 +148,12 @@ pub fn setup_table(
     Ok(())
 }
 
-fn get_process_headers(pid: usize, starttime: u32, task: &Task, is_main_process: bool) -> Option<ProcessHeaders> {
+fn get_process_headers(
+    pid: usize,
+    starttime: u32,
+    task: &Task,
+    is_main_process: bool,
+) -> Option<ProcessHeaders> {
     #[cfg(target_os = "linux")]
     return linux_get_process_headers(pid, starttime, task, is_main_process);
     #[cfg(target_os = "windows")]
@@ -148,20 +162,38 @@ fn get_process_headers(pid: usize, starttime: u32, task: &Task, is_main_process:
 }
 
 #[cfg(target_os = "windows")]
-fn win_get_process_headers(pid: usize, _starttime: u32, task: &Task, is_main_process: bool) -> Option<ProcessHeaders> {
+fn win_get_process_headers(
+    pid: usize,
+    _starttime: u32,
+    task: &Task,
+    is_main_process: bool,
+) -> Option<ProcessHeaders> {
     use std::ffi::CString;
 
-    use mult_lib::{error::print_error, proc::{get_readable_runtime, read_usage_stats}, windows::proc::{win_get_memory_usage, win_get_process_runtime, win_get_process_stats}};
-    use windows_sys::Win32::{Foundation::GetLastError, Storage::FileSystem::READ_CONTROL, System::{JobObjects::{IsProcessInJob, OpenJobObjectA, OpenJobObjectW}, Threading::{OpenProcess, PROCESS_QUERY_INFORMATION}}};
+    use mult_lib::{
+        error::print_error,
+        proc::{get_readable_runtime, read_usage_stats},
+        windows::proc::{win_get_memory_usage, win_get_process_runtime, win_get_process_stats},
+    };
+    use windows_sys::Win32::{
+        Foundation::GetLastError,
+        Storage::FileSystem::READ_CONTROL,
+        System::{
+            JobObjects::{IsProcessInJob, OpenJobObjectA, OpenJobObjectW},
+            Threading::{OpenProcess, PROCESS_QUERY_INFORMATION},
+        },
+    };
 
     let lp_name = CString::new(format!("Global\\mult-{}", task.id)).unwrap();
 
     // Check if job object exists already
-    let job = unsafe { OpenJobObjectW(
-        0x1F001F, // JOB_OBJECT_QUERY
-        0,
-        lp_name.as_bytes_with_nul().as_ptr() as *const u16,
-    ) };
+    let job = unsafe {
+        OpenJobObjectW(
+            0x1F001F, // JOB_OBJECT_QUERY
+            0,
+            lp_name.as_bytes_with_nul().as_ptr() as *const u16,
+        )
+    };
     let process = unsafe { OpenProcess(PROCESS_QUERY_INFORMATION, 1, pid as u32) };
     if process.is_null() || (is_main_process && job.is_null()) {
         return None;
@@ -184,7 +216,7 @@ fn win_get_process_headers(pid: usize, _starttime: u32, task: &Task, is_main_pro
     let mut cpu_usage = 0.0;
     let usage_stats = match read_usage_stats(task.id) {
         Ok(val) => val,
-        Err(_) => return None
+        Err(_) => return None,
     };
     if let Some(stats) = usage_stats.get(&(pid as usize)) {
         cpu_usage = (stats.cpu_usage * 100.0).round() / 100.0;
@@ -194,15 +226,18 @@ fn win_get_process_headers(pid: usize, _starttime: u32, task: &Task, is_main_pro
         pid: pid.to_string(),
         memory: win_get_memory_usage(&(pid as usize)),
         cpu: format!("{}%", cpu_usage),
-        runtime: get_readable_runtime(
-            win_get_process_runtime(proc_stats[2].parse().unwrap())
-        ),
-        status: color_string(OK_GREEN, "Running").to_string()
+        runtime: get_readable_runtime(win_get_process_runtime(proc_stats[2].parse().unwrap())),
+        status: color_string(OK_GREEN, "Running").to_string(),
     })
 }
 
 #[cfg(target_os = "linux")]
-fn linux_get_process_headers(pid: usize, starttime: u32, task: &Task, is_main_process: bool) -> Option<ProcessHeaders> {
+fn linux_get_process_headers(
+    pid: usize,
+    starttime: u32,
+    task: &Task,
+    is_main_process: bool,
+) -> Option<ProcessHeaders> {
     let proc_stats = get_process_stats(pid as usize);
     if is_main_process && (proc_stats.len() == 0 || starttime != proc_stats[21].parse().unwrap()) {
         return None;
@@ -210,7 +245,7 @@ fn linux_get_process_headers(pid: usize, starttime: u32, task: &Task, is_main_pr
     let mut cpu_usage = 0.0;
     let usage_stats = match read_usage_stats(task.id) {
         Ok(val) => val,
-        Err(_) => return None
+        Err(_) => return None,
     };
     if let Some(stats) = usage_stats.get(&(pid as usize)) {
         cpu_usage = (stats.cpu_usage * 100.0).round() / 100.0;
@@ -220,9 +255,7 @@ fn linux_get_process_headers(pid: usize, starttime: u32, task: &Task, is_main_pr
         pid: pid.to_string(),
         memory: get_process_memory(&(pid as usize)),
         cpu: format!("{}%", cpu_usage),
-        runtime: get_readable_runtime(
-            get_process_runtime(proc_stats[21].parse().unwrap()) as u64
-        ),
-        status: color_string(OK_GREEN, "Running").to_string()
+        runtime: get_readable_runtime(get_process_runtime(proc_stats[21].parse().unwrap()) as u64),
+        status: color_string(OK_GREEN, "Running").to_string(),
     })
 }

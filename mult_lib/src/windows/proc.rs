@@ -1,9 +1,35 @@
 #![cfg(target_family = "windows")]
-use std::{ffi::{c_longlong, OsString}, mem::{self, size_of}, os::{raw::c_void, windows::ffi::OsStringExt}, ptr, time::{SystemTime, UNIX_EPOCH}};
+use std::{
+    ffi::{c_longlong, OsString},
+    mem::{self, size_of},
+    os::{raw::c_void, windows::ffi::OsStringExt},
+    ptr,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
-use windows_sys::Win32::{Foundation::{GetLastError, FILETIME, STILL_ACTIVE}, Storage::FileSystem::READ_CONTROL, System::{JobObjects::{QueryInformationJobObject, JOBOBJECTINFOCLASS, JOBOBJECT_BASIC_PROCESS_ID_LIST}, ProcessStatus::{GetProcessImageFileNameA, GetProcessImageFileNameW, GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS}, Threading::{GetExitCodeProcess, GetProcessTimes, OpenProcess, TerminateProcess, WaitForSingleObject, INFINITE, PROCESS_ALL_ACCESS, PROCESS_QUERY_INFORMATION, PROCESS_TERMINATE}}};
+use windows_sys::Win32::{
+    Foundation::{GetLastError, FILETIME, STILL_ACTIVE},
+    Storage::FileSystem::READ_CONTROL,
+    System::{
+        JobObjects::{
+            QueryInformationJobObject, JOBOBJECTINFOCLASS, JOBOBJECT_BASIC_PROCESS_ID_LIST,
+        },
+        ProcessStatus::{
+            GetProcessImageFileNameA, GetProcessImageFileNameW, GetProcessMemoryInfo,
+            PROCESS_MEMORY_COUNTERS,
+        },
+        Threading::{
+            GetExitCodeProcess, GetProcessTimes, OpenProcess, TerminateProcess,
+            WaitForSingleObject, INFINITE, PROCESS_ALL_ACCESS, PROCESS_QUERY_INFORMATION,
+            PROCESS_TERMINATE,
+        },
+    },
+};
 
-use crate::{error::{print_error, MultError, MultErrorTuple}, tree::TreeNode};
+use crate::{
+    error::{print_error, MultError, MultErrorTuple},
+    tree::TreeNode,
+};
 
 use super::fork::cast_to_c_void;
 
@@ -22,15 +48,20 @@ pub fn win_get_all_processes(job: *mut c_void, pid: u32) -> TreeNode {
         list: [usize; 1024],
     }
     let mut jobs: Jobs = unsafe { mem::zeroed() };
-    if unsafe { QueryInformationJobObject(
-        job,
-        3, // JobObjectBasicProcessIdList
-        cast_to_c_void::<Jobs>(&mut jobs),
-        mem::size_of_val(&jobs) as u32,
-        ptr::null_mut()
-    ) } == 0 {
+    if unsafe {
+        QueryInformationJobObject(
+            job,
+            3, // JobObjectBasicProcessIdList
+            cast_to_c_void::<Jobs>(&mut jobs),
+            mem::size_of_val(&jobs) as u32,
+            ptr::null_mut(),
+        )
+    } == 0
+    {
         // Job does not exist
-        print_error(MultError::WindowsError, unsafe { Some(GetLastError().to_string()) });
+        print_error(MultError::WindowsError, unsafe {
+            Some(GetLastError().to_string())
+        });
         return TreeNode::empty();
     }
     let list = &jobs.list[..jobs.header.NumberOfProcessIdsInList as usize];
@@ -39,7 +70,7 @@ pub fn win_get_all_processes(job: *mut c_void, pid: u32) -> TreeNode {
         pid: pid as usize,
         stime: stats[0].parse().unwrap(),
         utime: stats[1].parse().unwrap(),
-        children: Vec::new()
+        children: Vec::new(),
     };
     for child_pid_ref in list {
         let child_pid = child_pid_ref.to_owned();
@@ -51,7 +82,7 @@ pub fn win_get_all_processes(job: *mut c_void, pid: u32) -> TreeNode {
             pid: child_pid,
             stime: stats[0].parse().unwrap(),
             utime: stats[1].parse().unwrap(),
-            children: Vec::new()
+            children: Vec::new(),
         });
     }
     return head_node;
@@ -63,39 +94,49 @@ pub fn win_get_process_stats(pid: usize) -> Vec<String> {
     let mut lp_exit_time = FILETIME::empty();
     let mut lp_kernel_time = FILETIME::empty();
     let mut lp_user_time = FILETIME::empty();
-    if unsafe { GetProcessTimes(
-        process,
-        &mut lp_creation_time,
-        &mut lp_exit_time,
-        &mut lp_kernel_time,
-        &mut lp_user_time
-    ) } == 0 {
+    if unsafe {
+        GetProcessTimes(
+            process,
+            &mut lp_creation_time,
+            &mut lp_exit_time,
+            &mut lp_kernel_time,
+            &mut lp_user_time,
+        )
+    } == 0
+    {
         // Unable to get times
         print_error(MultError::FailedToReadProcessStats, None);
-        print_error(MultError::WindowsError, unsafe { Some(GetLastError().to_string()) });
+        print_error(MultError::WindowsError, unsafe {
+            Some(GetLastError().to_string())
+        });
         return vec![];
     }
     // Time the process was started
     let starttime = convert_filetime64_to_unix_epoch(combine_filetime(&lp_creation_time));
     let kernel_time = combine_filetime(&lp_kernel_time);
     let user_time = combine_filetime(&lp_user_time);
-    vec![kernel_time.to_string(), user_time.to_string(), starttime.to_string()]
+    vec![
+        kernel_time.to_string(),
+        user_time.to_string(),
+        starttime.to_string(),
+    ]
 }
 
 pub fn win_get_proc_name(pid: u32) -> Result<String, MultErrorTuple> {
     let mut process_name = [0; 1024];
     let process_handle = unsafe { OpenProcess(PROCESS_QUERY_INFORMATION, 1, pid as u32) };
-    if unsafe {
-        GetProcessImageFileNameW(
-            process_handle,
-            process_name.as_mut_ptr(),
-            1024
-        )
-    } == 0 {
+    if unsafe { GetProcessImageFileNameW(process_handle, process_name.as_mut_ptr(), 1024) } == 0 {
         return Ok(String::new());
     }
-    let split_p_name = process_name.split(|pchar| { *pchar == b'\\'.into() }).last().unwrap().to_vec();
-    let exe_name = String::from_utf16(&split_p_name).unwrap().trim_matches(char::from(0)).to_owned();
+    let split_p_name = process_name
+        .split(|pchar| *pchar == b'\\'.into())
+        .last()
+        .unwrap()
+        .to_vec();
+    let exe_name = String::from_utf16(&split_p_name)
+        .unwrap()
+        .trim_matches(char::from(0))
+        .to_owned();
     Ok(exe_name)
 }
 
@@ -105,9 +146,7 @@ pub fn win_proc_exists(pid: i32) -> bool {
         return false;
     }
     let mut exit_code: u32 = 0;
-    if unsafe {
-        GetExitCodeProcess(process_handle, &mut exit_code as *mut u32)
-    } == 0 {
+    if unsafe { GetExitCodeProcess(process_handle, &mut exit_code as *mut u32) } == 0 {
         return false;
     }
     if exit_code != STILL_ACTIVE as u32 {
@@ -123,33 +162,32 @@ pub fn win_get_memory_usage(pid: &usize) -> String {
     }
     unsafe {
         let mut mem_info: PROCESS_MEMORY_COUNTERS = mem::zeroed();
-        GetProcessMemoryInfo(process, &mut mem_info, mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32);
+        GetProcessMemoryInfo(
+            process,
+            &mut mem_info,
+            mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
+        );
         return format!("{} b", mem_info.WorkingSetSize);
     }
 }
 
 pub fn win_get_process_runtime(starttime: u64) -> u64 {
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
     let runtime = now - starttime;
     runtime
 }
 
 pub fn win_kill_process(pid: u32) -> Result<(), MultErrorTuple> {
-    let process = unsafe {
-        OpenProcess(PROCESS_TERMINATE, 0, pid)
-    };
+    let process = unsafe { OpenProcess(PROCESS_TERMINATE, 0, pid) };
     if process.is_null() {
         return Ok(());
     }
     let mut process_name = [0; 1024];
     let process_handle = unsafe { OpenProcess(PROCESS_QUERY_INFORMATION, 1, pid as u32) };
-    if unsafe {
-        GetProcessImageFileNameW(
-            process_handle,
-            process_name.as_mut_ptr(),
-            1024
-        )
-    } == 0 {
+    if unsafe { GetProcessImageFileNameW(process_handle, process_name.as_mut_ptr(), 1024) } == 0 {
         return unsafe { Err((MultError::WindowsError, Some(GetLastError().to_string()))) };
     }
     let process_name_str = OsString::from_wide(&process_name[..]);
@@ -162,7 +200,10 @@ pub fn win_kill_process(pid: u32) -> Result<(), MultErrorTuple> {
     // https://github.com/alexcrichton/rustjob/blob/07d2601c8bf63d06584b2c4e248fd2c65c18d224/src/main.rs#L200
     if let Some(process_name_str) = process_name_str.to_str() {
         if process_name_str.contains("mspdbsrv") {
-            return Err((MultError::CustomError, Some("Cannot kill mspdbsrv.exe".to_string())));
+            return Err((
+                MultError::CustomError,
+                Some("Cannot kill mspdbsrv.exe".to_string()),
+            ));
         }
     }
     unsafe { TerminateProcess(process_handle, 1) };
@@ -180,7 +221,7 @@ impl Empty<FILETIME> for FILETIME {
     fn empty() -> FILETIME {
         FILETIME {
             dwLowDateTime: 0,
-            dwHighDateTime: 0
+            dwHighDateTime: 0,
         }
     }
 }
@@ -190,7 +231,7 @@ impl Empty<JOBOBJECT_BASIC_PROCESS_ID_LIST> for JOBOBJECT_BASIC_PROCESS_ID_LIST 
         JOBOBJECT_BASIC_PROCESS_ID_LIST {
             NumberOfAssignedProcesses: 24,
             NumberOfProcessIdsInList: 24,
-            ProcessIdList: [0; 1]
+            ProcessIdList: [0; 1],
         }
     }
 }

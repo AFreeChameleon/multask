@@ -1,21 +1,73 @@
 #![cfg(target_family = "windows")]
 
-use home;
-use std::{collections::HashMap, env, ffi::{c_void, CString}, mem, path::Path, process::Command, ptr, sync::{Arc, Mutex}, thread, time::Duration};
-use windows_sys::{core::{PSTR, PWSTR}, Win32::{
-    Foundation::{CloseHandle, GetLastError, ERROR_SUCCESS, FILETIME}, Security::{self, AllocateAndInitializeSid, Authorization::{ConvertSidToStringSidA, SetEntriesInAclA, EXPLICIT_ACCESS_A, NO_MULTIPLE_TRUSTEE, SET_ACCESS, TRUSTEE_A, TRUSTEE_IS_GROUP, TRUSTEE_IS_NAME, TRUSTEE_IS_SID, TRUSTEE_IS_USER, TRUSTEE_IS_WELL_KNOWN_GROUP}, InitializeSecurityDescriptor, SetSecurityDescriptorDacl, ACL, NO_INHERITANCE, PSID, SECURITY_ATTRIBUTES, SECURITY_DESCRIPTOR, SECURITY_WORLD_SID_AUTHORITY}, Storage::FileSystem::{GetFileInformationByHandleEx, GetFinalPathNameByHandleA, FILE_NAME_INFO, FILE_NAME_NORMALIZED, FILE_STANDARD_INFO}, System::{
-        JobObjects::{
-            AssignProcessToJobObject, CreateJobObjectA, JobObjectCpuRateControlInformation, JobObjectExtendedLimitInformation, JobObjectNotificationLimitInformation, OpenJobObjectA, SetInformationJobObject, TerminateJobObject, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOBOBJECT_NOTIFICATION_LIMIT_INFORMATION, JOB_OBJECT_CPU_RATE_CONTROL_ENABLE, JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP, JOB_OBJECT_CPU_RATE_CONTROL_MIN_MAX_RATE, JOB_OBJECT_LIMIT_BREAKAWAY_OK
-        }, Registry::{KEY_ALL_ACCESS, KEY_READ}, SystemInformation::GetSystemTimeAsFileTime, SystemServices::{DOMAIN_ALIAS_RID_ADMINS, SECURITY_BUILTIN_DOMAIN_RID, SECURITY_DESCRIPTOR_REVISION, SECURITY_WORLD_RID}, Threading::{
-            CreateProcessA, CreateProcessW, GetProcessId, WaitForSingleObject, CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_CONSOLE, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW, DETACHED_PROCESS, INFINITE, PROCESS_INFORMATION, STARTUPINFOA, STARTUPINFOEXA, STARTUPINFOEXW
-        }
-    }
-}};
 use crate::{
-    command::MemStats, error::{print_error, MultError, MultErrorTuple}, proc::{get_all_processes, proc_exists, save_task_processes, save_usage_stats, UsageStats}, task::Files, tree::{search_tree, TreeNode}
+    command::MemStats,
+    error::{print_error, MultError, MultErrorTuple},
+    proc::{get_all_processes, proc_exists, save_task_processes, save_usage_stats, UsageStats},
+    task::Files,
+    tree::{search_tree, TreeNode},
+};
+use home;
+use std::{
+    collections::HashMap,
+    env,
+    ffi::{c_void, CString},
+    mem,
+    path::Path,
+    process::Command,
+    ptr,
+    sync::{Arc, Mutex},
+    thread,
+    time::Duration,
+};
+use windows_sys::{
+    core::{PSTR, PWSTR},
+    Win32::{
+        Foundation::{CloseHandle, GetLastError, ERROR_SUCCESS, FILETIME},
+        Security::{
+            self, AllocateAndInitializeSid,
+            Authorization::{
+                ConvertSidToStringSidA, SetEntriesInAclA, EXPLICIT_ACCESS_A, NO_MULTIPLE_TRUSTEE,
+                SET_ACCESS, TRUSTEE_A, TRUSTEE_IS_GROUP, TRUSTEE_IS_NAME, TRUSTEE_IS_SID,
+                TRUSTEE_IS_USER, TRUSTEE_IS_WELL_KNOWN_GROUP,
+            },
+            InitializeSecurityDescriptor, SetSecurityDescriptorDacl, ACL, NO_INHERITANCE, PSID,
+            SECURITY_ATTRIBUTES, SECURITY_DESCRIPTOR, SECURITY_WORLD_SID_AUTHORITY,
+        },
+        Storage::FileSystem::{
+            GetFileInformationByHandleEx, GetFinalPathNameByHandleA, FILE_NAME_INFO,
+            FILE_NAME_NORMALIZED, FILE_STANDARD_INFO,
+        },
+        System::{
+            JobObjects::{
+                AssignProcessToJobObject, CreateJobObjectA, JobObjectCpuRateControlInformation,
+                JobObjectExtendedLimitInformation, JobObjectNotificationLimitInformation,
+                OpenJobObjectA, SetInformationJobObject, TerminateJobObject,
+                JOBOBJECT_CPU_RATE_CONTROL_INFORMATION, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0,
+                JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOBOBJECT_NOTIFICATION_LIMIT_INFORMATION,
+                JOB_OBJECT_CPU_RATE_CONTROL_ENABLE, JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP,
+                JOB_OBJECT_CPU_RATE_CONTROL_MIN_MAX_RATE, JOB_OBJECT_LIMIT_BREAKAWAY_OK,
+            },
+            Registry::{KEY_ALL_ACCESS, KEY_READ},
+            SystemInformation::GetSystemTimeAsFileTime,
+            SystemServices::{
+                DOMAIN_ALIAS_RID_ADMINS, SECURITY_BUILTIN_DOMAIN_RID, SECURITY_DESCRIPTOR_REVISION,
+                SECURITY_WORLD_RID,
+            },
+            Threading::{
+                CreateProcessA, CreateProcessW, GetProcessId, WaitForSingleObject,
+                CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_CONSOLE, CREATE_NEW_PROCESS_GROUP,
+                CREATE_NO_WINDOW, DETACHED_PROCESS, INFINITE, PROCESS_INFORMATION, STARTUPINFOA,
+                STARTUPINFOEXA, STARTUPINFOEXW,
+            },
+        },
+    },
 };
 
-use super::{cpu::win_get_cpu_usage, proc::{combine_filetime, win_get_all_processes}};
+use super::{
+    cpu::win_get_cpu_usage,
+    proc::{combine_filetime, win_get_all_processes},
+};
 
 pub fn cast_to_c_void<T>(var: &mut T) -> *mut c_void {
     return var as *mut T as *mut c_void;
@@ -37,7 +89,8 @@ pub fn run_daemon(
             task_id,
             flags.memory_limit,
             flags.cpu_limit
-        )).unwrap();
+        ))
+        .unwrap();
         let mut command_line_str: Vec<u8> = command_line.as_bytes_with_nul().to_owned();
         unsafe {
             let mut process_info = std::mem::zeroed();
@@ -54,9 +107,10 @@ pub fn run_daemon(
                 ptr::null(),
                 &si.StartupInfo,
                 &mut process_info,
-            ) == 0 {
+            ) == 0
+            {
                 print_error(MultError::WindowsError, Some(GetLastError().to_string()));
-                return Err((MultError::ExeDirNotFound, None))
+                return Err((MultError::ExeDirNotFound, None));
             }
         }
     } else {
