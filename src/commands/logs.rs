@@ -37,10 +37,6 @@ pub fn run() -> Result<(), MultErrorTuple> {
     
     let out_file_path = file_path.join("stdout.out");
     let err_file_path = file_path.join("stderr.err");
-    
-    // let log_file_path = file_path.join("logs.out");
-    // let mut log_file = File::open(&log_file_path).unwrap();
-    // let mut log_pos = fs::metadata(&log_file_path).unwrap().len();
 
     let mut out_file = File::open(&out_file_path).unwrap();
     let mut out_pos = fs::metadata(&out_file_path).unwrap().len();
