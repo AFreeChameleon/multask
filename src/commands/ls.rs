@@ -4,7 +4,8 @@ use mult_lib::proc::{get_proc_comm, proc_exists};
 use mult_lib::tree::compress_tree;
 use mult_lib::windows::proc::win_get_all_processes;
 use prettytable::Table;
-use std::ffi::CString;
+use std::ffi::{CString, OsString};
+use std::os::windows::ffi::OsStrExt;
 use std::{env, thread, time::Duration};
 use windows_sys::Win32::System::JobObjects::{OpenJobObjectA, OpenJobObjectW};
 
@@ -93,10 +94,8 @@ pub fn setup_table(
                 OpenJobObjectW(
                     0x1F001F, // JOB_OBJECT_ALL_ACCESS
                     0,
-                    CString::new(format!("Global\\mult-{}", task.id))
-                        .unwrap()
-                        .as_bytes_with_nul()
-                        .as_ptr() as *const u16,
+                    OsString::from(format!("Global\\mult-{}", task.id))
+                        .encode_wide().chain(Some(0)).collect::<Vec<u16>>().as_ptr() as *const u16,
                 )
             },
             command.pid,
@@ -168,7 +167,7 @@ fn win_get_process_headers(
     task: &Task,
     is_main_process: bool,
 ) -> Option<ProcessHeaders> {
-    use std::ffi::CString;
+    use std::{ffi::{CString, OsString}, os::windows::ffi::OsStrExt};
 
     use mult_lib::{
         error::print_error,
@@ -184,18 +183,20 @@ fn win_get_process_headers(
         },
     };
 
-    let lp_name = CString::new(format!("Global\\mult-{}", task.id)).unwrap();
+    let lp_name: Vec<u16> = OsString::from(format!("Global\\mult-{}", task.id))
+        .encode_wide().chain(Some(0)).collect();
 
     // Check if job object exists already
     let job = unsafe {
         OpenJobObjectW(
             0x1F001F, // JOB_OBJECT_QUERY
             0,
-            lp_name.as_bytes_with_nul().as_ptr() as *const u16,
+            lp_name.as_ptr(),
         )
     };
     let process = unsafe { OpenProcess(PROCESS_QUERY_INFORMATION, 1, pid as u32) };
     if process.is_null() || (is_main_process && job.is_null()) {
+        println!("{:?} {:?} {:?}", process, job, lp_name);
         return None;
     }
     let mut is_process_in_job: i32 = 0;

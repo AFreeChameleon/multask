@@ -2,7 +2,8 @@
 use home::home_dir;
 use mult_lib::command::{CommandData, CommandManager};
 use mult_lib::error::{MultError, MultErrorTuple};
-use std::ffi::{c_void, CString};
+use std::ffi::{c_void, CString, OsString};
+use std::os::windows::ffi::OsStrExt;
 use std::{
     collections::HashMap,
     mem,
@@ -59,7 +60,8 @@ fn main() -> Result<(), MultErrorTuple> {
     let mem_limit = &args[4];
     let cpu_limit = &args[5];
 
-    let job_name: CString = CString::new(format!("Global\\mult-{}", task_id.as_str())).unwrap();
+    let job_name: Vec<u16> = OsString::from(format!("Global\\mult-{}", task_id))
+        .encode_wide().chain(Some(0)).collect();
     let job_handle = create_job(
         job_name.as_ptr() as *mut u16,
         mem_limit.parse().unwrap(),
@@ -84,7 +86,7 @@ fn main() -> Result<(), MultErrorTuple> {
 
     let mut process_name: Vec<u16> = Vec::with_capacity(1024);
     unsafe {
-        GetProcessImageFileNameW(process_handle, process_name.as_mut_ptr(), u32::MAX);
+        GetProcessImageFileNameW(process_handle, process_name.as_mut_ptr(), 1024);
     }
     let data = CommandData {
         command: command.to_string(),
@@ -204,7 +206,7 @@ fn create_job(
                 ControlFlags: JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP
                     | JOB_OBJECT_CPU_RATE_CONTROL_ENABLE,
                 Anonymous: JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0 {
-                    CpuRate: (10000 / cpu_limit) as u32,
+                    CpuRate: (cpu_limit * 100) as u32,
                 },
             };
             if SetInformationJobObject(

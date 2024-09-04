@@ -9,16 +9,7 @@ use crate::{
 };
 use home;
 use std::{
-    collections::HashMap,
-    env,
-    ffi::{c_void, CString},
-    mem,
-    path::Path,
-    process::Command,
-    ptr,
-    sync::{Arc, Mutex},
-    thread,
-    time::Duration,
+    collections::HashMap, env, ffi::{c_void, CString, OsStr, OsString}, mem, os::windows::ffi::OsStrExt, path::Path, process::Command, ptr, sync::{Arc, Mutex}, thread, time::Duration
 };
 use windows_sys::{
     core::{PSTR, PWSTR},
@@ -81,7 +72,7 @@ pub fn run_daemon(
 ) -> Result<(), MultErrorTuple> {
     if let Ok(exe_dir) = env::current_exe() {
         let spawn_dir = Path::new(&exe_dir).parent().unwrap();
-        let command_line = CString::new(format!(
+        let mut command_line: Vec<u16> = OsString::from(format!(
             "{} {} \"{}\" {} {} {}",
             spawn_dir.join("mult_spawn.exe").display().to_string(),
             files.process_dir.display().to_string(),
@@ -89,16 +80,14 @@ pub fn run_daemon(
             task_id,
             flags.memory_limit,
             flags.cpu_limit
-        ))
-        .unwrap();
-        let mut command_line_str: Vec<u8> = command_line.as_bytes_with_nul().to_owned();
+        )).encode_wide().chain(Some(0)).collect();
         unsafe {
             let mut process_info = std::mem::zeroed();
             let mut si: STARTUPINFOEXW = std::mem::zeroed();
-            si.StartupInfo.cb = std::mem::size_of::<STARTUPINFOEXA>() as u32;
+            si.StartupInfo.cb = std::mem::size_of::<STARTUPINFOEXW>() as u32;
             if CreateProcessW(
                 ptr::null(),
-                command_line_str.as_mut_ptr() as *mut u16,
+                command_line.as_mut_ptr() as *mut u16,
                 ptr::null(),
                 ptr::null(),
                 0,

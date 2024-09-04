@@ -2,12 +2,15 @@ extern crate core;
 extern crate std;
 
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::fs::{self, File};
-use std::io::Read;
+use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
 use std::u32;
 
+use windows_sys::Win32::System::JobObjects::OpenJobObjectW;
+
+use crate::error::print_error;
 #[cfg(target_family = "unix")]
 use crate::linux::proc::{
     linux_get_proc_comm, linux_get_proc_name, linux_get_process_memory, linux_get_process_runtime,
@@ -17,8 +20,7 @@ use crate::tree::compress_tree;
 #[cfg(target_family = "windows")]
 use crate::windows::proc::win_get_process_stats;
 use crate::windows::proc::{
-    win_get_all_processes, win_get_memory_usage, win_get_proc_name, win_kill_process,
-    win_proc_exists,
+    win_get_all_processes, win_get_memory_usage, win_get_proc_name, win_kill_process, win_proc_exists
 };
 use crate::{
     error::{MultError, MultErrorTuple},
@@ -33,6 +35,7 @@ pub struct UsageStats {
 pub fn get_proc_name(pid: u32) -> Result<String, MultErrorTuple> {
     #[cfg(target_os = "linux")]
     Ok(linux_get_proc_name(pid)?);
+    print_error(MultError::OSNotSupported, None);
     Ok(String::new())
 }
 
@@ -41,23 +44,24 @@ pub fn get_proc_comm(pid: u32) -> Result<String, MultErrorTuple> {
     Ok(linux_get_proc_comm(pid)?);
     #[cfg(target_os = "windows")]
     return win_get_proc_name(pid);
+    print_error(MultError::OSNotSupported, None);
     Ok(String::new())
 }
 
-pub fn kill_all_processes(ppid: u32) -> Result<(), MultErrorTuple> {
+pub fn kill_all_processes(ppid: u32, task_id: u32) -> Result<(), MultErrorTuple> {
     let process_tree = get_all_processes(ppid as usize);
     let mut all_processes = vec![];
     compress_tree(&process_tree, &mut all_processes);
     for pid in all_processes {
         kill_process(pid as u32)?;
     }
-    kill_process(ppid)?;
     Ok(())
 }
 
 fn kill_process(pid: u32) -> Result<(), MultErrorTuple> {
     #[cfg(target_os = "windows")]
     return win_kill_process(pid);
+    print_error(MultError::OSNotSupported, None);
 }
 
 pub fn save_task_processes(path: &Path, tree: &TreeNode) {
@@ -92,18 +96,21 @@ pub fn proc_exists(pid: i32) -> bool {
     return linux_proc_exists(pid);
     #[cfg(target_os = "windows")]
     return win_proc_exists(pid);
+    print_error(MultError::OSNotSupported, None);
     return false;
 }
 
 pub fn get_all_processes(pid: usize) -> TreeNode {
     #[cfg(target_os = "linux")]
     return linux_get_all_processes(pid);
+    print_error(MultError::OSNotSupported, None);
     return TreeNode::empty();
 }
 
 pub fn get_process_runtime(starttime: u32) -> f64 {
     #[cfg(target_os = "linux")]
     return linux_get_process_runtime(starttime);
+    print_error(MultError::OSNotSupported, None);
     return 0.0;
 }
 
@@ -117,6 +124,7 @@ pub fn get_readable_runtime(secs: u64) -> String {
 pub fn get_process_starttime(pid: usize) -> f64 {
     #[cfg(target_os = "linux")]
     return linux_get_process_starttime(pid);
+    print_error(MultError::OSNotSupported, None);
     return 0.0;
 }
 
@@ -125,6 +133,7 @@ pub fn get_process_stats(pid: usize) -> Vec<String> {
     return linux_get_process_stats(pid);
     #[cfg(target_os = "windows")]
     return win_get_process_stats(pid);
+    print_error(MultError::OSNotSupported, None);
     return Vec::new();
 }
 
@@ -133,5 +142,6 @@ pub fn get_process_memory(pid: &usize) -> String {
     return linux_get_process_memory(pid);
     #[cfg(target_os = "windows")]
     return win_get_memory_usage(pid);
+    print_error(MultError::OSNotSupported, None);
     return String::new();
 }

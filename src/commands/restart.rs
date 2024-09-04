@@ -11,6 +11,7 @@ use mult_lib::linux::fork;
 
 #[cfg(target_family = "windows")]
 use mult_lib::windows::fork;
+use mult_lib::windows::proc::win_kill_all_processes;
 
 const MEMORY_LIMIT_FLAG: &str = "-m";
 const CPU_LIMIT_FLAG: &str = "-c";
@@ -26,7 +27,8 @@ pub fn run() -> Result<(), MultErrorTuple> {
         let task = TaskManager::get_task(&tasks, task_id)?;
         let command_data = CommandManager::read_command_data(task.id)?;
         print_info("Killing process...");
-        kill_all_processes(command_data.pid)?;
+        #[cfg(target_os = "windows")]
+        win_kill_all_processes(command_data.pid, task_id)?;
         let files = TaskManager::generate_task_files(task.id, &tasks);
         print_info("Restarting process...");
 

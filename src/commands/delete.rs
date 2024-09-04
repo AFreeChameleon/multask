@@ -5,6 +5,7 @@ use mult_lib::command::CommandManager;
 use mult_lib::error::{print_info, print_success, MultError, MultErrorTuple};
 use mult_lib::proc::kill_all_processes;
 use mult_lib::task::TaskManager;
+use mult_lib::windows::proc::win_kill_all_processes;
 
 pub fn run() -> Result<(), MultErrorTuple> {
     let args = env::args();
@@ -15,7 +16,8 @@ pub fn run() -> Result<(), MultErrorTuple> {
         let task_id: u32 = TaskManager::parse_arg(Some(arg.to_string()))?;
         let task = TaskManager::get_task(&tasks, task_id)?;
         let command_data = CommandManager::read_command_data(task.id)?;
-        match kill_all_processes(command_data.pid) {
+        #[cfg(target_os = "windows")]
+        match win_kill_all_processes(command_data.pid, task_id) {
             Ok(_) => (),
             Err(_) => print_info(&format!("Process {} is not running.", task_id)),
         };

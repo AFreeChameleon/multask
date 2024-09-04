@@ -2,17 +2,17 @@
 use std::{
     ffi::{c_longlong, OsString},
     mem::{self, size_of},
-    os::{raw::c_void, windows::ffi::OsStringExt},
+    os::{raw::c_void, windows::ffi::{OsStrExt, OsStringExt}},
     ptr,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use windows_sys::Win32::{
     Foundation::{GetLastError, FILETIME, STILL_ACTIVE},
-    Storage::FileSystem::READ_CONTROL,
+    Storage::FileSystem::{READ_CONTROL, SYNCHRONIZE},
     System::{
         JobObjects::{
-            QueryInformationJobObject, JOBOBJECTINFOCLASS, JOBOBJECT_BASIC_PROCESS_ID_LIST,
+            OpenJobObjectW, QueryInformationJobObject, JOBOBJECTINFOCLASS, JOBOBJECT_BASIC_PROCESS_ID_LIST
         },
         ProcessStatus::{
             GetProcessImageFileNameA, GetProcessImageFileNameW, GetProcessMemoryInfo,
@@ -28,7 +28,7 @@ use windows_sys::Win32::{
 
 use crate::{
     error::{print_error, MultError, MultErrorTuple},
-    tree::TreeNode,
+    tree::{compress_tree, TreeNode},
 };
 
 use super::fork::cast_to_c_void;
@@ -180,13 +180,33 @@ pub fn win_get_process_runtime(starttime: u64) -> u64 {
     runtime
 }
 
+pub fn win_kill_all_processes(ppid: u32, task_id: u32) -> Result<(), MultErrorTuple> {
+    let job = unsafe {
+        OpenJobObjectW(
+            0x1F001F, // JOB_OBJECT_ALL_ACCESS
+            0,
+            OsString::from(format!("Global\\mult-{}", task_id))
+                .encode_wide().chain(Some(0)).collect::<Vec<u16>>().as_ptr() as *const u16,
+        )
+    };
+    let process_tree = win_get_all_processes(job, ppid);
+    let mut all_processes = vec![];
+    compress_tree(&process_tree, &mut all_processes);
+    for pid in all_processes {
+        win_kill_process(pid as u32)?;
+    }
+    Ok(())
+}
+
 pub fn win_kill_process(pid: u32) -> Result<(), MultErrorTuple> {
     let process = unsafe { OpenProcess(PROCESS_TERMINATE, 0, pid) };
     if process.is_null() {
         return Ok(());
     }
     let mut process_name = [0; 1024];
-    let process_handle = unsafe { OpenProcess(PROCESS_QUERY_INFORMATION, 1, pid as u32) };
+    let process_handle = unsafe {
+        OpenProcess(PROCESS_QUERY_INFORMATION | SYNCHRONIZE, 1, pid as u32)
+    };
     if unsafe { GetProcessImageFileNameW(process_handle, process_name.as_mut_ptr(), 1024) } == 0 {
         return unsafe { Err((MultError::WindowsError, Some(GetLastError().to_string()))) };
     }
@@ -207,9 +227,6 @@ pub fn win_kill_process(pid: u32) -> Result<(), MultErrorTuple> {
         }
     }
     unsafe { TerminateProcess(process_handle, 1) };
-    if unsafe { WaitForSingleObject(process_handle, INFINITE) } != 0 {
-        return unsafe { Err((MultError::WindowsError, Some(GetLastError().to_string()))) };
-    }
     Ok(())
 }
 
