@@ -30,14 +30,14 @@ pub struct UsageStats {
 
 pub fn get_proc_name(pid: u32) -> Result<String, MultErrorTuple> {
     #[cfg(target_os = "linux")]
-    Ok(linux_get_proc_name(pid)?);
-    print_error(MultError::OSNotSupported, None);
-    Ok(String::new())
+    return linux_get_proc_name(pid);
+    #[cfg(target_os = "windows")]
+    return win_get_proc_name(pid);
 }
 
 pub fn get_proc_comm(pid: u32) -> Result<String, MultErrorTuple> {
     #[cfg(target_os = "linux")]
-    Ok(linux_get_proc_comm(pid)?);
+    return linux_get_proc_comm(pid);
     #[cfg(target_os = "windows")]
     return win_get_proc_name(pid);
 }
@@ -89,8 +89,6 @@ pub fn proc_exists(pid: i32) -> bool {
     return linux_proc_exists(pid);
     #[cfg(target_os = "windows")]
     return win_proc_exists(pid);
-    print_error(MultError::OSNotSupported, None);
-    return false;
 }
 
 pub fn get_all_processes(pid: usize) -> TreeNode {
@@ -100,13 +98,6 @@ pub fn get_all_processes(pid: usize) -> TreeNode {
     return TreeNode::empty();
 }
 
-pub fn get_process_runtime(starttime: u32) -> f64 {
-    #[cfg(target_os = "linux")]
-    return linux_get_process_runtime(starttime);
-    print_error(MultError::OSNotSupported, None);
-    return 0.0;
-}
-
 pub fn get_readable_runtime(secs: u64) -> String {
     let seconds = secs % 60;
     let minutes = (secs / 60) % 60;
@@ -114,20 +105,11 @@ pub fn get_readable_runtime(secs: u64) -> String {
     format!("{}h {}m {}s", hours, minutes, seconds).to_string()
 }
 
-pub fn get_process_starttime(pid: usize) -> f64 {
-    #[cfg(target_os = "linux")]
-    return linux_get_process_starttime(pid);
-    print_error(MultError::OSNotSupported, None);
-    return 0.0;
-}
-
 pub fn get_process_stats(pid: usize) -> Vec<String> {
     #[cfg(target_os = "linux")]
     return linux_get_process_stats(pid);
     #[cfg(target_os = "windows")]
     return win_get_process_stats(pid);
-    print_error(MultError::OSNotSupported, None);
-    return Vec::new();
 }
 
 pub fn get_process_memory(pid: &usize) -> String {
@@ -135,6 +117,4 @@ pub fn get_process_memory(pid: &usize) -> String {
     return linux_get_process_memory(pid);
     #[cfg(target_os = "windows")]
     return win_get_memory_usage(pid);
-    print_error(MultError::OSNotSupported, None);
-    return String::new();
 }

@@ -2,7 +2,7 @@
 use home::home_dir;
 use mult_lib::command::{CommandData, CommandManager};
 use mult_lib::error::{MultError, MultErrorTuple};
-use std::ffi::{c_void, CString, OsString};
+use std::ffi::{c_void, OsString};
 use std::os::windows::ffi::OsStrExt;
 use std::{
     collections::HashMap,
@@ -11,6 +11,7 @@ use std::{
     time::Duration,
 };
 use std::{
+    ptr,
     env,
     fs::File,
     io::{BufRead, BufReader, Write},
@@ -21,18 +22,15 @@ use std::{
     thread,
     time::{SystemTime, UNIX_EPOCH},
 };
-use std::{fs, ptr};
 use windows_sys::Win32::Foundation::GetLastError;
 use windows_sys::Win32::System::JobObjects::{
-    AssignProcessToJobObject, CreateJobObjectA, CreateJobObjectW,
-    JobObjectCpuRateControlInformation, JobObjectExtendedLimitInformation, OpenJobObjectA,
+    AssignProcessToJobObject, CreateJobObjectW,
+    JobObjectCpuRateControlInformation, JobObjectExtendedLimitInformation,
     SetInformationJobObject, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION,
     JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
     JOB_OBJECT_CPU_RATE_CONTROL_ENABLE, JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP,
 };
-use windows_sys::Win32::System::ProcessStatus::{
-    GetModuleFileNameExA, GetProcessImageFileNameA, GetProcessImageFileNameW,
-};
+use windows_sys::Win32::System::ProcessStatus::GetProcessImageFileNameW;
 
 use mult_lib::{
     proc::{save_task_processes, save_usage_stats, UsageStats},

@@ -3,7 +3,6 @@ use std::{env, fs, path::Path};
 use mult_lib::args::parse_args;
 use mult_lib::command::CommandManager;
 use mult_lib::error::{print_info, print_success, MultError, MultErrorTuple};
-use mult_lib::proc::kill_all_processes;
 use mult_lib::task::TaskManager;
 use mult_lib::windows::proc::win_kill_all_processes;
 

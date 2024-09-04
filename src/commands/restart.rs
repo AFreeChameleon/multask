@@ -3,7 +3,6 @@ use std::env;
 use mult_lib::args::{parse_args, ParsedArgs};
 use mult_lib::command::{CommandManager, MemStats};
 use mult_lib::error::{print_info, print_success, MultError, MultErrorTuple};
-use mult_lib::proc::kill_all_processes;
 use mult_lib::task::TaskManager;
 
 #[cfg(target_family = "unix")]

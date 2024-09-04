@@ -4,10 +4,10 @@ use mult_lib::proc::{get_proc_comm, proc_exists};
 use mult_lib::tree::compress_tree;
 use mult_lib::windows::proc::win_get_all_processes;
 use prettytable::Table;
-use std::ffi::{CString, OsString};
+use std::ffi::OsString;
 use std::os::windows::ffi::OsStrExt;
 use std::{env, thread, time::Duration};
-use windows_sys::Win32::System::JobObjects::{OpenJobObjectA, OpenJobObjectW};
+use windows_sys::Win32::System::JobObjects::OpenJobObjectW;
 
 use mult_lib::command::CommandManager;
 use mult_lib::error::{MultError, MultErrorTuple};
@@ -167,8 +167,6 @@ fn win_get_process_headers(
     task: &Task,
     is_main_process: bool,
 ) -> Option<ProcessHeaders> {
-    use std::{ffi::{CString, OsString}, os::windows::ffi::OsStrExt};
-
     use mult_lib::{
         error::print_error,
         proc::{get_readable_runtime, read_usage_stats},
@@ -176,9 +174,8 @@ fn win_get_process_headers(
     };
     use windows_sys::Win32::{
         Foundation::GetLastError,
-        Storage::FileSystem::READ_CONTROL,
         System::{
-            JobObjects::{IsProcessInJob, OpenJobObjectA, OpenJobObjectW},
+            JobObjects::IsProcessInJob,
             Threading::{OpenProcess, PROCESS_QUERY_INFORMATION},
         },
     };
@@ -238,6 +235,7 @@ fn linux_get_process_headers(
     task: &Task,
     is_main_process: bool,
 ) -> Option<ProcessHeaders> {
+    use mult_lib::linux::linux_get_process_runtime;
     let proc_stats = get_process_stats(pid as usize);
     if is_main_process && (proc_stats.len() == 0 || starttime != proc_stats[21].parse().unwrap()) {
         return None;
@@ -255,7 +253,7 @@ fn linux_get_process_headers(
         pid: pid.to_string(),
         memory: get_process_memory(&(pid as usize)),
         cpu: format!("{}%", cpu_usage),
-        runtime: get_readable_runtime(get_process_runtime(proc_stats[21].parse().unwrap()) as u64),
+        runtime: get_readable_runtime(linux_get_process_runtime(proc_stats[21].parse().unwrap()) as u64),
         status: color_string(OK_GREEN, "Running").to_string(),
     })
 }
