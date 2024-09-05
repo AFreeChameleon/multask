@@ -27,8 +27,7 @@ use windows_sys::Win32::{
 };
 
 use crate::{
-    error::{print_error, print_warning, MultError, MultErrorTuple},
-    tree::{compress_tree, TreeNode},
+    error::{print_error, print_warning, MultError, MultErrorTuple}, proc::get_readable_memory, tree::{compress_tree, TreeNode}
 };
 
 use super::fork::cast_to_c_void;
@@ -158,7 +157,7 @@ pub fn win_proc_exists(pid: u32) -> bool {
 pub fn win_get_memory_usage(pid: &usize) -> String {
     let process = unsafe { OpenProcess(PROCESS_QUERY_INFORMATION, 1, pid.to_owned() as u32) };
     if process.is_null() {
-        return "0 b".to_string();
+        return "0 B".to_string();
     }
     unsafe {
         let mut mem_info: PROCESS_MEMORY_COUNTERS = mem::zeroed();
@@ -167,7 +166,7 @@ pub fn win_get_memory_usage(pid: &usize) -> String {
             &mut mem_info,
             mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
         );
-        return format!("{} b", mem_info.WorkingSetSize);
+        return get_readable_memory(mem_info.WorkingSetSize as f64)
     }
 }
 

@@ -118,3 +118,19 @@ pub fn get_process_memory(pid: &usize) -> String {
     #[cfg(target_os = "windows")]
     return win_get_memory_usage(pid);
 }
+
+// binary memory is 1024
+// file memory is 1000
+const SUFFIX: [&str; 9] = ["B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB"];
+const UNIT: f64 = 1024.0;
+pub fn get_readable_memory(bytes: f64) -> String {
+    if bytes <= 0.0 {
+        return "0 B".to_string();
+    }
+    let base = bytes.log10() / UNIT.log10();
+    let result = format!("{:.1}", UNIT.powf(base - base.floor()),)
+    .trim_end_matches(".0")
+    .to_owned();
+
+    [&result, SUFFIX[base.floor() as usize]].join(" ")
+}
