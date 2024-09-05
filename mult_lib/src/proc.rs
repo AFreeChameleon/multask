@@ -7,17 +7,13 @@ use std::path::Path;
 use std::u32;
 
 use crate::error::print_error;
+use crate::linux::proc::linux_get_all_processes;
 #[cfg(target_family = "unix")]
 use crate::linux::proc::{
     linux_get_proc_comm, linux_get_proc_name, linux_get_process_memory, linux_get_process_runtime,
     linux_get_process_stats, linux_proc_exists,
 };
 use crate::tree::compress_tree;
-#[cfg(target_family = "windows")]
-use crate::windows::proc::win_get_process_stats;
-use crate::windows::proc::{
-    win_get_memory_usage, win_get_proc_name, win_kill_process, win_proc_exists
-};
 use crate::{
     error::{MultError, MultErrorTuple},
     tree::TreeNode,
@@ -42,20 +38,6 @@ pub fn get_proc_comm(pid: u32) -> Result<String, MultErrorTuple> {
     return win_get_proc_name(pid);
 }
 
-pub fn kill_all_processes(ppid: u32) -> Result<(), MultErrorTuple> {
-    let process_tree = get_all_processes(ppid as usize);
-    let mut all_processes = vec![];
-    compress_tree(&process_tree, &mut all_processes);
-    for pid in all_processes {
-        kill_process(pid as u32)?;
-    }
-    Ok(())
-}
-
-fn kill_process(pid: u32) -> Result<(), MultErrorTuple> {
-    #[cfg(target_os = "windows")]
-    return win_kill_process(pid);
-}
 
 pub fn save_task_processes(path: &Path, tree: &TreeNode) {
     let encoded_data = bincode::serialize::<TreeNode>(tree).unwrap();
@@ -115,8 +97,13 @@ pub fn get_process_stats(pid: usize) -> Vec<String> {
 pub fn get_process_memory(pid: &usize) -> String {
     #[cfg(target_os = "linux")]
     return linux_get_process_memory(pid);
-    #[cfg(target_os = "windows")]
-    return win_get_memory_usage(pid);
+    #[cfg(target_family = "windows")] {
+        use crate::windows::proc::win_get_process_stats;
+        use crate::windows::proc::{
+            win_get_memory_usage, win_get_proc_name, win_kill_process, win_proc_exists
+        };
+        return win_get_memory_usage(pid);
+    }
 }
 
 // binary memory is 1024

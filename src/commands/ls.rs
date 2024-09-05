@@ -1,13 +1,11 @@
 use mult_lib::args::{parse_args, ParsedArgs};
 use mult_lib::colors::{color_string, OK_GREEN};
+use mult_lib::linux::proc::linux_get_all_processes;
 use mult_lib::proc::{get_proc_comm, proc_exists};
 use mult_lib::tree::compress_tree;
-use mult_lib::windows::proc::win_get_all_processes;
 use prettytable::Table;
 use std::ffi::OsString;
-use std::os::windows::ffi::OsStrExt;
 use std::{env, thread, time::Duration};
-use windows_sys::Win32::System::JobObjects::OpenJobObjectW;
 
 use mult_lib::command::CommandManager;
 use mult_lib::error::{MultError, MultErrorTuple};
@@ -86,20 +84,25 @@ pub fn setup_table(
             continue;
         }
         let mut process_headers = process_headers_opt.unwrap();
-        #[cfg(target_os = "linux")]
-        let process_tree = linux_get_all_processes(command.pid as usize);
-        #[cfg(target_os = "windows")]
-        let process_tree = win_get_all_processes(
-            unsafe {
-                OpenJobObjectW(
-                    0x1F001F, // JOB_OBJECT_ALL_ACCESS
-                    0,
-                    OsString::from(format!("Global\\mult-{}", task.id))
+        let process_tree;
+        #[cfg(target_os = "linux")] {
+            process_tree = linux_get_all_processes(command.pid as usize);
+        }
+        #[cfg(target_os = "windows")] {
+            use mult_lib::windows::proc::win_get_all_processes;
+            use windows_sys::Win32::System::JobObjects::OpenJobObjectW;
+            process_tree = win_get_all_processes(
+                unsafe {
+                    OpenJobObjectW(
+                        0x1F001F, // JOB_OBJECT_ALL_ACCESS
+                        0,
+                        OsString::from(format!("Global\\mult-{}", task.id))
                         .encode_wide().chain(Some(0)).collect::<Vec<u16>>().as_ptr() as *const u16,
-                )
-            },
-            command.pid,
-        );
+                    )
+                },
+                command.pid,
+            );
+        }
 
         let mut all_processes = vec![];
         compress_tree(&process_tree, &mut all_processes);
@@ -235,8 +238,8 @@ fn linux_get_process_headers(
     task: &Task,
     is_main_process: bool,
 ) -> Option<ProcessHeaders> {
-    use mult_lib::linux::linux_get_process_runtime;
-    let proc_stats = get_process_stats(pid as usize);
+    use mult_lib::{linux::{proc::{linux_get_process_memory, linux_get_process_runtime, linux_get_process_stats}}, proc::{get_readable_runtime, read_usage_stats}};
+    let proc_stats = linux_get_process_stats(pid as usize);
     if is_main_process && (proc_stats.len() == 0 || starttime != proc_stats[21].parse().unwrap()) {
         return None;
     }
@@ -251,7 +254,7 @@ fn linux_get_process_headers(
     // Get memory stats
     Some(ProcessHeaders {
         pid: pid.to_string(),
-        memory: get_process_memory(&(pid as usize)),
+        memory: linux_get_process_memory(&(pid as usize)),
         cpu: format!("{}%", cpu_usage),
         runtime: get_readable_runtime(linux_get_process_runtime(proc_stats[21].parse().unwrap()) as u64),
         status: color_string(OK_GREEN, "Running").to_string(),
