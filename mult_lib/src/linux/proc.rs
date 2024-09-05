@@ -9,6 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use libc::{__errno_location, SIGINT};
 
+use crate::proc::get_readable_memory;
 use crate::tree::compress_tree;
 use crate::{
     error::{MultError, MultErrorTuple},
@@ -187,11 +188,8 @@ pub fn linux_get_process_memory(pid: &usize) -> String {
         let contents = fs::read_to_string(mem_path).unwrap();
         if let Some(vmrss) = contents.lines().find(|line| line.starts_with("VmRSS")) {
             let mut vmrss_line = vmrss.split_whitespace();
-            return format!(
-                "{} {}",
-                vmrss_line.nth(1).unwrap(),
-                vmrss_line.next().unwrap()
-            );
+            let memory: f64 = vmrss_line.nth(1).unwrap().parse().unwrap();
+            return get_readable_memory(memory);
         }
     }
     return "0 B".to_string();

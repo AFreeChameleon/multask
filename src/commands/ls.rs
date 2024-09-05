@@ -160,7 +160,6 @@ fn get_process_headers(
     return linux_get_process_headers(pid, starttime, task, is_main_process);
     #[cfg(target_os = "windows")]
     return win_get_process_headers(pid, starttime, task, is_main_process);
-    None
 }
 
 #[cfg(target_os = "windows")]
@@ -238,7 +237,7 @@ fn linux_get_process_headers(
     task: &Task,
     is_main_process: bool,
 ) -> Option<ProcessHeaders> {
-    use mult_lib::{linux::{proc::{linux_get_process_memory, linux_get_process_runtime, linux_get_process_stats}}, proc::{get_readable_runtime, read_usage_stats}};
+    use mult_lib::{linux::proc::{linux_get_process_memory, linux_get_process_runtime, linux_get_process_stats}, proc::{get_readable_runtime, read_usage_stats}};
     let proc_stats = linux_get_process_stats(pid as usize);
     if is_main_process && (proc_stats.len() == 0 || starttime != proc_stats[21].parse().unwrap()) {
         return None;
