@@ -1,4 +1,4 @@
-use prettytable::{Table, Cell, Row, format};
+use prettytable::{format, Cell, Row, Table};
 
 use crate::colors::{color_string, ERR_RED};
 
@@ -12,7 +12,7 @@ pub struct ProcessHeaders {
     pub memory: String,
     pub cpu: String,
     pub runtime: String,
-    pub status: String
+    pub status: String,
 }
 
 pub struct TableManager {
@@ -52,11 +52,7 @@ impl TableManager {
         ]));
     }
 
-    pub fn insert_row(
-        &mut self,
-        headers: MainHeaders,
-        process: Option<ProcessHeaders>
-    ) {
+    pub fn insert_row(&mut self, headers: MainHeaders, process: Option<ProcessHeaders>) {
         let mut row: Vec<Cell> = vec![
             Cell::new(&headers.id.to_string()),
             Cell::new(&headers.command),
@@ -67,7 +63,7 @@ impl TableManager {
                 Cell::new(&p.status),
                 Cell::new(&p.memory),
                 Cell::new(&p.cpu),
-                Cell::new(&p.runtime)
+                Cell::new(&p.runtime),
             ]);
         } else {
             row.extend(vec![
@@ -75,7 +71,7 @@ impl TableManager {
                 Cell::new(&color_string(ERR_RED, "Stopped")),
                 Cell::new("N/A"),
                 Cell::new("N/A"),
-                Cell::new("N/A")
+                Cell::new("N/A"),
             ]);
         }
 
@@ -101,4 +97,3 @@ pub fn format_bytes(bytes: f64) -> String {
 
     [&result, SUFFIX[base.floor() as usize]].join(" ")
 }
-

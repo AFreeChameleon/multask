@@ -1,15 +1,32 @@
 #![cfg(target_family = "unix")]
-use std::{
-    collections::HashMap, env, fs::File, io::{BufRead, BufReader, Write}, path::Path, process::{Child, Command, Stdio}, sync::{Arc, Mutex}, thread, time::{Duration, SystemTime, UNIX_EPOCH}
-};
 use home::home_dir;
 use libc;
+use std::{
+    collections::HashMap,
+    env,
+    fs::File,
+    io::{BufRead, BufReader, Write},
+    path::Path,
+    process::{Child, Command, Stdio},
+    sync::{Arc, Mutex},
+    thread,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
-use mult_lib::{cpu::{get_cpu_usage, linux_get_cpu_time_total, split_limit_cpu}, error::{print_info, MultError, MultErrorTuple}, proc::{get_all_processes, get_proc_name, get_process_stats, linux_get_cpu_stats, proc_exists, save_task_processes, save_usage_stats, UsageStats}, tree::{search_tree, TreeNode}};
+use mult_lib::command::{CommandData, CommandManager, MemStats};
 use mult_lib::task::Files;
-use mult_lib::command::{CommandManager, CommandData, MemStats};
+use mult_lib::{
+    cpu::{get_cpu_usage, linux_get_cpu_time_total, split_limit_cpu},
+    error::{print_info, MultError, MultErrorTuple},
+    linux::proc::linux_get_all_processes,
+    proc::{
+        get_all_processes, get_proc_name, get_process_stats, linux_get_cpu_stats, proc_exists,
+        save_task_processes, save_usage_stats, UsageStats,
+    },
+    tree::{search_tree, TreeNode},
+};
 
-macro_rules! spawn_logger{
+macro_rules! spawn_logger {
     ($out:ident,$out_file:ident) => {{
         thread::spawn(move || {
             let reader = BufReader::new($out);
@@ -19,12 +36,10 @@ macro_rules! spawn_logger{
                     .duration_since(UNIX_EPOCH)
                     .unwrap()
                     .as_millis();
-                let formatted_line = format!(
-                    "{:}|{}\n",
-                    now,
-                    line.expect("Problem reading stderr.")
-                ); 
-                $out_file.write_all(formatted_line.as_bytes())
+                let formatted_line =
+                    format!("{:}|{}\n", now, line.expect("Problem reading stderr."));
+                $out_file
+                    .write_all(formatted_line.as_bytes())
                     .expect("Problem writing to stderr.");
             }
         });
@@ -41,19 +56,19 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
     }
     // Fork failed
     if process_id < 0 {
-        return Err((MultError::ForkFailed, None))
+        return Err((MultError::ForkFailed, None));
     }
     // Parent process - need to kill it
     if process_id > 0 {
         print_info(&format!("Process id of child process {}", process_id));
-        return Ok(())
+        return Ok(());
     }
     unsafe {
         libc::umask(0);
         sid = libc::setsid();
     }
     if sid < 0 {
-        return Err((MultError::SetSidFailed, None))
+        return Err((MultError::SetSidFailed, None));
     }
     unsafe {
         libc::close(libc::STDIN_FILENO);
@@ -63,9 +78,11 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
     if stats.memory_limit > -1 {
         let memory_limit = libc::rlimit {
             rlim_cur: stats.memory_limit as u64,
-            rlim_max: stats.memory_limit as u64
+            rlim_max: stats.memory_limit as u64,
         };
-        unsafe { libc::setrlimit(libc::RLIMIT_AS, &memory_limit); }
+        unsafe {
+            libc::setrlimit(libc::RLIMIT_AS, &memory_limit);
+        }
     }
     // Do daemon stuff here
     let child = run_command(&command, &files.process_dir)?;
@@ -78,7 +95,7 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
     let mut cpu_time_total;
     loop {
         // Get usage metrics
-        let process_tree = get_all_processes(child.id() as usize);
+        let process_tree = linux_get_all_processes(child.id() as usize);
         save_task_processes(&files.process_dir, &process_tree);
         cpu_time_total = linux_get_cpu_time_total(linux_get_cpu_stats());
 
@@ -95,12 +112,8 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
                 usage_stats.lock().unwrap().insert(
                     node.pid,
                     UsageStats {
-                        cpu_usage: get_cpu_usage(
-                            node.pid,
-                            node.clone(),
-                            cpu_time_total
-                        )
-                    }
+                        cpu_usage: get_cpu_usage(node.pid, node.clone(), cpu_time_total),
+                    },
                 );
             }
         });
@@ -116,13 +129,16 @@ fn run_command(command: &str, process_dir: &Path) -> Result<Child, MultErrorTupl
     let shell_path = match env::var("SHELL") {
         Ok(val) => {
             if SUPPORTED_SHELLS
-                .into_iter().find(|shell_name| val.ends_with(shell_name)).is_some() {
+                .into_iter()
+                .find(|shell_name| val.ends_with(shell_name))
+                .is_some()
+            {
                 val
             } else {
                 "/bin/bash".to_string()
             }
-        },
-        Err(_) => return Err((MultError::OSNotSupported, None))
+        }
+        Err(_) => return Err((MultError::OSNotSupported, None)),
     };
     let mut child = Command::new(shell_path)
         .args(["-ic", &command])
@@ -134,7 +150,7 @@ fn run_command(command: &str, process_dir: &Path) -> Result<Child, MultErrorTupl
 
     let current_dir = match env::current_dir() {
         Ok(val) => val,
-        Err(_) => home_dir().unwrap()
+        Err(_) => home_dir().unwrap(),
     };
 
     let child_pid = child.id();
@@ -145,13 +161,13 @@ fn run_command(command: &str, process_dir: &Path) -> Result<Child, MultErrorTupl
         pid: child_pid,
         dir: current_dir.display().to_string(),
         name: proc_name,
-        starttime: proc_stats[21].parse().unwrap()
+        starttime: proc_stats[21].parse().unwrap(),
     };
     CommandManager::write_command_data(data, process_dir);
 
     let stdout = child.stdout.take().unwrap();
     let stderr = child.stderr.take().unwrap();
-    
+
     let mut stdout_file = File::create(process_dir.join("stdout.out")).unwrap();
     let mut stderr_file = File::create(process_dir.join("stderr.err")).unwrap();
 
@@ -159,4 +175,3 @@ fn run_command(command: &str, process_dir: &Path) -> Result<Child, MultErrorTupl
     spawn_logger!(stdout, stdout_file);
     Ok(child)
 }
-

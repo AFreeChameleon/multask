@@ -3,8 +3,8 @@ use std::{env, fs, path::Path};
 use mult_lib::args::parse_args;
 use mult_lib::command::CommandManager;
 use mult_lib::error::{print_info, print_success, MultError, MultErrorTuple};
-use mult_lib::proc::kill_all_processes;
 use mult_lib::task::TaskManager;
+use mult_lib::windows::proc::win_kill_all_processes;
 
 pub fn run() -> Result<(), MultErrorTuple> {
     let args = env::args();
@@ -15,9 +15,10 @@ pub fn run() -> Result<(), MultErrorTuple> {
         let task_id: u32 = TaskManager::parse_arg(Some(arg.to_string()))?;
         let task = TaskManager::get_task(&tasks, task_id)?;
         let command_data = CommandManager::read_command_data(task.id)?;
-        match kill_all_processes(command_data.pid) {
+        #[cfg(target_os = "windows")]
+        match win_kill_all_processes(command_data.pid, task_id) {
             Ok(_) => (),
-            Err(_) => { print_info(&format!("Process {} is not running.", task_id)) }
+            Err(_) => print_info(&format!("Process {} is not running.", task_id)),
         };
         new_tasks = new_tasks.into_iter().filter(|t| t.id != task_id).collect();
         let process_dir = Path::new(&home::home_dir().unwrap())
@@ -25,8 +26,8 @@ pub fn run() -> Result<(), MultErrorTuple> {
             .join("processes")
             .join(task_id.to_string());
         match fs::remove_dir_all(process_dir) {
-            Ok(()) => {},
-            Err(_) => return Err((MultError::ProcessDirNotExist, None))
+            Ok(()) => {}
+            Err(_) => return Err((MultError::ProcessDirNotExist, None)),
         };
         print_success(&format!("Process {} deleted.", task_id));
     }

@@ -1,9 +1,11 @@
+pub mod args;
+pub mod colors;
 pub mod command;
+pub mod cpu;
+pub mod error;
+pub mod linux;
+pub mod proc;
 pub mod table;
 pub mod task;
-pub mod error;
-pub mod args;
-pub mod proc;
 pub mod tree;
-pub mod colors;
-pub mod cpu;
+pub mod windows;
