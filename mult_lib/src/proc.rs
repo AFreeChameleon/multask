@@ -110,6 +110,8 @@ pub fn get_process_stats(pid: usize) -> Vec<String> {
     return linux_get_process_stats(pid);
     #[cfg(target_os = "windows")]
     return win_get_process_stats(pid);
+    #[cfg(any(target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))]
+    Vec::new()
 }
 
 pub fn get_process_memory(pid: &usize) -> String {
@@ -117,6 +119,8 @@ pub fn get_process_memory(pid: &usize) -> String {
     return linux_get_process_memory(pid);
     #[cfg(target_os = "windows")]
     return win_get_memory_usage(pid);
+    #[cfg(any(target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))]
+    return String::new();
 }
 
 // binary memory is 1024
