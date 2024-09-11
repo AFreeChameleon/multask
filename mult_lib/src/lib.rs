@@ -1,7 +1,6 @@
 pub mod args;
 pub mod colors;
 pub mod command;
-pub mod cpu;
 pub mod error;
 pub mod linux;
 pub mod proc;

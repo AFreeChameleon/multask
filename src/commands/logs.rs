@@ -24,7 +24,7 @@ pub fn run() -> Result<(), MultErrorTuple> {
     let args = env::args();
     let parsed_args = parse_args(&args.collect::<Vec<String>>()[2..], &FLAGS, true)?;
     // Reading last 15 lines from stdout and stderr
-    let mut last_lines_to_print: usize = get_last_lines_to_print(&parsed_args)?;
+    let last_lines_to_print: usize = get_last_lines_to_print(&parsed_args)?;
 
     let tasks = TaskManager::get_tasks()?;
     let task_id: u32 = TaskManager::parse_arg(env::args().nth(2))?;

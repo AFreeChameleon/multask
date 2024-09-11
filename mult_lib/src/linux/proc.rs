@@ -2,14 +2,14 @@
 extern crate core;
 extern crate std;
 
-use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use sysinfo::{Pid, System};
+use libc::{__errno_location, SIGINT};
 
+use crate::proc::get_readable_memory;
 use crate::tree::compress_tree;
 use crate::{
     error::{MultError, MultErrorTuple},
@@ -121,7 +121,7 @@ pub fn linux_get_process_runtime(starttime: u32) -> f64 {
 }
 
 pub fn linux_get_process_starttime(pid: usize) -> f64 {
-    let stats = get_process_stats(pid);
+    let stats = linux_get_process_stats(pid);
     let secs_since_boot: f64 = fs::read_to_string("/proc/uptime")
         .unwrap()
         .split_whitespace()
@@ -188,29 +188,27 @@ pub fn linux_get_process_memory(pid: &usize) -> String {
         let contents = fs::read_to_string(mem_path).unwrap();
         if let Some(vmrss) = contents.lines().find(|line| line.starts_with("VmRSS")) {
             let mut vmrss_line = vmrss.split_whitespace();
-            return format!(
-                "{} {}",
-                vmrss_line.nth(1).unwrap(),
-                vmrss_line.next().unwrap()
-            );
+            let memory: f64 = vmrss_line.nth(1).unwrap().parse().unwrap();
+            return get_readable_memory(memory);
         }
     }
-    return "0 b".to_string();
+    return "0 B".to_string();
 }
 
-pub fn linux_get_proc_comm(pid: u32) -> Result<String, MultErrorTuple> {
-    let mut proc_comm = String::new();
-    let mut proc_file = match File::open(format!("/proc/{}/comm", pid)) {
-        Ok(val) => val,
-        Err(_) => {
-            return Err((MultError::ProcessDirNotExist, None));
-        }
-    };
-    match proc_file.read_to_string(&mut proc_comm) {
-        Ok(_) => (),
-        Err(_) => {
-            return Err((MultError::ProcessDirNotExist, None));
-        }
-    };
-    Ok(proc_comm.trim().to_string())
+pub fn linux_kill_all_processes(pid: i32) -> Result<(), MultErrorTuple> {
+    let mut processes: Vec<usize> = Vec::new();
+    compress_tree(&linux_get_all_processes(pid as usize), &mut processes);
+    for child_pid in processes {
+        linux_kill_process(child_pid as i32)?;
+    }
+    Ok(())
+}
+
+pub fn linux_kill_process(pid: i32) -> Result<(), MultErrorTuple> {
+    let res = unsafe { libc::kill(pid, SIGINT) };
+    if res == 0 {
+        return Ok(());
+    }
+    let errno = unsafe { *__errno_location() };
+    Err((MultError::LinuxError, Some(errno.to_string())))
 }

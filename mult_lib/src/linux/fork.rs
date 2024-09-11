@@ -13,18 +13,18 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use mult_lib::command::{CommandData, CommandManager, MemStats};
-use mult_lib::task::Files;
-use mult_lib::{
-    cpu::{get_cpu_usage, linux_get_cpu_time_total, split_limit_cpu},
+use crate::{command::{CommandData, CommandManager, MemStats}, linux::proc::{linux_get_proc_name, linux_get_process_stats}};
+use crate::task::Files;
+use crate::{
     error::{print_info, MultError, MultErrorTuple},
     linux::proc::linux_get_all_processes,
     proc::{
-        get_all_processes, get_proc_name, get_process_stats, linux_get_cpu_stats, proc_exists,
         save_task_processes, save_usage_stats, UsageStats,
     },
     tree::{search_tree, TreeNode},
 };
+
+use super::{cpu::{linux_get_cpu_time_total, linux_get_cpu_usage, linux_split_limit_cpu}, proc::{linux_get_cpu_stats, linux_proc_exists}};
 
 macro_rules! spawn_logger {
     ($out:ident,$out_file:ident) => {{
@@ -89,7 +89,7 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
     if stats.cpu_limit > -1 {
         let child_id = child.id();
         thread::spawn(move || {
-            split_limit_cpu(child_id as i32, stats.cpu_limit as f32);
+            linux_split_limit_cpu(child_id as i32, stats.cpu_limit as f32);
         });
     }
     let mut cpu_time_total;
@@ -106,13 +106,13 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
         let usage_stats = Arc::new(Mutex::new(HashMap::new()));
         let keep_running = Arc::new(Mutex::new(true));
         search_tree(&process_tree, &|node: &TreeNode| {
-            if proc_exists(node.pid as i32) {
+            if linux_proc_exists(node.pid as i32) {
                 *keep_running.lock().unwrap() = true;
                 // Set cpu usage down here
                 usage_stats.lock().unwrap().insert(
                     node.pid,
                     UsageStats {
-                        cpu_usage: get_cpu_usage(node.pid, node.clone(), cpu_time_total),
+                        cpu_usage: linux_get_cpu_usage(node.pid, node.clone(), cpu_time_total),
                     },
                 );
             }
@@ -154,8 +154,8 @@ fn run_command(command: &str, process_dir: &Path) -> Result<Child, MultErrorTupl
     };
 
     let child_pid = child.id();
-    let proc_name = get_proc_name(child_pid)?;
-    let proc_stats = get_process_stats(child_pid as usize);
+    let proc_name = linux_get_proc_name(child_pid)?;
+    let proc_stats = linux_get_process_stats(child_pid as usize);
     let data = CommandData {
         command: command.to_string(),
         pid: child_pid,

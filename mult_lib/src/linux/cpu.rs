@@ -4,8 +4,7 @@ use std::{thread, time::Duration};
 use libc;
 
 use crate::{
-    proc::{get_all_processes, linux_get_cpu_stats, linux_get_process_stats},
-    linux::proc::{linux_get_all_processes},
+    linux::proc::{linux_get_all_processes, linux_get_cpu_stats, linux_get_process_stats},
     tree::{search_tree, TreeNode},
 };
 
@@ -31,11 +30,11 @@ pub fn linux_split_limit_cpu(pid: i32, limit: f32) {
     }
 }
 
-fn linux_get_cpu_usage(pid: usize, node: TreeNode, old_total_time: u32) -> f32 {
+pub fn linux_get_cpu_usage(pid: usize, node: TreeNode, old_total_time: u32) -> f32 {
     let stats = linux_get_process_stats(pid);
     let cpu_stats = linux_get_cpu_stats();
-    let utime: u32 = stats[13].clone().parse().unwrap();
-    let stime: u32 = stats[14].clone().parse().unwrap();
+    let utime: u64 = stats[13].clone().parse().unwrap();
+    let stime: u64 = stats[14].clone().parse().unwrap();
     let old_proc_times = node.utime + node.stime;
     let proc_times = utime + stime;
     let total_time = linux_get_cpu_time_total(cpu_stats);
