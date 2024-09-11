@@ -6,18 +6,21 @@ use std::fs;
 use std::path::Path;
 use std::u32;
 
-use crate::error::print_error;
-use crate::linux::proc::linux_get_all_processes;
 #[cfg(target_family = "unix")]
 use crate::linux::proc::{
-    linux_get_proc_comm, linux_get_proc_name, linux_get_process_memory, linux_get_process_runtime,
+    linux_get_proc_comm, linux_get_proc_name, linux_get_process_memory,
     linux_get_process_stats, linux_proc_exists,
 };
-use crate::tree::compress_tree;
 use crate::{
     error::{MultError, MultErrorTuple},
     tree::TreeNode,
 };
+
+// TODO - integrate this soon
+#[cfg(target_family = "unix")]
+pub type PID = i32;
+#[cfg(target_os = "windows")]
+pub type PID = u32;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct UsageStats {
@@ -71,13 +74,6 @@ pub fn proc_exists(pid: i32) -> bool {
     return linux_proc_exists(pid);
     #[cfg(target_os = "windows")]
     return win_proc_exists(pid as u32);
-}
-
-pub fn get_all_processes(pid: usize) -> TreeNode {
-    #[cfg(target_os = "linux")]
-    return linux_get_all_processes(pid);
-    print_error(MultError::OSNotSupported, None);
-    return TreeNode::empty();
 }
 
 pub fn get_readable_runtime(secs: u64) -> String {

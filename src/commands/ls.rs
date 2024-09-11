@@ -4,7 +4,6 @@ use mult_lib::linux::proc::linux_get_all_processes;
 use mult_lib::proc::{get_proc_comm, proc_exists};
 use mult_lib::tree::compress_tree;
 use prettytable::Table;
-use std::ffi::OsString;
 use std::{env, thread, time::Duration};
 
 use mult_lib::command::CommandManager;
@@ -89,6 +88,7 @@ pub fn setup_table(
             process_tree = linux_get_all_processes(command.pid as usize);
         }
         #[cfg(target_os = "windows")] {
+            use std::ffi::OsString;
             use mult_lib::windows::proc::win_get_all_processes;
             use windows_sys::Win32::System::JobObjects::OpenJobObjectW;
             process_tree = win_get_all_processes(
@@ -169,6 +169,7 @@ fn win_get_process_headers(
     task: &Task,
     is_main_process: bool,
 ) -> Option<ProcessHeaders> {
+    use std::ffi::OsString;
     use mult_lib::{
         error::print_error,
         proc::{get_readable_runtime, read_usage_stats},

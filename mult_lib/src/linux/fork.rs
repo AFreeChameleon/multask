@@ -19,7 +19,6 @@ use crate::{
     error::{print_info, MultError, MultErrorTuple},
     linux::proc::linux_get_all_processes,
     proc::{
-        proc_exists,
         save_task_processes, save_usage_stats, UsageStats,
     },
     tree::{search_tree, TreeNode},
