@@ -13,18 +13,17 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use crate::{command::{CommandData, CommandManager, MemStats}, linux::proc::{linux_get_proc_name, linux_get_process_stats}};
+use crate::{command::{CommandData, CommandManager, MemStats}};
 use crate::task::Files;
 use crate::{
     error::{print_info, MultError, MultErrorTuple},
-    linux::proc::linux_get_all_processes,
     proc::{
         save_task_processes, save_usage_stats, UsageStats,
     },
     tree::{search_tree, TreeNode},
 };
 
-use super::{cpu::{linux_get_cpu_time_total, linux_get_cpu_usage, linux_split_limit_cpu}, proc::{linux_get_cpu_stats, linux_proc_exists}};
+use crate::unix::proc::unix_proc_exists;
 
 macro_rules! spawn_logger {
     ($out:ident,$out_file:ident) => {{
@@ -77,8 +76,8 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
     }
     if stats.memory_limit > -1 {
         let memory_limit = libc::rlimit {
-            rlim_cur: stats.memory_limit as u64,
-            rlim_max: stats.memory_limit as u64,
+            rlim_cur: stats.memory_limit as _,
+            rlim_max: stats.memory_limit as _,
         };
         unsafe {
             libc::setrlimit(libc::RLIMIT_AS, &memory_limit);
@@ -89,15 +88,15 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
     if stats.cpu_limit > -1 {
         let child_id = child.id();
         thread::spawn(move || {
-            linux_split_limit_cpu(child_id as i32, stats.cpu_limit as f32);
+            split_limit_cpu(child_id as i32, stats.cpu_limit as f32);
         });
     }
     let mut cpu_time_total;
     loop {
         // Get usage metrics
-        let process_tree = linux_get_all_processes(child.id() as usize);
+        let process_tree = get_all_processes(child.id() as usize);
         save_task_processes(&files.process_dir, &process_tree);
-        cpu_time_total = linux_get_cpu_time_total(linux_get_cpu_stats());
+        cpu_time_total = get_cpu_time_total(get_cpu_stats());
 
         // Sleep for measuring usage over time
         thread::sleep(Duration::from_secs(1));
@@ -106,13 +105,13 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
         let usage_stats = Arc::new(Mutex::new(HashMap::new()));
         let keep_running = Arc::new(Mutex::new(true));
         search_tree(&process_tree, &|node: &TreeNode| {
-            if linux_proc_exists(node.pid as i32) {
+            if unix_proc_exists(node.pid as i32) {
                 *keep_running.lock().unwrap() = true;
                 // Set cpu usage down here
                 usage_stats.lock().unwrap().insert(
                     node.pid,
                     UsageStats {
-                        cpu_usage: linux_get_cpu_usage(node.pid, node.clone(), cpu_time_total),
+                        cpu_usage: get_cpu_usage(node.pid, node.clone(), cpu_time_total),
                     },
                 );
             }
@@ -154,8 +153,8 @@ fn run_command(command: &str, process_dir: &Path) -> Result<Child, MultErrorTupl
     };
 
     let child_pid = child.id();
-    let proc_name = linux_get_proc_name(child_pid)?;
-    let proc_stats = linux_get_process_stats(child_pid as usize);
+    let proc_name = get_proc_name(child_pid)?;
+    let proc_stats = get_process_stats(child_pid as usize);
     let data = CommandData {
         command: command.to_string(),
         pid: child_pid,
@@ -174,4 +173,65 @@ fn run_command(command: &str, process_dir: &Path) -> Result<Child, MultErrorTupl
     spawn_logger!(stderr, stderr_file);
     spawn_logger!(stdout, stdout_file);
     Ok(child)
+}
+
+fn get_all_processes(id: usize) -> TreeNode {
+    #[cfg(target_os = "linux")] {
+        use crate::linux::proc::linux_get_all_processes;
+        return linux_get_all_processes(child.id() as usize);
+    }
+    #[cfg(any(target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))]
+    return TreeNode::empty();
+}
+
+fn get_cpu_time_total(cpu_stats: Vec<String>) -> u32 {
+    #[cfg(target_os = "linux")] {
+        use crate::linux::cpu::linux_get_cpu_time_total;
+        return linux_get_cpu_time_total(cpu_stats);
+    }
+    #[cfg(any(target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))]
+    return 0;
+}
+
+fn get_cpu_stats() -> Vec<String> {
+    #[cfg(target_os = "linux")] {
+        use crate::linux::proc::linux_get_cpu_stats;
+        return linux_get_cpu_stats();
+    }
+    #[cfg(any(target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))]
+    return Vec::new();
+}
+
+fn get_cpu_usage(pid: usize, node: TreeNode, old_total_time: u32) -> f32 {
+    #[cfg(target_os = "linux")] {
+        use crate::linux::cpu::linux_get_cpu_usage;
+        return linux_get_cpu_usage(pid, node, old_total_time);
+    }
+    #[cfg(any(target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))]
+    return 0.0;
+}
+
+fn split_limit_cpu(pid: i32, limit: f32) {
+    #[cfg(target_os = "linux")] {
+        use crate::linux::cpu::linux_split_limit_cpu;
+        linux_split_limit_cpu(pid, limit);
+    }
+}
+
+fn get_proc_name(pid: u32) -> Result<String, MultErrorTuple> {
+    #[cfg(target_os = "linux")] {
+        use crate::linux::proc::linux_get_proc_name;
+        return linux_get_proc_name(pid);
+    }
+    #[cfg(any(target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))]
+    return Ok(String::new());
+}
+
+fn get_process_stats(pid: usize) -> Vec<String> {
+    #[cfg(target_os = "linux")] {
+        use crate::linux::proc::linux_get_process_stats;
+        return linux_get_process_stats(pid);
+    }
+    #[cfg(any(target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))]
+    return Vec::new();
 }

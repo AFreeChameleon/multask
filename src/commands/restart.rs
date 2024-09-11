@@ -3,11 +3,10 @@ use std::env;
 use mult_lib::args::{parse_args, ParsedArgs};
 use mult_lib::command::{CommandManager, MemStats};
 use mult_lib::error::{print_info, print_success, MultError, MultErrorTuple};
-use mult_lib::linux::proc::linux_kill_all_processes;
 use mult_lib::task::TaskManager;
 
 #[cfg(target_family = "unix")]
-use mult_lib::linux::fork;
+use mult_lib::unix::fork;
 
 const MEMORY_LIMIT_FLAG: &str = "-m";
 const CPU_LIMIT_FLAG: &str = "-c";
@@ -28,8 +27,10 @@ pub fn run() -> Result<(), MultErrorTuple> {
             use mult_lib::windows::proc::win_kill_all_processes;
             win_kill_all_processes(command_data.pid, task_id)?;
         }
-        #[cfg(target_os = "linux")]
-        linux_kill_all_processes(command_data.pid as i32)?;
+        #[cfg(target_os = "linux")] {
+            use mult_lib::linux::proc::linux_kill_all_processes;
+            linux_kill_all_processes(command_data.pid as i32)?;
+        }
         let files = TaskManager::generate_task_files(task.id, &tasks);
         print_info("Restarting process...");
 

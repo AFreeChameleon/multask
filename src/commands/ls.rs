@@ -1,6 +1,5 @@
 use mult_lib::args::{parse_args, ParsedArgs};
 use mult_lib::colors::{color_string, OK_GREEN};
-use mult_lib::linux::proc::linux_get_all_processes;
 use mult_lib::proc::{get_proc_comm, proc_exists};
 use mult_lib::tree::compress_tree;
 use prettytable::Table;
@@ -10,6 +9,7 @@ use mult_lib::command::CommandManager;
 use mult_lib::error::{MultError, MultErrorTuple};
 use mult_lib::table::{MainHeaders, ProcessHeaders, TableManager};
 use mult_lib::task::{Task, TaskManager};
+use mult_lib::tree::TreeNode;
 
 const WATCH_FLAG: &str = "-w";
 const LIST_CHILDREN_FLAG: &str = "-a";
@@ -85,7 +85,11 @@ pub fn setup_table(
         let mut process_headers = process_headers_opt.unwrap();
         let process_tree;
         #[cfg(target_os = "linux")] {
+            use mult_lib::linux::proc::linux_get_all_processes;
             process_tree = linux_get_all_processes(command.pid as usize);
+        }
+        #[cfg(any(target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))] {
+            process_tree = TreeNode::empty();
         }
         #[cfg(target_os = "windows")] {
             use std::ffi::OsString;
@@ -160,6 +164,8 @@ fn get_process_headers(
     return linux_get_process_headers(pid, starttime, task, is_main_process);
     #[cfg(target_os = "windows")]
     return win_get_process_headers(pid, starttime, task, is_main_process);
+    #[cfg(any(target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))]
+    return None;
 }
 
 #[cfg(target_os = "windows")]

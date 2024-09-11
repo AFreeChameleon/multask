@@ -7,7 +7,7 @@ use mult_lib::proc::proc_exists;
 use mult_lib::task::TaskManager;
 
 #[cfg(target_family = "unix")]
-use mult_lib::linux::fork;
+use mult_lib::unix::fork;
 
 #[cfg(target_family = "windows")]
 use mult_lib::windows::fork;

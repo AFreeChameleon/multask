@@ -6,11 +6,13 @@ use std::fs;
 use std::path::Path;
 use std::u32;
 
-#[cfg(target_family = "unix")]
+#[cfg(target_os = "linux")]
 use crate::linux::proc::{
     linux_get_proc_comm, linux_get_proc_name, linux_get_process_memory,
-    linux_get_process_stats, linux_proc_exists,
+    linux_get_process_stats
 };
+#[cfg(target_family = "unix")]
+use crate::unix::proc::unix_proc_exists;
 use crate::{
     error::{MultError, MultErrorTuple},
     tree::TreeNode,
@@ -32,6 +34,8 @@ pub fn get_proc_name(pid: u32) -> Result<String, MultErrorTuple> {
     return linux_get_proc_name(pid);
     #[cfg(target_os = "windows")]
     return win_get_proc_name(pid);
+    #[cfg(any(target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))]
+    Ok(String::new())
 }
 
 pub fn get_proc_comm(pid: u32) -> Result<String, MultErrorTuple> {
@@ -39,6 +43,8 @@ pub fn get_proc_comm(pid: u32) -> Result<String, MultErrorTuple> {
     return linux_get_proc_comm(pid);
     #[cfg(target_os = "windows")]
     return win_get_proc_name(pid);
+    #[cfg(any(target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))]
+    Ok(String::new())
 }
 
 
@@ -71,7 +77,7 @@ pub fn read_usage_stats(task_id: u32) -> Result<HashMap<usize, UsageStats>, Mult
 
 pub fn proc_exists(pid: i32) -> bool {
     #[cfg(target_family = "unix")]
-    return linux_proc_exists(pid);
+    return unix_proc_exists(pid);
     #[cfg(target_os = "windows")]
     return win_proc_exists(pid as u32);
 }
@@ -95,12 +101,6 @@ pub fn get_process_stats(pid: usize) -> Vec<String> {
 pub fn get_process_memory(pid: &usize) -> String {
     #[cfg(target_os = "linux")]
     return linux_get_process_memory(pid);
-<<<<<<< HEAD
-    #[cfg(target_os = "windows")]
-    return win_get_memory_usage(pid);
-    #[cfg(any(target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))]
-    return String::new();
-=======
     #[cfg(target_family = "windows")] {
         use crate::windows::proc::win_get_process_stats;
         use crate::windows::proc::{
@@ -108,7 +108,8 @@ pub fn get_process_memory(pid: &usize) -> String {
         };
         return win_get_memory_usage(pid);
     }
->>>>>>> develop
+    #[cfg(any(target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))]
+    return String::new();
 }
 
 // binary memory is 1024

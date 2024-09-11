@@ -6,7 +6,7 @@ use mult_lib::error::{print_info, print_success, MultError, MultErrorTuple};
 use mult_lib::task::{Task, TaskManager};
 
 #[cfg(target_family = "unix")]
-use mult_lib::linux::fork;
+use mult_lib::unix::fork;
 
 #[cfg(target_family = "windows")]
 use mult_lib::windows::fork;
