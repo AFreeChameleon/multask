@@ -180,7 +180,7 @@ fn get_all_processes(id: usize) -> TreeNode {
         use crate::linux::proc::linux_get_all_processes;
         return linux_get_all_processes(child.id() as usize);
     }
-    #[cfg(any(target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))]
+    #[cfg(target_os = "freebsd")]
     return TreeNode::empty();
 }
 
@@ -189,7 +189,7 @@ fn get_cpu_time_total(cpu_stats: Vec<String>) -> u32 {
         use crate::linux::cpu::linux_get_cpu_time_total;
         return linux_get_cpu_time_total(cpu_stats);
     }
-    #[cfg(any(target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))]
+    #[cfg(target_os = "freebsd")]
     return 0;
 }
 
@@ -198,7 +198,7 @@ fn get_cpu_stats() -> Vec<String> {
         use crate::linux::proc::linux_get_cpu_stats;
         return linux_get_cpu_stats();
     }
-    #[cfg(any(target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))]
+    #[cfg(target_os = "freebsd")]
     return Vec::new();
 }
 
@@ -207,7 +207,7 @@ fn get_cpu_usage(pid: usize, node: TreeNode, old_total_time: u32) -> f32 {
         use crate::linux::cpu::linux_get_cpu_usage;
         return linux_get_cpu_usage(pid, node, old_total_time);
     }
-    #[cfg(any(target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))]
+    #[cfg(target_os = "freebsd")]
     return 0.0;
 }
 
@@ -223,7 +223,7 @@ fn get_proc_name(pid: u32) -> Result<String, MultErrorTuple> {
         use crate::linux::proc::linux_get_proc_name;
         return linux_get_proc_name(pid);
     }
-    #[cfg(any(target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))]
+    #[cfg(target_os = "freebsd")]
     return Ok(String::new());
 }
 
@@ -232,6 +232,6 @@ fn get_process_stats(pid: usize) -> Vec<String> {
         use crate::linux::proc::linux_get_process_stats;
         return linux_get_process_stats(pid);
     }
-    #[cfg(any(target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))]
+    #[cfg(target_os = "freebsd")]
     return Vec::new();
 }

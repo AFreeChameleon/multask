@@ -34,7 +34,7 @@ pub fn get_proc_name(pid: u32) -> Result<String, MultErrorTuple> {
     return linux_get_proc_name(pid);
     #[cfg(target_os = "windows")]
     return win_get_proc_name(pid);
-    #[cfg(any(target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))]
+    #[cfg(target_os = "freebsd")]
     Ok(String::new())
 }
 
@@ -43,7 +43,7 @@ pub fn get_proc_comm(pid: u32) -> Result<String, MultErrorTuple> {
     return linux_get_proc_comm(pid);
     #[cfg(target_os = "windows")]
     return win_get_proc_name(pid);
-    #[cfg(any(target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))]
+    #[cfg(target_os = "freebsd")]
     Ok(String::new())
 }
 
@@ -94,7 +94,7 @@ pub fn get_process_stats(pid: usize) -> Vec<String> {
     return linux_get_process_stats(pid);
     #[cfg(target_os = "windows")]
     return win_get_process_stats(pid);
-    #[cfg(any(target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))]
+    #[cfg(target_os = "freebsd")]
     Vec::new()
 }
 
@@ -108,7 +108,7 @@ pub fn get_process_memory(pid: &usize) -> String {
         };
         return win_get_memory_usage(pid);
     }
-    #[cfg(any(target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))]
+    #[cfg(target_os = "freebsd")]
     return String::new();
 }
 

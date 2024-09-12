@@ -11,6 +11,7 @@ use libc::{__errno_location, SIGINT};
 
 use crate::proc::get_readable_memory;
 use crate::tree::compress_tree;
+use crate::unix::proc::unix_kill_process;
 use crate::{
     error::{MultError, MultErrorTuple},
     tree::TreeNode,
@@ -199,16 +200,8 @@ pub fn linux_kill_all_processes(pid: i32) -> Result<(), MultErrorTuple> {
     let mut processes: Vec<usize> = Vec::new();
     compress_tree(&linux_get_all_processes(pid as usize), &mut processes);
     for child_pid in processes {
-        linux_kill_process(child_pid as i32)?;
+        unix_kill_process(child_pid as i32)?;
     }
     Ok(())
 }
 
-pub fn linux_kill_process(pid: i32) -> Result<(), MultErrorTuple> {
-    let res = unsafe { libc::kill(pid, SIGINT) };
-    if res == 0 {
-        return Ok(());
-    }
-    let errno = unsafe { *__errno_location() };
-    Err((MultError::LinuxError, Some(errno.to_string())))
-}

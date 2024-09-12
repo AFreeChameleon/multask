@@ -25,7 +25,7 @@ pub fn run() -> Result<(), MultErrorTuple> {
                 Err(_) => print_info(&format!("Process {} is not running.", task_id)),
             }
         }
-        #[cfg(any(target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))] {
+        #[cfg(target_os = "freebsd")] {
             
         }
         print_success(&format!("Process {} stopped.", task_id));

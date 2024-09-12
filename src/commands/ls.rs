@@ -88,7 +88,7 @@ pub fn setup_table(
             use mult_lib::linux::proc::linux_get_all_processes;
             process_tree = linux_get_all_processes(command.pid as usize);
         }
-        #[cfg(any(target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))] {
+        #[cfg(target_os = "freebsd")] {
             process_tree = TreeNode::empty();
         }
         #[cfg(target_os = "windows")] {
@@ -164,7 +164,7 @@ fn get_process_headers(
     return linux_get_process_headers(pid, starttime, task, is_main_process);
     #[cfg(target_os = "windows")]
     return win_get_process_headers(pid, starttime, task, is_main_process);
-    #[cfg(any(target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))]
+    #[cfg(target_os = "freebsd")]
     return None;
 }
 
@@ -263,6 +263,47 @@ fn linux_get_process_headers(
         memory: linux_get_process_memory(&(pid as usize)),
         cpu: format!("{}%", cpu_usage),
         runtime: get_readable_runtime(linux_get_process_runtime(proc_stats[21].parse().unwrap()) as u64),
+        status: color_string(OK_GREEN, "Running").to_string(),
+    })
+}
+
+#[cfg(target_os = "freebsd")]
+fn bsd_get_process_headers(
+    pid: usize,
+    starttime: u32,
+    task: &Task,
+    is_main_process: bool,
+) -> Option<ProcessHeaders> {
+    use mult_lib::{
+        bsd::proc::{
+            bsd_get_process_memory,
+            linux_get_process_runtime,
+            bsd_get_process_stats
+        },
+        proc::{get_readable_runtime, read_usage_stats}
+    };
+    let proc_stats = bsd_get_process_stats(pid as i32);
+    if is_main_process && (
+        proc_stats.len() == 0 || starttime != proc_stats[21].parse().unwrap()
+    ) {
+        return None;
+    }
+    let mut cpu_usage = 0.0;
+    let usage_stats = match read_usage_stats(task.id) {
+        Ok(val) => val,
+        Err(_) => return None,
+    };
+    if let Some(stats) = usage_stats.get(&(pid as usize)) {
+        cpu_usage = (stats.cpu_usage * 100.0).round() / 100.0;
+    }
+    // Get memory stats
+    Some(ProcessHeaders {
+        pid: pid.to_string(),
+        memory: get_readable_memory(proc_stats.ki_size as f64),
+        cpu: format!("{}%", cpu_usage),
+        runtime: get_readable_runtime(
+            linux_get_process_runtime(proc_stats[21].parse().unwrap()) as u64
+        ),
         status: color_string(OK_GREEN, "Running").to_string(),
     })
 }
