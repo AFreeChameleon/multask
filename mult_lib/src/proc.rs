@@ -29,7 +29,7 @@ pub struct UsageStats {
     pub cpu_usage: f32,
 }
 
-pub fn get_proc_name(pid: u32) -> Result<String, MultErrorTuple> {
+pub fn get_proc_name(pid: PID) -> Result<String, MultErrorTuple> {
     #[cfg(target_os = "linux")]
     return linux_get_proc_name(pid);
     #[cfg(target_os = "windows")]
@@ -38,7 +38,7 @@ pub fn get_proc_name(pid: u32) -> Result<String, MultErrorTuple> {
     Ok(String::new())
 }
 
-pub fn get_proc_comm(pid: u32) -> Result<String, MultErrorTuple> {
+pub fn get_proc_comm(pid: PID) -> Result<String, MultErrorTuple> {
     #[cfg(target_os = "linux")]
     return linux_get_proc_comm(pid);
     #[cfg(target_os = "windows")]
@@ -53,12 +53,12 @@ pub fn save_task_processes(path: &Path, tree: &TreeNode) {
     fs::write(path.join("processes.bin"), encoded_data).unwrap();
 }
 
-pub fn save_usage_stats(path: &Path, stats: &HashMap<usize, UsageStats>) {
-    let encoded_data = bincode::serialize::<HashMap<usize, UsageStats>>(stats).unwrap();
+pub fn save_usage_stats(path: &Path, stats: &HashMap<PID, UsageStats>) {
+    let encoded_data = bincode::serialize::<HashMap<PID, UsageStats>>(stats).unwrap();
     fs::write(path.join("r_usage.bin"), encoded_data).unwrap();
 }
 
-pub fn read_usage_stats(task_id: u32) -> Result<HashMap<usize, UsageStats>, MultErrorTuple> {
+pub fn read_usage_stats(task_id: u32) -> Result<HashMap<PID, UsageStats>, MultErrorTuple> {
     let process_dir = Path::new(&home::home_dir().unwrap())
         .join(".multi-tasker")
         .join("processes")
@@ -66,7 +66,7 @@ pub fn read_usage_stats(task_id: u32) -> Result<HashMap<usize, UsageStats>, Mult
     let usage_file = process_dir.join("r_usage.bin");
     if usage_file.exists() {
         let encoded: Vec<u8> = fs::read(usage_file).unwrap();
-        let decoded: HashMap<usize, UsageStats> = match bincode::deserialize(&encoded[..]) {
+        let decoded: HashMap<PID, UsageStats> = match bincode::deserialize(&encoded[..]) {
             Ok(val) => val,
             Err(_) => return Err((MultError::TaskBinFileUnreadable, None)),
         };
@@ -75,11 +75,11 @@ pub fn read_usage_stats(task_id: u32) -> Result<HashMap<usize, UsageStats>, Mult
     Ok(HashMap::new())
 }
 
-pub fn proc_exists(pid: i32) -> bool {
+pub fn proc_exists(pid: PID) -> bool {
     #[cfg(target_family = "unix")]
     return unix_proc_exists(pid);
     #[cfg(target_os = "windows")]
-    return win_proc_exists(pid as u32);
+    return win_proc_exists(pid);
 }
 
 pub fn get_readable_runtime(secs: u64) -> String {
@@ -89,7 +89,7 @@ pub fn get_readable_runtime(secs: u64) -> String {
     format!("{}h {}m {}s", hours, minutes, seconds).to_string()
 }
 
-pub fn get_process_stats(pid: usize) -> Vec<String> {
+pub fn get_process_stats(pid: PID) -> Vec<String> {
     #[cfg(target_os = "linux")]
     return linux_get_process_stats(pid);
     #[cfg(target_os = "windows")]
@@ -98,7 +98,7 @@ pub fn get_process_stats(pid: usize) -> Vec<String> {
     Vec::new()
 }
 
-pub fn get_process_memory(pid: &usize) -> String {
+pub fn get_process_memory(pid: &PID) -> String {
     #[cfg(target_os = "linux")]
     return linux_get_process_memory(pid);
     #[cfg(target_family = "windows")] {

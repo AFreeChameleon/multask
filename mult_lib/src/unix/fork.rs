@@ -19,7 +19,7 @@ use crate::task::Files;
 use crate::{
     error::{print_info, MultError, MultErrorTuple},
     proc::{
-        save_task_processes, save_usage_stats, UsageStats,
+        save_task_processes, save_usage_stats, UsageStats, PID
     },
     tree::{search_tree, TreeNode},
 };
@@ -89,13 +89,13 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
     if stats.cpu_limit > -1 {
         let child_id = child.id();
         thread::spawn(move || {
-            split_limit_cpu(child_id as i32, stats.cpu_limit as f32);
+            split_limit_cpu(child_id as PID, stats.cpu_limit as f32);
         });
     }
     let mut cpu_time_total;
     loop {
         // Get usage metrics
-        let process_tree = get_all_processes(child.id() as usize);
+        let process_tree = get_all_processes(child.id() as PID);
         save_task_processes(&files.process_dir, &process_tree);
         cpu_time_total = get_cpu_time_total(get_cpu_stats());
 
@@ -106,7 +106,7 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
         let usage_stats = Arc::new(Mutex::new(HashMap::new()));
         let keep_running = Arc::new(Mutex::new(true));
         search_tree(&process_tree, &|node: &TreeNode| {
-            if unix_proc_exists(node.pid as i32) {
+            if unix_proc_exists(node.pid) {
                 *keep_running.lock().unwrap() = true;
                 // Set cpu usage down here
                 usage_stats.lock().unwrap().insert(
@@ -135,7 +135,7 @@ fn run_command(command: &str, process_dir: &Path) -> Result<Child, MultErrorTupl
             {
                 val
             } else {
-                "/bin/bash".to_string()
+                "/bin/sh".to_string()
             }
         }
         Err(_) => return Err((MultError::OSNotSupported, None)),
@@ -153,7 +153,7 @@ fn run_command(command: &str, process_dir: &Path) -> Result<Child, MultErrorTupl
         Err(_) => home_dir().unwrap(),
     };
 
-    let child_pid = child.id();
+    let child_pid = child.id() as PID;
     let data = get_command_data(
         child_pid,
         command.to_string(),
@@ -172,10 +172,10 @@ fn run_command(command: &str, process_dir: &Path) -> Result<Child, MultErrorTupl
     Ok(child)
 }
 
-fn get_command_data(pid: u32, command: String, dir: String) -> Result<CommandData, MultErrorTuple> {
+fn get_command_data(pid: PID, command: String, dir: String) -> Result<CommandData, MultErrorTuple> {
     #[cfg(target_os = "freebsd")] {
         use crate::bsd::proc::bsd_get_process_stats;
-        let proc_stats = bsd_get_process_stats(pid as i32);
+        let proc_stats = bsd_get_process_stats(pid);
         if proc_stats.is_none() {
             return Err((MultError::ProcessNotExists, None));
         }
@@ -190,14 +190,14 @@ fn get_command_data(pid: u32, command: String, dir: String) -> Result<CommandDat
     }
 }
 
-fn get_process_starttime(pid: usize) -> Result<u64, MultErrorTuple> {
+fn get_process_starttime(pid: PID) -> Result<u64, MultErrorTuple> {
     #[cfg(target_os = "linux")] {
         use crate::linux::proc::linux_get_process_stats;
         return linux_get_process_stats(pid);
     }
     #[cfg(target_os = "freebsd")] {
         use crate::bsd::proc::bsd_get_process_stats;
-        let proc_stats = bsd_get_process_stats(pid as i32);
+        let proc_stats = bsd_get_process_stats(pid as PID);
         if proc_stats.is_none() {
             return Err((MultError::ProcessNotExists, None));
         }
@@ -207,13 +207,18 @@ fn get_process_starttime(pid: usize) -> Result<u64, MultErrorTuple> {
     return Ok(0);
 }
 
-fn get_all_processes(id: usize) -> TreeNode {
+fn get_all_processes(pid: PID) -> TreeNode {
     #[cfg(target_os = "linux")] {
         use crate::linux::proc::linux_get_all_processes;
-        return linux_get_all_processes(child.id() as usize);
+        return linux_get_all_processes(pid);
     }
     #[cfg(target_os = "freebsd")]
-    return TreeNode::empty();
+    return TreeNode {
+        pid,
+        stime: 0,
+        utime: 0,
+        children: Vec::new()
+    }
 }
 
 fn get_cpu_time_total(cpu_stats: Vec<String>) -> u32 {
@@ -234,7 +239,7 @@ fn get_cpu_stats() -> Vec<String> {
     return Vec::new();
 }
 
-fn get_cpu_usage(pid: usize, node: TreeNode, old_total_time: u32) -> f32 {
+fn get_cpu_usage(pid: PID, node: TreeNode, old_total_time: u32) -> f32 {
     #[cfg(target_os = "linux")] {
         use crate::linux::cpu::linux_get_cpu_usage;
         return linux_get_cpu_usage(pid, node, old_total_time);
@@ -243,14 +248,14 @@ fn get_cpu_usage(pid: usize, node: TreeNode, old_total_time: u32) -> f32 {
     return 0.0;
 }
 
-fn split_limit_cpu(pid: i32, limit: f32) {
+fn split_limit_cpu(pid: PID, limit: f32) {
     #[cfg(target_os = "linux")] {
         use crate::linux::cpu::linux_split_limit_cpu;
         linux_split_limit_cpu(pid, limit);
     }
 }
 
-fn get_proc_name(pid: u32) -> Result<String, MultErrorTuple> {
+fn get_proc_name(pid: PID) -> Result<String, MultErrorTuple> {
     #[cfg(target_os = "linux")] {
         use crate::linux::proc::linux_get_proc_name;
         return linux_get_proc_name(pid);

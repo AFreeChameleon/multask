@@ -10,7 +10,7 @@ use mult_lib::error::{MultError, MultErrorTuple, print_error};
 use mult_lib::table::{MainHeaders, ProcessHeaders, TableManager};
 use mult_lib::task::{Task, TaskManager};
 use mult_lib::tree::TreeNode;
-use mult_lib::proc::{get_readable_runtime, read_usage_stats, get_readable_memory};
+use mult_lib::proc::{PID, get_readable_runtime, read_usage_stats, get_readable_memory};
 
 const WATCH_FLAG: &str = "-w";
 const LIST_CHILDREN_FLAG: &str = "-a";
@@ -78,7 +78,7 @@ pub fn setup_table(
         };
         // Get memory stats
         let process_headers_opt =
-            get_process_headers(command.pid as usize, command.starttime, &task, true);
+            get_process_headers(command.pid, command.starttime, &task, true);
         if process_headers_opt.is_none() {
             table.insert_row(main_headers, None);
             continue;
@@ -114,10 +114,10 @@ pub fn setup_table(
         if all_processes.len() > 1 {
             if parsed_args.flags.contains(&LIST_CHILDREN_FLAG.to_string()) {
                 for child_process_id in all_processes.iter() {
-                    if *child_process_id as u32 == command.pid {
+                    if *child_process_id == command.pid {
                         continue;
                     }
-                    if !proc_exists(*child_process_id as i32) {
+                    if !proc_exists(*child_process_id) {
                         continue;
                     }
                     if let Some(child_process_headers) =
@@ -125,7 +125,7 @@ pub fn setup_table(
                     {
                         main_headers
                             .command
-                            .push_str(&format!("\n  {}", get_proc_comm(*child_process_id as u32)?));
+                            .push_str(&format!("\n  {}", get_proc_comm(*child_process_id)?));
                         process_headers
                             .pid
                             .push_str(&format!("\n{}", child_process_headers.pid));
@@ -156,7 +156,7 @@ pub fn setup_table(
 }
 
 fn get_process_headers(
-    pid: usize,
+    pid: PID,
     starttime: u64,
     task: &Task,
     is_main_process: bool,
@@ -274,7 +274,7 @@ fn linux_get_process_headers(
 
 #[cfg(target_os = "freebsd")]
 fn bsd_get_process_headers(
-    pid: usize,
+    pid: PID,
     starttime: u64,
     task: &Task,
     is_main_process: bool,
@@ -297,7 +297,7 @@ fn bsd_get_process_headers(
         Ok(val) => val,
         Err(_) => return None,
     };
-    if let Some(stats) = usage_stats.get(&(pid as usize)) {
+    if let Some(stats) = usage_stats.get(&pid) {
         cpu_usage = (stats.cpu_usage * 100.0).round() / 100.0;
     }
     // Get memory stats

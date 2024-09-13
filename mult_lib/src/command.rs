@@ -6,6 +6,7 @@ use std::{
 };
 
 use crate::error::{MultError, MultErrorTuple};
+use crate::proc::PID;
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub struct MemStats {
@@ -16,7 +17,7 @@ pub struct MemStats {
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct CommandData {
     pub command: String,
-    pub pid: u32,
+    pub pid: PID,
     pub dir: String,
     pub name: String,
     pub starttime: u64,
