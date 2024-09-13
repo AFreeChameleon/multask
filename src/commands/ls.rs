@@ -6,10 +6,11 @@ use prettytable::Table;
 use std::{env, thread, time::Duration};
 
 use mult_lib::command::CommandManager;
-use mult_lib::error::{MultError, MultErrorTuple};
+use mult_lib::error::{MultError, MultErrorTuple, print_error};
 use mult_lib::table::{MainHeaders, ProcessHeaders, TableManager};
 use mult_lib::task::{Task, TaskManager};
 use mult_lib::tree::TreeNode;
+use mult_lib::proc::{get_readable_runtime, read_usage_stats, get_readable_memory};
 
 const WATCH_FLAG: &str = "-w";
 const LIST_CHILDREN_FLAG: &str = "-a";
@@ -156,7 +157,7 @@ pub fn setup_table(
 
 fn get_process_headers(
     pid: usize,
-    starttime: u32,
+    starttime: u64,
     task: &Task,
     is_main_process: bool,
 ) -> Option<ProcessHeaders> {
@@ -165,7 +166,7 @@ fn get_process_headers(
     #[cfg(target_os = "windows")]
     return win_get_process_headers(pid, starttime, task, is_main_process);
     #[cfg(target_os = "freebsd")]
-    return None;
+    return bsd_get_process_headers(pid, starttime, task, is_main_process);
 }
 
 #[cfg(target_os = "windows")]
@@ -177,8 +178,6 @@ fn win_get_process_headers(
 ) -> Option<ProcessHeaders> {
     use std::ffi::OsString;
     use mult_lib::{
-        error::print_error,
-        proc::{get_readable_runtime, read_usage_stats},
         windows::proc::{win_get_memory_usage, win_get_process_runtime, win_get_process_stats},
     };
     use windows_sys::Win32::{
@@ -244,7 +243,13 @@ fn linux_get_process_headers(
     task: &Task,
     is_main_process: bool,
 ) -> Option<ProcessHeaders> {
-    use mult_lib::{linux::proc::{linux_get_process_memory, linux_get_process_runtime, linux_get_process_stats}, proc::{get_readable_runtime, read_usage_stats}};
+    use mult_lib::{
+        linux::proc::{
+            linux_get_process_memory,
+            linux_get_process_runtime,
+            linux_get_process_stats
+        }
+    };
     let proc_stats = linux_get_process_stats(pid as usize);
     if is_main_process && (proc_stats.len() == 0 || starttime != proc_stats[21].parse().unwrap()) {
         return None;
@@ -270,24 +275,23 @@ fn linux_get_process_headers(
 #[cfg(target_os = "freebsd")]
 fn bsd_get_process_headers(
     pid: usize,
-    starttime: u32,
+    starttime: u64,
     task: &Task,
     is_main_process: bool,
 ) -> Option<ProcessHeaders> {
     use mult_lib::{
         bsd::proc::{
             bsd_get_process_memory,
-            linux_get_process_runtime,
             bsd_get_process_stats
-        },
-        proc::{get_readable_runtime, read_usage_stats}
+        }
     };
-    let proc_stats = bsd_get_process_stats(pid as i32);
+    let proc_stats_opt = bsd_get_process_stats(pid as i32);
     if is_main_process && (
-        proc_stats.len() == 0 || starttime != proc_stats[21].parse().unwrap()
+        proc_stats_opt.is_none() || starttime != proc_stats_opt.unwrap().ki_runtime
     ) {
         return None;
     }
+    let proc_stats = proc_stats_opt.unwrap();
     let mut cpu_usage = 0.0;
     let usage_stats = match read_usage_stats(task.id) {
         Ok(val) => val,
@@ -302,7 +306,7 @@ fn bsd_get_process_headers(
         memory: get_readable_memory(proc_stats.ki_size as f64),
         cpu: format!("{}%", cpu_usage),
         runtime: get_readable_runtime(
-            linux_get_process_runtime(proc_stats[21].parse().unwrap()) as u64
+            proc_stats.ki_runtime
         ),
         status: color_string(OK_GREEN, "Running").to_string(),
     })

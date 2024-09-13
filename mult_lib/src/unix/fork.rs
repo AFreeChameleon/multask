@@ -11,6 +11,7 @@ use std::{
     sync::{Arc, Mutex},
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
+    mem
 };
 
 use crate::{command::{CommandData, CommandManager, MemStats}};
@@ -153,16 +154,12 @@ fn run_command(command: &str, process_dir: &Path) -> Result<Child, MultErrorTupl
     };
 
     let child_pid = child.id();
-    let proc_name = get_proc_name(child_pid)?;
-    let proc_stats = get_process_stats(child_pid as usize);
-    let data = CommandData {
-        command: command.to_string(),
-        pid: child_pid,
-        dir: current_dir.display().to_string(),
-        name: proc_name,
-        starttime: proc_stats[21].parse().unwrap(),
-    };
-    CommandManager::write_command_data(data, process_dir);
+    let data = get_command_data(
+        child_pid,
+        command.to_string(),
+        current_dir.display().to_string()
+    );
+    CommandManager::write_command_data(data?, process_dir);
 
     let stdout = child.stdout.take().unwrap();
     let stderr = child.stderr.take().unwrap();
@@ -173,6 +170,41 @@ fn run_command(command: &str, process_dir: &Path) -> Result<Child, MultErrorTupl
     spawn_logger!(stderr, stderr_file);
     spawn_logger!(stdout, stdout_file);
     Ok(child)
+}
+
+fn get_command_data(pid: u32, command: String, dir: String) -> Result<CommandData, MultErrorTuple> {
+    #[cfg(target_os = "freebsd")] {
+        use crate::bsd::proc::bsd_get_process_stats;
+        let proc_stats = bsd_get_process_stats(pid as i32);
+        if proc_stats.is_none() {
+            return Err((MultError::ProcessNotExists, None));
+        }
+        let data = CommandData {
+            pid: pid,
+            command,
+            dir,
+            starttime: proc_stats.unwrap().ki_runtime,
+            name: String::from_utf8(proc_stats.unwrap().ki_comm.iter().map(|&c| c as u8).collect()).unwrap(),
+        };
+        return Ok(data);
+    }
+}
+
+fn get_process_starttime(pid: usize) -> Result<u64, MultErrorTuple> {
+    #[cfg(target_os = "linux")] {
+        use crate::linux::proc::linux_get_process_stats;
+        return linux_get_process_stats(pid);
+    }
+    #[cfg(target_os = "freebsd")] {
+        use crate::bsd::proc::bsd_get_process_stats;
+        let proc_stats = bsd_get_process_stats(pid as i32);
+        if proc_stats.is_none() {
+            return Err((MultError::ProcessNotExists, None));
+        }
+        return Ok(proc_stats.unwrap().ki_runtime);
+    }
+
+    return Ok(0);
 }
 
 fn get_all_processes(id: usize) -> TreeNode {
@@ -227,11 +259,3 @@ fn get_proc_name(pid: u32) -> Result<String, MultErrorTuple> {
     return Ok(String::new());
 }
 
-fn get_process_stats(pid: usize) -> Vec<String> {
-    #[cfg(target_os = "linux")] {
-        use crate::linux::proc::linux_get_process_stats;
-        return linux_get_process_stats(pid);
-    }
-    #[cfg(target_os = "freebsd")]
-    return Vec::new();
-}
