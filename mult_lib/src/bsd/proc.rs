@@ -26,3 +26,18 @@ pub fn bsd_get_process_memory(pid: &PID) -> String {
     ) };
     get_readable_memory(kprocinfo.ki_size as f64)
 }
+
+pub fn bsd_get_cpu_usage(stats: libc::kinfo_proc) -> f32 {
+    let mut kernelFScale;
+    if libc::sysctlbyname(
+        "kern.fscale",
+        &mut kernelFScale,
+        mem::size_of:<i32>:(),
+        ptr::null(),
+        0
+    ) == -1 {
+        // htop says so
+        kernelFScale = 2048;
+    }
+    100.0 * (stats.ki_pctcpu / kernelFScale as f32)
+}
