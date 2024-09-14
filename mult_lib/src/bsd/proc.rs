@@ -1,6 +1,6 @@
-use crate::proc::get_readable_memory;
+use crate::proc::{get_readable_memory, PID};
 
-pub fn bsd_get_process_stats(pid: i32) -> Option<libc::kinfo_proc> {
+pub fn bsd_get_process_stats(pid: PID) -> Option<libc::kinfo_proc> {
     let mut procstats = unsafe { libc::procstat_open_sysctl() };
     let mut ncount = 0;
     let kprocinfo_ptr = unsafe { libc::procstat_getprocs(
@@ -15,7 +15,7 @@ pub fn bsd_get_process_stats(pid: i32) -> Option<libc::kinfo_proc> {
     unsafe { Some(*kprocinfo_ptr) }
 }
 
-pub fn bsd_get_process_memory(pid: &usize) -> String {
+pub fn bsd_get_process_memory(pid: &PID) -> String {
     let mut procstats = unsafe { libc::procstat_open_sysctl() };
     let mut ncount = 0;
     let kprocinfo = unsafe { *libc::procstat_getprocs(
