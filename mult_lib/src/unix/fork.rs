@@ -212,12 +212,9 @@ fn get_all_processes(pid: PID) -> TreeNode {
         use crate::linux::proc::linux_get_all_processes;
         return linux_get_all_processes(pid);
     }
-    #[cfg(target_os = "freebsd")]
-    return TreeNode {
-        pid,
-        stime: 0,
-        utime: 0,
-        children: Vec::new()
+    #[cfg(target_os = "freebsd")] {
+        use crate::bsd::proc::bsd_get_all_processes;
+        return bsd_get_all_processes(pid);
     }
 }
 
