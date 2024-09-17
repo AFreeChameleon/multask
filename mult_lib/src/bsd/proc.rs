@@ -54,23 +54,6 @@ pub fn bsd_get_process_memory(stats: libc::kinfo_proc) -> String {
     get_readable_memory(stats.ki_size as f64)
 }
 
-pub fn bsd_get_cpu_usage(stats: libc::kinfo_proc) -> f32 {
-    let mut kernel_f_scale: u32 = 0;
-    let mut len = mem::size_of::<u32>();
-    let param = CString::new("kern.fscale").unwrap();
-    if unsafe { libc::sysctlbyname(
-        param.as_ptr() as *const i8,
-        &mut kernel_f_scale as *mut _ as *mut c_void,
-        &mut len as *mut usize,
-        ptr::null(),
-        0
-    ) } == -1 {
-        // htop says so
-        kernel_f_scale = 2048;
-    }
-    100.0 * ((stats.ki_pctcpu / kernel_f_scale) as f32)
-}
-
 pub fn bsd_get_all_processes(pid: PID) -> TreeNode {
     let mut errbuf: [i8; 1024] = [0; 1024];
     let dev_null = CString::new("/dev/null").unwrap();
@@ -110,3 +93,10 @@ fn bsd_get_process(tree_node: &mut TreeNode) {
     }
 }
 
+pub fn bsd_proc_exists(pid: PID) -> bool {
+    let stats = bsd_get_process_stats(pid);
+    if stats.is_none() || stats.unwrap().ki_stat == libc::SZOMB {
+        return false;
+    }
+    return true;
+}

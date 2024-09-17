@@ -141,7 +141,7 @@ fn run_command(command: &str, process_dir: &Path) -> Result<Child, MultErrorTupl
         Err(_) => return Err((MultError::OSNotSupported, None)),
     };
     let mut child = Command::new(shell_path)
-        .args(["-ic", &command])
+        .args(["-c", &command])
         .env("FORCE_COLOR", "true")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -201,7 +201,7 @@ fn get_process_starttime(pid: PID) -> Result<u64, MultErrorTuple> {
         if proc_stats.is_none() {
             return Err((MultError::ProcessNotExists, None));
         }
-        return Ok(proc_stats.unwrap().ki_runtime);
+        return Ok(proc_stats.unwrap().ki_start.tv_sec as u64);
     }
 
     return Ok(0);
@@ -241,8 +241,15 @@ fn get_cpu_usage(pid: PID, node: TreeNode, old_total_time: u32) -> f32 {
         use crate::linux::cpu::linux_get_cpu_usage;
         return linux_get_cpu_usage(pid, node, old_total_time);
     }
-    #[cfg(target_os = "freebsd")]
-    return 0.0;
+    #[cfg(target_os = "freebsd")] {
+        use crate::bsd::cpu::bsd_get_cpu_usage;
+        use crate::bsd::proc::bsd_get_process_stats;
+        let stats = bsd_get_process_stats(pid);
+        if stats.is_none() {
+            return 0.0;
+        }
+        return bsd_get_cpu_usage(stats.unwrap());
+    }
 }
 
 fn split_limit_cpu(pid: PID, limit: f32) {

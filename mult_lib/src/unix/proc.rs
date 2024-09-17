@@ -1,6 +1,10 @@
 use crate::error::{MultError, MultErrorTuple};
 
 pub fn unix_proc_exists(pid: i32) -> bool {
+    #[cfg(target_os = "freebsd")] {
+        use crate::bsd::proc::bsd_proc_exists;
+        return bsd_proc_exists(pid);
+    }
     return unsafe { libc::kill(pid, 0) } == 0;
 }
 

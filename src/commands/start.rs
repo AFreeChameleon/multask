@@ -6,12 +6,6 @@ use mult_lib::error::{print_success, MultError, MultErrorTuple};
 use mult_lib::proc::proc_exists;
 use mult_lib::task::TaskManager;
 
-#[cfg(target_family = "unix")]
-use mult_lib::unix::fork;
-
-#[cfg(target_family = "windows")]
-use mult_lib::windows::fork;
-
 const MEMORY_LIMIT_FLAG: &str = "-m";
 const CPU_LIMIT_FLAG: &str = "-c";
 const FLAGS: [(&str, bool); 2] = [(MEMORY_LIMIT_FLAG, true), (CPU_LIMIT_FLAG, true)];
@@ -32,10 +26,14 @@ pub fn run() -> Result<(), MultErrorTuple> {
         let current_dir = env::current_dir().unwrap();
         env::set_current_dir(&command_data.dir).unwrap();
 
-        #[cfg(target_family = "unix")]
-        fork::run_daemon(files, command_data.command, flags.clone())?;
-        #[cfg(target_family = "windows")]
-        fork::run_daemon(files, command_data.command, &flags, task_id)?;
+        #[cfg(target_family = "unix")] {
+            use mult_lib::unix::fork;
+            fork::run_daemon(files, command_data.command, flags.clone())?;
+        }
+        #[cfg(target_family = "windows")] {
+            use mult_lib::windows::fork;
+            fork::run_daemon(files, command_data.command, &flags, task_id)?;
+        }
 
         env::set_current_dir(&current_dir).unwrap();
         print_success(&format!("Process {} started.", task_id));

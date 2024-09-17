@@ -49,7 +49,10 @@ pub fn run() -> Result<(), MultErrorTuple> {
     // Sorting lines by time
     let sorted_lines = sort_last_lines(combined_lines)?;
     print_info(&format!("Printing the last {} lines of logs.", last_lines_to_print).to_string());
-    for i in (sorted_lines.len() - last_lines_to_print)..sorted_lines.len() {
+    let mut start_idx = if sorted_lines.len() < last_lines_to_print {
+        0
+    } else { sorted_lines.len() - last_lines_to_print };
+    for i in start_idx..sorted_lines.len() {
         print!("{}", sorted_lines[i].content);
     }
     if !parsed_args.flags.contains(&WATCH_FLAG.to_string()) {
