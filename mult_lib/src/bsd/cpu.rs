@@ -1,6 +1,12 @@
 use std::mem;
 use std::ptr;
+use std::thread;
 use std::ffi::{c_void, CString};
+use std::time::Duration;
+use crate::bsd::proc::bsd_get_all_processes;
+use crate::tree::{search_tree, TreeNode};
+use crate::proc::PID;
+use crate::unix::proc::MILS_IN_SECOND;
 
 pub fn bsd_get_cpu_usage(stats: libc::kinfo_proc) -> f32 {
     let mut kernel_f_scale: u32 = 0;
@@ -17,4 +23,24 @@ pub fn bsd_get_cpu_usage(stats: libc::kinfo_proc) -> f32 {
         kernel_f_scale = 2048;
     }
     100.0 * ((stats.ki_pctcpu / kernel_f_scale) as f32)
+}
+
+pub fn bsd_split_limit_cpu(pid: PID, limit: f32) {
+    let running_time = MILS_IN_SECOND * (limit / 100.0);
+    let idle_time = MILS_IN_SECOND - running_time;
+    let mut running = true;
+    loop {
+        let process_tree = bsd_get_all_processes(pid);
+        let sig = if running {
+            libc::SIGSTOP
+        } else {
+            libc::SIGCONT
+        };
+        let timeout = if running { idle_time } else { running_time };
+        search_tree(&process_tree, &|node: &TreeNode| {
+            unsafe { libc::kill(node.pid, sig) };
+        });
+        thread::sleep(Duration::from_millis(timeout as u64));
+        running = !running;
+    }
 }

@@ -1,5 +1,7 @@
 use crate::error::{MultError, MultErrorTuple};
 
+pub static MILS_IN_SECOND: f32 = 1000.0;
+
 pub fn unix_proc_exists(pid: i32) -> bool {
     #[cfg(target_os = "freebsd")] {
         use crate::bsd::proc::bsd_proc_exists;

@@ -8,8 +8,7 @@ use crate::{
     tree::{search_tree, TreeNode},
 };
 use crate::proc::PID;
-
-static MILS_IN_SECOND: f32 = 1000.0;
+use crate::unix::proc::MILS_IN_SECOND;
 
 pub fn linux_split_limit_cpu(pid: PID, limit: f32) {
     let running_time = MILS_IN_SECOND * (limit / 100.0);

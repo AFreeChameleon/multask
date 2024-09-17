@@ -257,6 +257,10 @@ fn split_limit_cpu(pid: PID, limit: f32) {
         use crate::linux::cpu::linux_split_limit_cpu;
         linux_split_limit_cpu(pid, limit);
     }
+    #[cfg(target_os = "freebsd")] {
+        use crate::bsd::cpu::bsd_split_limit_cpu;
+        bsd_split_limit_cpu(pid, limit);
+    }
 }
 
 fn get_proc_name(pid: PID) -> Result<String, MultErrorTuple> {
