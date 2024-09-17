@@ -43,8 +43,10 @@ pub fn get_proc_comm(pid: PID) -> Result<String, MultErrorTuple> {
     return linux_get_proc_comm(pid);
     #[cfg(target_os = "windows")]
     return win_get_proc_name(pid);
-    #[cfg(target_os = "freebsd")]
-    Ok(String::new())
+    #[cfg(target_os = "freebsd")] {
+        use crate::bsd::proc::bsd_get_proc_comm;
+        return bsd_get_proc_comm(pid);
+    }
 }
 
 

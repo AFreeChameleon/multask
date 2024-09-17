@@ -1,6 +1,7 @@
 use std::{mem, ptr, ffi::{c_void, CString}};
 use crate::proc::{get_readable_memory, PID};
 use crate::tree::TreeNode;
+use crate::error::MultErrorTuple;
 
 pub fn bsd_get_process_stats(pid: PID) -> Option<libc::kinfo_proc> {
     let mut errbuf: [i8; 1024] = [0; 1024];
@@ -16,7 +17,7 @@ pub fn bsd_get_process_stats(pid: PID) -> Option<libc::kinfo_proc> {
     let procs = unsafe {
         libc::kvm_getprocs(kd, libc::KERN_PROC_PID, pid, &mut num_procs)
     };
-    if procs.is_null() {
+    if procs.is_null() || unsafe { (*procs).ki_stat == libc::SZOMB } {
         return None;
     }
     unsafe { Some(*procs) }
@@ -95,8 +96,16 @@ fn bsd_get_process(tree_node: &mut TreeNode) {
 
 pub fn bsd_proc_exists(pid: PID) -> bool {
     let stats = bsd_get_process_stats(pid);
-    if stats.is_none() || stats.unwrap().ki_stat == libc::SZOMB {
+    if stats.is_none() {
         return false;
     }
     return true;
+}
+
+pub fn bsd_get_proc_comm(pid: PID) -> Result<String, MultErrorTuple> {
+    let stats = bsd_get_process_stats(pid);
+    if stats.is_none() {
+        return Ok(String::new());
+    }
+    Ok(String::from_utf8(stats.unwrap().ki_comm.iter().map(|&c| c as u8).collect()).unwrap())
 }

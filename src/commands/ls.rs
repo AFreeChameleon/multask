@@ -87,10 +87,11 @@ pub fn setup_table(
         let process_tree;
         #[cfg(target_os = "linux")] {
             use mult_lib::linux::proc::linux_get_all_processes;
-            process_tree = linux_get_all_processes(command.pid as usize);
+            process_tree = linux_get_all_processes(command.pid);
         }
         #[cfg(target_os = "freebsd")] {
-            process_tree = TreeNode::empty();
+            use mult_lib::bsd::proc::bsd_get_all_processes;
+            process_tree = bsd_get_all_processes(command.pid);
         }
         #[cfg(target_os = "windows")] {
             use std::ffi::OsString;
@@ -279,15 +280,12 @@ fn bsd_get_process_headers(
     task: &Task,
     is_main_process: bool,
 ) -> Option<ProcessHeaders> {
-    use mult_lib::{
-        bsd::proc::{
-            bsd_get_process_memory,
-            bsd_get_process_stats
-        }
-    };
-    let proc_stats_opt = bsd_get_process_stats(pid as i32);
+    use mult_lib::bsd::proc::bsd_get_process_memory;
+    use mult_lib::bsd::proc::bsd_get_process_stats;
+    let proc_stats_opt = bsd_get_process_stats(pid);
     if is_main_process && (
-        proc_stats_opt.is_none() || starttime != proc_stats_opt.unwrap().ki_runtime
+        proc_stats_opt.is_none() ||
+        (starttime != proc_stats_opt.unwrap().ki_start.tv_sec as u64)
     ) {
         return None;
     }
@@ -306,7 +304,7 @@ fn bsd_get_process_headers(
         memory: get_readable_memory(proc_stats.ki_size as f64),
         cpu: format!("{}%", cpu_usage),
         runtime: get_readable_runtime(
-            proc_stats.ki_runtime
+            proc_stats.ki_start.tv_sec as u64
         ),
         status: color_string(OK_GREEN, "Running").to_string(),
     })

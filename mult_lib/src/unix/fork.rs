@@ -183,7 +183,7 @@ fn get_command_data(pid: PID, command: String, dir: String) -> Result<CommandDat
             pid: pid,
             command,
             dir,
-            starttime: proc_stats.unwrap().ki_runtime,
+            starttime: proc_stats.unwrap().ki_start.tv_sec as u64,
             name: String::from_utf8(proc_stats.unwrap().ki_comm.iter().map(|&c| c as u8).collect()).unwrap(),
         };
         return Ok(data);
