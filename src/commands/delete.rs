@@ -19,11 +19,18 @@ pub fn run() -> Result<(), MultErrorTuple> {
             match win_kill_all_processes(command_data.pid, task_id) {
                 Ok(_) => (),
                 Err(_) => print_info(&format!("Process {} is not running.", task_id)),
-            };
+            }
         }
         #[cfg(target_os = "linux")] {
             use mult_lib::linux::proc::linux_kill_all_processes;
             match linux_kill_all_processes(command_data.pid as i32) {
+                Ok(_) => (),
+                Err(_) => print_info(&format!("Process {} is not running.", task_id)),
+            }
+        }
+        #[cfg(target_os = "freebsd")] {
+            use mult_lib::bsd::proc::bsd_kill_all_processes;
+            match bsd_kill_all_processes(command_data.pid as i32) {
                 Ok(_) => (),
                 Err(_) => print_info(&format!("Process {} is not running.", task_id)),
             }
