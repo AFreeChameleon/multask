@@ -8,8 +8,7 @@ use std::u32;
 
 #[cfg(target_os = "linux")]
 use crate::linux::proc::{
-    linux_get_proc_comm, linux_get_proc_name, linux_get_process_memory,
-    linux_get_process_stats
+    linux_get_proc_comm, linux_get_proc_name
 };
 #[cfg(target_family = "unix")]
 use crate::unix::proc::unix_proc_exists;
