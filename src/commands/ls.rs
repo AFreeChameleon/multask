@@ -9,7 +9,7 @@ use mult_lib::command::CommandManager;
 use mult_lib::error::{MultError, MultErrorTuple, print_error};
 use mult_lib::table::{MainHeaders, ProcessHeaders, TableManager};
 use mult_lib::task::{Task, TaskManager};
-use mult_lib::proc::{PID, get_readable_runtime, read_usage_stats};
+use mult_lib::proc::{PID, get_readable_runtime, read_usage_stats, get_readable_memory};
 
 const WATCH_FLAG: &str = "-w";
 const LIST_CHILDREN_FLAG: &str = "-a";
