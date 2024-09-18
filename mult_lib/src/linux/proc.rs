@@ -1,24 +1,24 @@
 #![cfg(target_os = "linux")]
-extern crate core;
-extern crate std;
 
+use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH, Duration};
+use std::sync::{Arc, Mutex};
+use std::thread;
 
-use crate::proc::{get_readable_memory, PID};
-use crate::tree::compress_tree;
-use crate::unix::proc::unix_kill_process;
+use crate::proc::{get_readable_memory, PID, save_usage_stats, UsageStats, save_task_processes};
+use crate::task::Files;
+use crate::tree::{search_tree, compress_tree};
+use crate::unix::proc::{unix_kill_process, unix_proc_exists};
 use crate::{
     error::{MultError, MultErrorTuple},
     tree::TreeNode,
 };
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct UsageStats {
-    pub cpu_usage: f32,
-}
+use super::cpu::linux_get_cpu_usage;
+
 
 pub fn linux_get_proc_name(pid: PID) -> Result<String, MultErrorTuple> {
     let mut proc_name = String::new();
@@ -203,3 +203,41 @@ pub fn linux_kill_all_processes(pid: PID) -> Result<(), MultErrorTuple> {
     Ok(())
 }
 
+pub fn linux_monitor_stats(pid: PID, files: Files) {
+    #[cfg(target_os = "linux")]
+    let mut cpu_time_total;
+    loop {
+        // Get usage metrics
+        let process_tree = linux_get_all_processes(pid);
+        save_task_processes(&files.process_dir, &process_tree);
+        #[cfg(target_os = "linux")] {
+            use crate::linux::cpu::linux_get_cpu_time_total;
+            use crate::linux::proc::linux_get_cpu_stats;
+            cpu_time_total = linux_get_cpu_time_total(linux_get_cpu_stats());
+        }
+
+        // Sleep for measuring usage over time
+        thread::sleep(Duration::from_secs(1));
+
+        // Check for any alive processes
+        let usage_stats = Arc::new(Mutex::new(HashMap::new()));
+        let keep_running = Arc::new(Mutex::new(false));
+        search_tree(&process_tree, &|node: &TreeNode| {
+            if unix_proc_exists(node.pid) {
+                *keep_running.lock().unwrap() = true;
+                // Set cpu usage down here
+                usage_stats.lock().unwrap().insert(
+                    node.pid,
+                    UsageStats {
+                        #[cfg(target_os = "linux")]
+                        cpu_usage: linux_get_cpu_usage(node.pid, node.clone(), cpu_time_total),
+                    },
+                );
+            }
+        });
+        if !*keep_running.lock().unwrap() {
+            break;
+        }
+        save_usage_stats(&files.process_dir, &usage_stats.lock().unwrap());
+    }
+}

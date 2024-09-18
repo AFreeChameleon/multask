@@ -124,7 +124,7 @@ pub fn bsd_kill_all_processes(pid: PID) -> Result<(), MultErrorTuple> {
     Ok(())
 }
 
-pub fn bsd_monitor_stats(pid: PID, files: Files,) {
+pub fn bsd_monitor_stats(pid: PID, files: Files) {
     loop {
         // Get usage metrics
         let process_tree = bsd_get_all_processes(pid);

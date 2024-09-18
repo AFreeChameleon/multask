@@ -2,28 +2,21 @@
 use home::home_dir;
 use libc;
 use std::{
-    collections::HashMap,
     env,
     fs::File,
     io::{BufRead, BufReader, Write},
     path::Path,
     process::{Child, Command, Stdio},
-    sync::{Arc, Mutex},
     thread,
-    time::{Duration, SystemTime, UNIX_EPOCH}
+    time::{SystemTime, UNIX_EPOCH}
 };
 
-use crate::{command::{CommandData, CommandManager, MemStats}};
+use crate::command::{CommandData, CommandManager, MemStats};
 use crate::task::Files;
 use crate::{
     error::{print_info, MultError, MultErrorTuple},
-    proc::{
-        save_task_processes, save_usage_stats, UsageStats, PID
-    },
-    tree::{search_tree, TreeNode},
+    proc::PID,
 };
-
-use crate::unix::proc::unix_proc_exists;
 
 macro_rules! spawn_logger {
     ($out:ident,$out_file:ident) => {{
@@ -94,45 +87,11 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
 
     #[cfg(target_os = "freebsd")] {
         use crate::bsd::proc::bsd_monitor_stats;
-        bsd_monitor_stats(pid, files);
+        bsd_monitor_stats(child.id() as PID, files);
     }
-    #[cfg(target_os = "linux")]
-    let mut cpu_time_total;
-    loop {
-        // Get usage metrics
-        let process_tree = get_all_processes(child.id() as PID);
-        save_task_processes(&files.process_dir, &process_tree);
-        #[cfg(target_os = "linux")] {
-            use crate::linux::cpu::linux_get_cpu_time_total;
-            use crate::linux::proc::linux_get_cpu_stats;
-            cpu_time_total = linux_get_cpu_time_total(linux_get_cpu_stats());
-        }
-
-        // Sleep for measuring usage over time
-        thread::sleep(Duration::from_secs(1));
-
-        // Check for any alive processes
-        let usage_stats = Arc::new(Mutex::new(HashMap::new()));
-        let keep_running = Arc::new(Mutex::new(false));
-        search_tree(&process_tree, &|node: &TreeNode| {
-            if unix_proc_exists(node.pid) {
-                *keep_running.lock().unwrap() = true;
-                // Set cpu usage down here
-                usage_stats.lock().unwrap().insert(
-                    node.pid,
-                    UsageStats {
-                        #[cfg(target_os = "linux")]
-                        cpu_usage: get_cpu_usage(node.pid, node.clone(), cpu_time_total),
-                        #[cfg(target_os = "freebsd")]
-                        cpu_usage: get_cpu_usage(node.pid, node.clone(), 0),
-                    },
-                );
-            }
-        });
-        if !*keep_running.lock().unwrap() {
-            break;
-        }
-        save_usage_stats(&files.process_dir, &usage_stats.lock().unwrap());
+    #[cfg(target_os = "linux")] {
+        use crate::linux::proc::linux_monitor_stats;
+        linux_monitor_stats(child.id() as PID, files);
     }
     Ok(())
 }
@@ -215,51 +174,6 @@ fn get_command_data(pid: PID, command: String, dir: String) -> Result<CommandDat
             name: String::from_utf8(proc_stats.unwrap().ki_comm.iter().map(|&c| c as u8).collect()).unwrap(),
         };
         return Ok(data);
-    }
-}
-
-fn get_all_processes(pid: PID) -> TreeNode {
-    #[cfg(target_os = "linux")] {
-        use crate::linux::proc::linux_get_all_processes;
-        return linux_get_all_processes(pid);
-    }
-    #[cfg(target_os = "freebsd")] {
-        use crate::bsd::proc::bsd_get_all_processes;
-        return bsd_get_all_processes(pid);
-    }
-}
-
-fn get_cpu_time_total(cpu_stats: Vec<String>) -> u32 {
-    #[cfg(target_os = "linux")] {
-        use crate::linux::cpu::linux_get_cpu_time_total;
-        return linux_get_cpu_time_total(cpu_stats);
-    }
-    #[cfg(target_os = "freebsd")]
-    return 0;
-}
-
-fn get_cpu_stats() -> Vec<String> {
-    #[cfg(target_os = "linux")] {
-        use crate::linux::proc::linux_get_cpu_stats;
-        return linux_get_cpu_stats();
-    }
-    #[cfg(target_os = "freebsd")]
-    return Vec::new();
-}
-
-fn get_cpu_usage(pid: PID, _node: TreeNode, _old_total_time: u32) -> f32 {
-    #[cfg(target_os = "linux")] {
-        use crate::linux::cpu::linux_get_cpu_usage;
-        return linux_get_cpu_usage(pid, _node, _old_total_time);
-    }
-    #[cfg(target_os = "freebsd")] {
-        use crate::bsd::cpu::bsd_get_cpu_usage;
-        use crate::bsd::proc::bsd_get_process_stats;
-        let stats = bsd_get_process_stats(pid);
-        if stats.is_none() {
-            return 0.0;
-        }
-        return bsd_get_cpu_usage(stats.unwrap());
     }
 }
 
