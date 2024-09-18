@@ -34,8 +34,10 @@ pub fn get_proc_name(pid: PID) -> Result<String, MultErrorTuple> {
     return linux_get_proc_name(pid);
     #[cfg(target_os = "windows")]
     return win_get_proc_name(pid);
-    #[cfg(target_os = "freebsd")]
-    Ok(String::new())
+    #[cfg(target_os = "freebsd")] {
+        use crate::bsd::proc::bsd_get_proc_comm;
+        return bsd_get_proc_comm(pid);
+    }
 }
 
 pub fn get_proc_comm(pid: PID) -> Result<String, MultErrorTuple> {
@@ -89,29 +91,6 @@ pub fn get_readable_runtime(secs: u64) -> String {
     let minutes = (secs / 60) % 60;
     let hours = (secs / 60) / 60;
     format!("{}h {}m {}s", hours, minutes, seconds).to_string()
-}
-
-pub fn get_process_stats(pid: PID) -> Vec<String> {
-    #[cfg(target_os = "linux")]
-    return linux_get_process_stats(pid);
-    #[cfg(target_os = "windows")]
-    return win_get_process_stats(pid);
-    #[cfg(target_os = "freebsd")]
-    Vec::new()
-}
-
-pub fn get_process_memory(pid: &PID) -> String {
-    #[cfg(target_os = "linux")]
-    return linux_get_process_memory(pid);
-    #[cfg(target_family = "windows")] {
-        use crate::windows::proc::win_get_process_stats;
-        use crate::windows::proc::{
-            win_get_memory_usage, win_get_proc_name, win_kill_process, win_proc_exists
-        };
-        return win_get_memory_usage(pid);
-    }
-    #[cfg(target_os = "freebsd")]
-    return String::new();
 }
 
 // binary memory is 1024

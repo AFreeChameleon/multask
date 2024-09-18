@@ -1,6 +1,6 @@
 #![cfg(target_os = "freebsd")]
 
-use std::{mem, ptr, ffi::{c_void, CString}};
+use std::{ptr, ffi::CString};
 use std::time::{UNIX_EPOCH, SystemTime, Duration};
 use std::thread;
 use std::collections::HashMap;

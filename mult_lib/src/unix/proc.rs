@@ -7,6 +7,7 @@ pub fn unix_proc_exists(pid: i32) -> bool {
         use crate::bsd::proc::bsd_proc_exists;
         return bsd_proc_exists(pid);
     }
+    #[cfg(not(target_os = "freebsd"))]
     return unsafe { libc::kill(pid, 0) } == 0;
 }
 
