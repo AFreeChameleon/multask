@@ -22,7 +22,7 @@ pub fn bsd_get_cpu_usage(stats: libc::kinfo_proc) -> f32 {
         // htop says so
         kernel_f_scale = 2048;
     }
-    100.0 * ((stats.ki_pctcpu / kernel_f_scale) as f32)
+    100.0 * (stats.ki_pctcpu as f32 / kernel_f_scale as f32)
 }
 
 pub fn bsd_split_limit_cpu(pid: PID, limit: f32) {

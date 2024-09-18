@@ -26,10 +26,14 @@ pub fn run() -> Result<(), MultErrorTuple> {
     table.create_headers();
     setup_table(&mut table, &parsed_args)?;
     if parsed_args.flags.contains(&WATCH_FLAG.to_string()) {
-        if cfg!(target_family = "windows") {
-            return Err((MultError::WindowsNotSupported, Some("-w".to_string())));
+        if cfg!(target_family = "linux") {
+            listen(&parsed_args)?;
+        } else {
+            print_error(
+                MultError::CustomError,
+                Some("-w option not supported on this OS.".to_string())
+            );
         }
-        listen(&parsed_args)?;
     } else {
         table.print();
     }

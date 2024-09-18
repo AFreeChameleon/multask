@@ -20,7 +20,6 @@ pub enum MultError {
     FailedConvertingProcessEntry,
     MissingCommand,
     ExeDirNotFound,
-    WindowsNotSupported,
     InvalidArgument,
     CannotReadOutputFile,
     OSNotSupported,
@@ -28,6 +27,7 @@ pub enum MultError {
     FailedToReadProcessStats,
     // Windows only
     WindowsError,
+    WindowsNotSupported,
     // Linux only
     LinuxError,
     ForkFailed,
