@@ -9,7 +9,6 @@ use mult_lib::command::CommandManager;
 use mult_lib::error::{MultError, MultErrorTuple, print_error};
 use mult_lib::table::{MainHeaders, ProcessHeaders, TableManager};
 use mult_lib::task::{Task, TaskManager};
-use mult_lib::tree::TreeNode;
 use mult_lib::proc::{PID, get_readable_runtime, read_usage_stats, get_readable_memory};
 
 const WATCH_FLAG: &str = "-w";
@@ -26,7 +25,7 @@ pub fn run() -> Result<(), MultErrorTuple> {
     table.create_headers();
     setup_table(&mut table, &parsed_args)?;
     if parsed_args.flags.contains(&WATCH_FLAG.to_string()) {
-        if cfg!(target_family = "linux") {
+        if cfg!(target_os = "linux") {
             listen(&parsed_args)?;
         } else {
             print_error(
@@ -284,7 +283,6 @@ fn bsd_get_process_headers(
     task: &Task,
     is_main_process: bool,
 ) -> Option<ProcessHeaders> {
-    use mult_lib::bsd::proc::bsd_get_process_memory;
     use mult_lib::bsd::proc::bsd_get_process_stats;
     use mult_lib::bsd::proc::bsd_get_runtime;
     let proc_stats_opt = bsd_get_process_stats(pid);
