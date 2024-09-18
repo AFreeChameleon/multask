@@ -91,12 +91,22 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
             split_limit_cpu(child_id as PID, stats.cpu_limit as f32);
         });
     }
+
+    #[cfg(target_os = "freebsd")] {
+        use crate::bsd::proc::bsd_monitor_stats;
+        bsd_monitor_stats(pid, files);
+    }
+    #[cfg(target_os = "linux")]
     let mut cpu_time_total;
     loop {
         // Get usage metrics
         let process_tree = get_all_processes(child.id() as PID);
         save_task_processes(&files.process_dir, &process_tree);
-        cpu_time_total = get_cpu_time_total(get_cpu_stats());
+        #[cfg(target_os = "linux")] {
+            use crate::linux::cpu::linux_get_cpu_time_total;
+            use crate::linux::proc::linux_get_cpu_stats;
+            cpu_time_total = linux_get_cpu_time_total(linux_get_cpu_stats());
+        }
 
         // Sleep for measuring usage over time
         thread::sleep(Duration::from_secs(1));
@@ -111,7 +121,10 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
                 usage_stats.lock().unwrap().insert(
                     node.pid,
                     UsageStats {
+                        #[cfg(target_os = "linux")]
                         cpu_usage: get_cpu_usage(node.pid, node.clone(), cpu_time_total),
+                        #[cfg(target_os = "freebsd")]
+                        cpu_usage: get_cpu_usage(node.pid, node.clone(), 0),
                     },
                 );
             }
@@ -234,10 +247,10 @@ fn get_cpu_stats() -> Vec<String> {
     return Vec::new();
 }
 
-fn get_cpu_usage(pid: PID, node: TreeNode, old_total_time: u32) -> f32 {
+fn get_cpu_usage(pid: PID, _node: TreeNode, _old_total_time: u32) -> f32 {
     #[cfg(target_os = "linux")] {
         use crate::linux::cpu::linux_get_cpu_usage;
-        return linux_get_cpu_usage(pid, node, old_total_time);
+        return linux_get_cpu_usage(pid, _node, _old_total_time);
     }
     #[cfg(target_os = "freebsd")] {
         use crate::bsd::cpu::bsd_get_cpu_usage;

@@ -1,11 +1,16 @@
 #![cfg(target_os = "freebsd")]
 
 use std::{mem, ptr, ffi::{c_void, CString}};
-use std::time::{UNIX_EPOCH, SystemTime};
-use crate::proc::{get_readable_memory, PID};
-use crate::tree::{compress_tree, TreeNode};
+use std::time::{UNIX_EPOCH, SystemTime, Duration};
+use std::thread;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use crate::proc::{get_readable_memory, PID, save_usage_stats, UsageStats, save_task_processes};
+use crate::tree::{compress_tree, TreeNode, search_tree};
 use crate::error::MultErrorTuple;
 use crate::unix::proc::unix_kill_process;
+use crate::task::Files;
+use crate::bsd::cpu::bsd_get_cpu_usage;
 
 pub fn bsd_get_process_stats(pid: PID) -> Option<libc::kinfo_proc> {
     let mut errbuf: [i8; 1024] = [0; 1024];
@@ -52,7 +57,7 @@ fn bsd_get_child_processes(ppid: PID) -> Option<Vec<libc::kinfo_proc>> {
         }
     }
 
-    unsafe { Some(child_procs) }
+    Some(child_procs)
 }
 
 pub fn bsd_get_process_memory(stats: libc::kinfo_proc) -> String {
@@ -60,16 +65,6 @@ pub fn bsd_get_process_memory(stats: libc::kinfo_proc) -> String {
 }
 
 pub fn bsd_get_all_processes(pid: PID) -> TreeNode {
-    let mut errbuf: [i8; 1024] = [0; 1024];
-    let dev_null = CString::new("/dev/null").unwrap();
-    let kd = unsafe { libc::kvm_openfiles(
-        ptr::null(), dev_null.as_ptr() as *const i8, ptr::null(),
-        libc::O_RDONLY, &mut errbuf as *mut i8
-    ) };
-    let mut num_procs = -1;
-    let procs = unsafe {
-        libc::kvm_getprocs(kd, libc::KERN_PROC_PROC, pid, &mut num_procs)
-    };
     let mut head_node = TreeNode {
         pid,
         utime: 0,
@@ -127,4 +122,40 @@ pub fn bsd_kill_all_processes(pid: PID) -> Result<(), MultErrorTuple> {
         unix_kill_process(child_pid as PID)?;
     }
     Ok(())
+}
+
+pub fn bsd_monitor_stats(pid: PID, files: Files,) {
+    loop {
+        // Get usage metrics
+        let process_tree = bsd_get_all_processes(pid);
+        save_task_processes(&files.process_dir, &process_tree);
+
+        // Sleep for measuring usage over time
+        thread::sleep(Duration::from_secs(1));
+
+        // Check for any alive processes
+        let usage_stats = Arc::new(Mutex::new(HashMap::new()));
+        let keep_running = Arc::new(Mutex::new(false));
+        search_tree(&process_tree, &|node: &TreeNode| {
+            if bsd_proc_exists(node.pid) {
+                *keep_running.lock().unwrap() = true;
+                // Set cpu usage down here
+                let stats = bsd_get_process_stats(node.pid);
+                let mut cpu_usage = 0.0;
+                if stats.is_some() {
+                    cpu_usage = bsd_get_cpu_usage(stats.unwrap());
+                }
+                usage_stats.lock().unwrap().insert(
+                    node.pid,
+                    UsageStats {
+                        cpu_usage
+                    },
+                );
+            }
+        });
+        if !*keep_running.lock().unwrap() {
+            break;
+        }
+        save_usage_stats(&files.process_dir, &usage_stats.lock().unwrap());
+    }
 }
