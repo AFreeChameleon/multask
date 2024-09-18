@@ -9,7 +9,7 @@ use mult_lib::command::CommandManager;
 use mult_lib::error::{MultError, MultErrorTuple, print_error};
 use mult_lib::table::{MainHeaders, ProcessHeaders, TableManager};
 use mult_lib::task::{Task, TaskManager};
-use mult_lib::proc::{PID, get_readable_runtime, read_usage_stats, get_readable_memory};
+use mult_lib::proc::{PID, get_readable_runtime, read_usage_stats};
 
 const WATCH_FLAG: &str = "-w";
 const LIST_CHILDREN_FLAG: &str = "-a";
@@ -242,19 +242,17 @@ fn win_get_process_headers(
 
 #[cfg(target_os = "linux")]
 fn linux_get_process_headers(
-    pid: usize,
-    starttime: u32,
+    pid: PID,
+    starttime: u64,
     task: &Task,
     is_main_process: bool,
 ) -> Option<ProcessHeaders> {
-    use mult_lib::{
-        linux::proc::{
-            linux_get_process_memory,
-            linux_get_process_runtime,
-            linux_get_process_stats
-        }
+    use mult_lib::linux::proc::{
+        linux_get_process_memory,
+        linux_get_process_runtime,
+        linux_get_process_stats
     };
-    let proc_stats = linux_get_process_stats(pid as usize);
+    let proc_stats = linux_get_process_stats(pid);
     if is_main_process && (proc_stats.len() == 0 || starttime != proc_stats[21].parse().unwrap()) {
         return None;
     }
@@ -263,15 +261,16 @@ fn linux_get_process_headers(
         Ok(val) => val,
         Err(_) => return None,
     };
-    if let Some(stats) = usage_stats.get(&(pid as usize)) {
+    if let Some(stats) = usage_stats.get(&(pid)) {
         cpu_usage = (stats.cpu_usage * 100.0).round() / 100.0;
     }
     // Get memory stats
     Some(ProcessHeaders {
         pid: pid.to_string(),
-        memory: linux_get_process_memory(&(pid as usize)),
+        memory: linux_get_process_memory(&(pid)),
         cpu: format!("{}%", cpu_usage),
-        runtime: get_readable_runtime(linux_get_process_runtime(proc_stats[21].parse().unwrap()) as u64),
+        runtime: get_readable_runtime(
+            linux_get_process_runtime(proc_stats[21].parse().unwrap()) as u64),
         status: color_string(OK_GREEN, "Running").to_string(),
     })
 }

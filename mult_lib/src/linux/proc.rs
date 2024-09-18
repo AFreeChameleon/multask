@@ -7,8 +7,6 @@ use std::io::Read;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use libc::{__errno_location, SIGINT};
-
 use crate::proc::{get_readable_memory, PID};
 use crate::tree::compress_tree;
 use crate::unix::proc::unix_kill_process;

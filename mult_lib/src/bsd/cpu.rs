@@ -1,3 +1,5 @@
+#![cfg(target_os = "freebsd")]
+
 use std::mem;
 use std::ptr;
 use std::thread;

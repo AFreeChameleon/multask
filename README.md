@@ -3,6 +3,7 @@
 * Make runtime not show hours or minutes if they don't exist
 * Have proper process clean up
 * Move from threads to async
+* Move starttime to u64 instead of u32
 
 # Mult
 

@@ -10,8 +10,7 @@ use std::{
     process::{Child, Command, Stdio},
     sync::{Arc, Mutex},
     thread,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-    mem
+    time::{Duration, SystemTime, UNIX_EPOCH}
 };
 
 use crate::{command::{CommandData, CommandManager, MemStats}};
@@ -173,6 +172,22 @@ fn run_command(command: &str, process_dir: &Path) -> Result<Child, MultErrorTupl
 }
 
 fn get_command_data(pid: PID, command: String, dir: String) -> Result<CommandData, MultErrorTuple> {
+    #[cfg(target_os = "linux")] {
+        use crate::linux::proc::linux_get_process_stats;
+        use crate::linux::proc::linux_get_proc_name;
+        let stats = linux_get_process_stats(pid);
+        if stats.len() == 0 {
+            return Err((MultError::ProcessNotExists, None));
+        }
+        let data = CommandData {
+            pid,
+            command,
+            dir,
+            starttime: stats[21].parse().unwrap(),
+            name: linux_get_proc_name(pid)?,
+        };
+        return Ok(data);
+    }
     #[cfg(target_os = "freebsd")] {
         use crate::bsd::proc::bsd_get_process_stats;
         let proc_stats = bsd_get_process_stats(pid);
@@ -180,7 +195,7 @@ fn get_command_data(pid: PID, command: String, dir: String) -> Result<CommandDat
             return Err((MultError::ProcessNotExists, None));
         }
         let data = CommandData {
-            pid: pid,
+            pid,
             command,
             dir,
             starttime: proc_stats.unwrap().ki_start.tv_sec as u64,
@@ -188,23 +203,6 @@ fn get_command_data(pid: PID, command: String, dir: String) -> Result<CommandDat
         };
         return Ok(data);
     }
-}
-
-fn get_process_starttime(pid: PID) -> Result<u64, MultErrorTuple> {
-    #[cfg(target_os = "linux")] {
-        use crate::linux::proc::linux_get_process_stats;
-        return linux_get_process_stats(pid);
-    }
-    #[cfg(target_os = "freebsd")] {
-        use crate::bsd::proc::bsd_get_process_stats;
-        let proc_stats = bsd_get_process_stats(pid as PID);
-        if proc_stats.is_none() {
-            return Err((MultError::ProcessNotExists, None));
-        }
-        return Ok(proc_stats.unwrap().ki_start.tv_sec as u64);
-    }
-
-    return Ok(0);
 }
 
 fn get_all_processes(pid: PID) -> TreeNode {
@@ -261,14 +259,5 @@ fn split_limit_cpu(pid: PID, limit: f32) {
         use crate::bsd::cpu::bsd_split_limit_cpu;
         bsd_split_limit_cpu(pid, limit);
     }
-}
-
-fn get_proc_name(pid: PID) -> Result<String, MultErrorTuple> {
-    #[cfg(target_os = "linux")] {
-        use crate::linux::proc::linux_get_proc_name;
-        return linux_get_proc_name(pid);
-    }
-    #[cfg(target_os = "freebsd")]
-    return Ok(String::new());
 }
 

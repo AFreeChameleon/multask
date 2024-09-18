@@ -1,3 +1,5 @@
+#![cfg(target_os = "freebsd")]
+
 use std::{mem, ptr, ffi::{c_void, CString}};
 use std::time::{UNIX_EPOCH, SystemTime};
 use crate::proc::{get_readable_memory, PID};

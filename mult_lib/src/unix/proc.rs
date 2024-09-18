@@ -10,7 +10,7 @@ pub fn unix_proc_exists(pid: i32) -> bool {
     return unsafe { libc::kill(pid, 0) } == 0;
 }
 
-pub fn unix_get_error_code(pid: i32) -> i32 {
+pub fn unix_get_error_code(_pid: i32) -> i32 {
     let errno;
     #[cfg(target_os = "linux")] {
         errno = unsafe { *libc::__errno_location() };
