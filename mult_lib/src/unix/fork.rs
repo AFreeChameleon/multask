@@ -104,7 +104,7 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
 
         // Check for any alive processes
         let usage_stats = Arc::new(Mutex::new(HashMap::new()));
-        let keep_running = Arc::new(Mutex::new(true));
+        let keep_running = Arc::new(Mutex::new(false));
         search_tree(&process_tree, &|node: &TreeNode| {
             if unix_proc_exists(node.pid) {
                 *keep_running.lock().unwrap() = true;

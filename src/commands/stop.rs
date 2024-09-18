@@ -26,7 +26,11 @@ pub fn run() -> Result<(), MultErrorTuple> {
             }
         }
         #[cfg(target_os = "freebsd")] {
-            
+            use mult_lib::bsd::proc::bsd_kill_all_processes;
+            match bsd_kill_all_processes(command_data.pid as i32) {
+                Ok(_) => (),
+                Err(_) => print_info(&format!("Process {} is not running.", task_id)),
+            }
         }
         print_success(&format!("Process {} stopped.", task_id));
     }

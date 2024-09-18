@@ -197,7 +197,7 @@ pub fn linux_get_process_memory(pid: &PID) -> String {
 }
 
 pub fn linux_kill_all_processes(pid: PID) -> Result<(), MultErrorTuple> {
-    let mut processes: Vec<usize> = Vec::new();
+    let mut processes: Vec<PID> = Vec::new();
     compress_tree(&linux_get_all_processes(pid), &mut processes);
     for child_pid in processes {
         unix_kill_process(child_pid as PID)?;

@@ -1,7 +1,9 @@
 use std::{mem, ptr, ffi::{c_void, CString}};
+use std::time::{UNIX_EPOCH, SystemTime};
 use crate::proc::{get_readable_memory, PID};
-use crate::tree::TreeNode;
+use crate::tree::{compress_tree, TreeNode};
 use crate::error::MultErrorTuple;
+use crate::unix::proc::unix_kill_process;
 
 pub fn bsd_get_process_stats(pid: PID) -> Option<libc::kinfo_proc> {
     let mut errbuf: [i8; 1024] = [0; 1024];
@@ -108,4 +110,19 @@ pub fn bsd_get_proc_comm(pid: PID) -> Result<String, MultErrorTuple> {
         return Ok(String::new());
     }
     Ok(String::from_utf8(stats.unwrap().ki_comm.iter().map(|&c| c as u8).collect()).unwrap())
+}
+
+pub fn bsd_get_runtime(starttime: u64) -> u64 {
+    let now = SystemTime::now();
+    let since_epoch = now.duration_since(UNIX_EPOCH).unwrap().as_secs();
+    since_epoch - starttime
+}
+
+pub fn bsd_kill_all_processes(pid: PID) -> Result<(), MultErrorTuple> {
+    let mut processes: Vec<PID> = Vec::new();
+    compress_tree(&bsd_get_all_processes(pid), &mut processes);
+    for child_pid in processes {
+        unix_kill_process(child_pid as PID)?;
+    }
+    Ok(())
 }

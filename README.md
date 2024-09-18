@@ -1,3 +1,9 @@
+# Things to do:
+* Add watch support to other OSes
+* Make runtime not show hours or minutes if they don't exist
+* Have proper process clean up
+* Move from threads to async
+
 # Mult
 
 A daemoniser for linux, mac & windows written in rust. Inspired by [pm2](https://github.com/Unitech/pm2).
