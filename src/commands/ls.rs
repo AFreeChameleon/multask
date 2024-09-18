@@ -9,7 +9,7 @@ use mult_lib::command::CommandManager;
 use mult_lib::error::{MultError, MultErrorTuple, print_error};
 use mult_lib::table::{MainHeaders, ProcessHeaders, TableManager};
 use mult_lib::task::{Task, TaskManager};
-use mult_lib::proc::{PID, get_readable_runtime, read_usage_stats, get_readable_memory};
+use mult_lib::proc::{PID, get_readable_runtime, read_usage_stats};
 
 const WATCH_FLAG: &str = "-w";
 const LIST_CHILDREN_FLAG: &str = "-a";
@@ -284,6 +284,7 @@ fn bsd_get_process_headers(
 ) -> Option<ProcessHeaders> {
     use mult_lib::bsd::proc::bsd_get_process_stats;
     use mult_lib::bsd::proc::bsd_get_runtime;
+    use mult_lib::proc::get_readable_memory;
     let proc_stats_opt = bsd_get_process_stats(pid);
     if is_main_process && (
         proc_stats_opt.is_none() ||
