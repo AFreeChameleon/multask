@@ -6,10 +6,6 @@ use std::fs;
 use std::path::Path;
 use std::u32;
 
-#[cfg(target_os = "linux")]
-use crate::linux::proc::{
-    linux_get_proc_comm, linux_get_proc_name
-};
 #[cfg(target_family = "unix")]
 use crate::unix::proc::unix_proc_exists;
 use crate::{
@@ -29,8 +25,10 @@ pub struct UsageStats {
 }
 
 pub fn get_proc_name(pid: PID) -> Result<String, MultErrorTuple> {
-    #[cfg(target_os = "linux")]
-    return linux_get_proc_name(pid);
+    #[cfg(target_os = "linux")] {
+        use crate::linux::proc::linux_get_proc_name;
+        return linux_get_proc_name(pid);
+    }
     #[cfg(target_os = "windows")]
     return win_get_proc_name(pid);
     #[cfg(target_os = "freebsd")] {
@@ -40,8 +38,10 @@ pub fn get_proc_name(pid: PID) -> Result<String, MultErrorTuple> {
 }
 
 pub fn get_proc_comm(pid: PID) -> Result<String, MultErrorTuple> {
-    #[cfg(target_os = "linux")]
-    return linux_get_proc_comm(pid);
+    #[cfg(target_os = "linux")] {
+        use crate::linux::proc::linux_get_proc_comm;
+        return linux_get_proc_comm(pid);
+    }
     #[cfg(target_os = "windows")]
     return win_get_proc_name(pid);
     #[cfg(target_os = "freebsd")] {

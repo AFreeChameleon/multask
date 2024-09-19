@@ -3,6 +3,7 @@
 * Make runtime not show hours or minutes if they don't exist
 * Have proper process clean up
 * Move from threads to async - will change a lot
+* Add interactive flag to fork to run commands with -ic
 
 # Mult
 

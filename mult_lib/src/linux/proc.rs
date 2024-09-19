@@ -17,7 +17,7 @@ use crate::{
     tree::TreeNode,
 };
 
-use super::cpu::linux_get_cpu_usage;
+use super::cpu::{linux_get_cpu_usage, linux_get_cpu_time_total};
 
 
 pub fn linux_get_proc_name(pid: PID) -> Result<String, MultErrorTuple> {
@@ -204,17 +204,12 @@ pub fn linux_kill_all_processes(pid: PID) -> Result<(), MultErrorTuple> {
 }
 
 pub fn linux_monitor_stats(pid: PID, files: Files) {
-    #[cfg(target_os = "linux")]
     let mut cpu_time_total;
     loop {
         // Get usage metrics
         let process_tree = linux_get_all_processes(pid);
         save_task_processes(&files.process_dir, &process_tree);
-        #[cfg(target_os = "linux")] {
-            use crate::linux::cpu::linux_get_cpu_time_total;
-            use crate::linux::proc::linux_get_cpu_stats;
-            cpu_time_total = linux_get_cpu_time_total(linux_get_cpu_stats());
-        }
+        cpu_time_total = linux_get_cpu_time_total(linux_get_cpu_stats());
 
         // Sleep for measuring usage over time
         thread::sleep(Duration::from_secs(1));
