@@ -2,8 +2,7 @@
 * Add watch support to other OSes
 * Make runtime not show hours or minutes if they don't exist
 * Have proper process clean up
-* Move from threads to async
-* Move starttime to u64 instead of u32
+* Move from threads to async - will change a lot
 
 # Mult
 
