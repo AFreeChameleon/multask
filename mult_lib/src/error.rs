@@ -20,7 +20,6 @@ pub enum MultError {
     FailedConvertingProcessEntry,
     MissingCommand,
     ExeDirNotFound,
-    WindowsNotSupported,
     InvalidArgument,
     CannotReadOutputFile,
     OSNotSupported,
@@ -28,11 +27,14 @@ pub enum MultError {
     FailedToReadProcessStats,
     // Windows only
     WindowsError,
+    WindowsNotSupported,
     // Linux only
     LinuxError,
     ForkFailed,
     SetSidFailed,
     CgroupsMissing,
+    // Unix only
+    UnixError
 }
 
 const RUN_FIX_TEXT: &str = "Try running `mlt health --fix-all` to fix this.";
@@ -82,6 +84,7 @@ pub fn print_error(error: MultError, descriptor: Option<String>) {
         MultError::FailedToReadProcessStats => "Failed to read the process' stats".to_string(),
         MultError::WindowsError => format!("Windows error code: {}", descriptor.unwrap()),
         MultError::LinuxError => format!("Linux error code: {}", descriptor.unwrap()),
+        MultError::UnixError => format!("Unix error code: {}", descriptor.unwrap()),
     };
     println!("{} {}", color_string(ERR_RED, "Error:"), message);
 }

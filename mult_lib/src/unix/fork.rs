@@ -2,29 +2,21 @@
 use home::home_dir;
 use libc;
 use std::{
-    collections::HashMap,
     env,
     fs::File,
     io::{BufRead, BufReader, Write},
     path::Path,
     process::{Child, Command, Stdio},
-    sync::{Arc, Mutex},
     thread,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH}
 };
 
-use crate::{command::{CommandData, CommandManager, MemStats}, linux::proc::{linux_get_proc_name, linux_get_process_stats}};
+use crate::command::{CommandData, CommandManager, MemStats};
 use crate::task::Files;
 use crate::{
     error::{print_info, MultError, MultErrorTuple},
-    linux::proc::linux_get_all_processes,
-    proc::{
-        save_task_processes, save_usage_stats, UsageStats,
-    },
-    tree::{search_tree, TreeNode},
+    proc::PID,
 };
-
-use super::{cpu::{linux_get_cpu_time_total, linux_get_cpu_usage, linux_split_limit_cpu}, proc::{linux_get_cpu_stats, linux_proc_exists}};
 
 macro_rules! spawn_logger {
     ($out:ident,$out_file:ident) => {{
@@ -77,8 +69,8 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
     }
     if stats.memory_limit > -1 {
         let memory_limit = libc::rlimit {
-            rlim_cur: stats.memory_limit as u64,
-            rlim_max: stats.memory_limit as u64,
+            rlim_cur: stats.memory_limit as _,
+            rlim_max: stats.memory_limit as _,
         };
         unsafe {
             libc::setrlimit(libc::RLIMIT_AS, &memory_limit);
@@ -89,38 +81,17 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
     if stats.cpu_limit > -1 {
         let child_id = child.id();
         thread::spawn(move || {
-            linux_split_limit_cpu(child_id as i32, stats.cpu_limit as f32);
+            split_limit_cpu(child_id as PID, stats.cpu_limit as f32);
         });
     }
-    let mut cpu_time_total;
-    loop {
-        // Get usage metrics
-        let process_tree = linux_get_all_processes(child.id() as usize);
-        save_task_processes(&files.process_dir, &process_tree);
-        cpu_time_total = linux_get_cpu_time_total(linux_get_cpu_stats());
 
-        // Sleep for measuring usage over time
-        thread::sleep(Duration::from_secs(1));
-
-        // Check for any alive processes
-        let usage_stats = Arc::new(Mutex::new(HashMap::new()));
-        let keep_running = Arc::new(Mutex::new(true));
-        search_tree(&process_tree, &|node: &TreeNode| {
-            if linux_proc_exists(node.pid as i32) {
-                *keep_running.lock().unwrap() = true;
-                // Set cpu usage down here
-                usage_stats.lock().unwrap().insert(
-                    node.pid,
-                    UsageStats {
-                        cpu_usage: linux_get_cpu_usage(node.pid, node.clone(), cpu_time_total),
-                    },
-                );
-            }
-        });
-        if !*keep_running.lock().unwrap() {
-            break;
-        }
-        save_usage_stats(&files.process_dir, &usage_stats.lock().unwrap());
+    #[cfg(target_os = "freebsd")] {
+        use crate::bsd::proc::bsd_monitor_stats;
+        bsd_monitor_stats(child.id() as PID, files);
+    }
+    #[cfg(target_os = "linux")] {
+        use crate::linux::proc::linux_monitor_stats;
+        linux_monitor_stats(child.id() as PID, files);
     }
     Ok(())
 }
@@ -135,13 +106,13 @@ fn run_command(command: &str, process_dir: &Path) -> Result<Child, MultErrorTupl
             {
                 val
             } else {
-                "/bin/bash".to_string()
+                "/bin/sh".to_string()
             }
         }
         Err(_) => return Err((MultError::OSNotSupported, None)),
     };
     let mut child = Command::new(shell_path)
-        .args(["-ic", &command])
+        .args(["-c", &command])
         .env("FORCE_COLOR", "true")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -153,17 +124,13 @@ fn run_command(command: &str, process_dir: &Path) -> Result<Child, MultErrorTupl
         Err(_) => home_dir().unwrap(),
     };
 
-    let child_pid = child.id();
-    let proc_name = linux_get_proc_name(child_pid)?;
-    let proc_stats = linux_get_process_stats(child_pid as usize);
-    let data = CommandData {
-        command: command.to_string(),
-        pid: child_pid,
-        dir: current_dir.display().to_string(),
-        name: proc_name,
-        starttime: proc_stats[21].parse().unwrap(),
-    };
-    CommandManager::write_command_data(data, process_dir);
+    let child_pid = child.id() as PID;
+    let data = get_command_data(
+        child_pid,
+        command.to_string(),
+        current_dir.display().to_string()
+    );
+    CommandManager::write_command_data(data?, process_dir);
 
     let stdout = child.stdout.take().unwrap();
     let stderr = child.stderr.take().unwrap();
@@ -175,3 +142,49 @@ fn run_command(command: &str, process_dir: &Path) -> Result<Child, MultErrorTupl
     spawn_logger!(stdout, stdout_file);
     Ok(child)
 }
+
+fn get_command_data(pid: PID, command: String, dir: String) -> Result<CommandData, MultErrorTuple> {
+    #[cfg(target_os = "linux")] {
+        use crate::linux::proc::linux_get_process_stats;
+        use crate::linux::proc::linux_get_proc_name;
+        let stats = linux_get_process_stats(pid);
+        if stats.len() == 0 {
+            return Err((MultError::ProcessNotExists, None));
+        }
+        let data = CommandData {
+            pid,
+            command,
+            dir,
+            starttime: stats[21].parse().unwrap(),
+            name: linux_get_proc_name(pid)?,
+        };
+        return Ok(data);
+    }
+    #[cfg(target_os = "freebsd")] {
+        use crate::bsd::proc::bsd_get_process_stats;
+        let proc_stats = bsd_get_process_stats(pid);
+        if proc_stats.is_none() {
+            return Err((MultError::ProcessNotExists, None));
+        }
+        let data = CommandData {
+            pid,
+            command,
+            dir,
+            starttime: proc_stats.unwrap().ki_start.tv_sec as u64,
+            name: String::from_utf8(proc_stats.unwrap().ki_comm.iter().map(|&c| c as u8).collect()).unwrap(),
+        };
+        return Ok(data);
+    }
+}
+
+fn split_limit_cpu(pid: PID, limit: f32) {
+    #[cfg(target_os = "linux")] {
+        use crate::linux::cpu::linux_split_limit_cpu;
+        linux_split_limit_cpu(pid, limit);
+    }
+    #[cfg(target_os = "freebsd")] {
+        use crate::bsd::cpu::bsd_split_limit_cpu;
+        bsd_split_limit_cpu(pid, limit);
+    }
+}
+

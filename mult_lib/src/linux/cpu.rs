@@ -1,4 +1,4 @@
-#![cfg(target_family = "unix")]
+#![cfg(target_os = "linux")]
 use std::{thread, time::Duration};
 
 use libc;
@@ -7,15 +7,15 @@ use crate::{
     linux::proc::{linux_get_all_processes, linux_get_cpu_stats, linux_get_process_stats},
     tree::{search_tree, TreeNode},
 };
+use crate::proc::PID;
+use crate::unix::proc::MILS_IN_SECOND;
 
-static MILS_IN_SECOND: f32 = 1000.0;
-
-pub fn linux_split_limit_cpu(pid: i32, limit: f32) {
+pub fn linux_split_limit_cpu(pid: PID, limit: f32) {
     let running_time = MILS_IN_SECOND * (limit / 100.0);
     let idle_time = MILS_IN_SECOND - running_time;
     let mut running = true;
     loop {
-        let process_tree = linux_get_all_processes(pid as usize);
+        let process_tree = linux_get_all_processes(pid);
         let sig = if running {
             libc::SIGSTOP
         } else {
@@ -23,14 +23,14 @@ pub fn linux_split_limit_cpu(pid: i32, limit: f32) {
         };
         let timeout = if running { idle_time } else { running_time };
         search_tree(&process_tree, &|node: &TreeNode| {
-            unsafe { libc::kill(node.pid as i32, sig) };
+            unsafe { libc::kill(node.pid, sig) };
         });
         thread::sleep(Duration::from_millis(timeout as u64));
         running = !running;
     }
 }
 
-pub fn linux_get_cpu_usage(pid: usize, node: TreeNode, old_total_time: u32) -> f32 {
+pub fn linux_get_cpu_usage(pid: PID, node: TreeNode, old_total_time: u32) -> f32 {
     let stats = linux_get_process_stats(pid);
     let cpu_stats = linux_get_cpu_stats();
     let utime: u64 = stats[13].clone().parse().unwrap();

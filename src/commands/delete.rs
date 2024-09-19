@@ -3,7 +3,6 @@ use std::{env, fs, path::Path};
 use mult_lib::args::parse_args;
 use mult_lib::command::CommandManager;
 use mult_lib::error::{print_info, print_success, MultError, MultErrorTuple};
-use mult_lib::linux::proc::linux_kill_all_processes;
 use mult_lib::task::TaskManager;
 
 pub fn run() -> Result<(), MultErrorTuple> {
@@ -20,10 +19,18 @@ pub fn run() -> Result<(), MultErrorTuple> {
             match win_kill_all_processes(command_data.pid, task_id) {
                 Ok(_) => (),
                 Err(_) => print_info(&format!("Process {} is not running.", task_id)),
-            };
+            }
         }
         #[cfg(target_os = "linux")] {
+            use mult_lib::linux::proc::linux_kill_all_processes;
             match linux_kill_all_processes(command_data.pid as i32) {
+                Ok(_) => (),
+                Err(_) => print_info(&format!("Process {} is not running.", task_id)),
+            }
+        }
+        #[cfg(target_os = "freebsd")] {
+            use mult_lib::bsd::proc::bsd_kill_all_processes;
+            match bsd_kill_all_processes(command_data.pid as i32) {
                 Ok(_) => (),
                 Err(_) => print_info(&format!("Process {} is not running.", task_id)),
             }

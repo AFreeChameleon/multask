@@ -1,27 +1,26 @@
-#![cfg(target_family = "unix")]
-extern crate core;
-extern crate std;
+#![cfg(target_os = "linux")]
 
+use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH, Duration};
+use std::sync::{Arc, Mutex};
+use std::thread;
 
-use libc::{__errno_location, SIGINT};
-
-use crate::proc::get_readable_memory;
-use crate::tree::compress_tree;
+use crate::proc::{get_readable_memory, PID, save_usage_stats, UsageStats, save_task_processes};
+use crate::task::Files;
+use crate::tree::{search_tree, compress_tree};
+use crate::unix::proc::{unix_kill_process, unix_proc_exists};
 use crate::{
     error::{MultError, MultErrorTuple},
     tree::TreeNode,
 };
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct UsageStats {
-    pub cpu_usage: f32,
-}
+use super::cpu::{linux_get_cpu_usage, linux_get_cpu_time_total};
 
-pub fn linux_get_proc_name(pid: u32) -> Result<String, MultErrorTuple> {
+
+pub fn linux_get_proc_name(pid: PID) -> Result<String, MultErrorTuple> {
     let mut proc_name = String::new();
     let mut proc_file = match File::open(format!("/proc/{}/cmdline", pid)) {
         Ok(val) => val,
@@ -38,7 +37,7 @@ pub fn linux_get_proc_name(pid: u32) -> Result<String, MultErrorTuple> {
     Ok(proc_name)
 }
 
-pub fn linux_get_proc_comm(pid: u32) -> Result<String, MultErrorTuple> {
+pub fn linux_get_proc_comm(pid: PID) -> Result<String, MultErrorTuple> {
     let mut proc_comm = String::new();
     let mut proc_file = match File::open(format!("/proc/{}/comm", pid)) {
         Ok(val) => val,
@@ -55,12 +54,12 @@ pub fn linux_get_proc_comm(pid: u32) -> Result<String, MultErrorTuple> {
     Ok(proc_comm.trim().to_string())
 }
 
-pub fn linux_proc_exists(pid: i32) -> bool {
+pub fn linux_proc_exists(pid: PID) -> bool {
     return unsafe { libc::kill(pid, 0) } == 0;
 }
 
 // uses proc api
-pub fn linux_get_all_processes(pid: usize) -> TreeNode {
+pub fn linux_get_all_processes(pid: PID) -> TreeNode {
     let process_stats = linux_get_process_stats(pid);
     let mut utime = 0;
     let mut stime = 0;
@@ -78,7 +77,7 @@ pub fn linux_get_all_processes(pid: usize) -> TreeNode {
     return head_node;
 }
 
-fn linux_get_process(pid: usize, tree_node: &mut TreeNode) {
+fn linux_get_process(pid: PID, tree_node: &mut TreeNode) {
     let initial_proc = format!("/proc/{}/", pid).to_owned();
     let proc_path = Path::new(&initial_proc);
     if proc_path.exists() {
@@ -90,7 +89,7 @@ fn linux_get_process(pid: usize, tree_node: &mut TreeNode) {
             let contents = fs::read_to_string(child_path).unwrap();
             let child_pids = contents.split_whitespace();
             for c_pid in child_pids {
-                let usize_c_pid = c_pid.parse::<usize>().unwrap();
+                let usize_c_pid = c_pid.parse::<PID>().unwrap();
                 let process_stats = linux_get_process_stats(usize_c_pid);
                 let mut new_node = TreeNode {
                     pid: usize_c_pid,
@@ -105,7 +104,7 @@ fn linux_get_process(pid: usize, tree_node: &mut TreeNode) {
     }
 }
 
-pub fn linux_get_process_runtime(starttime: u32) -> f64 {
+pub fn linux_get_process_runtime(starttime: u64) -> f64 {
     let secs_since_boot: f64 = fs::read_to_string("/proc/uptime")
         .unwrap()
         .split_whitespace()
@@ -120,7 +119,7 @@ pub fn linux_get_process_runtime(starttime: u32) -> f64 {
     since_epoch - run_time
 }
 
-pub fn linux_get_process_starttime(pid: usize) -> f64 {
+pub fn linux_get_process_starttime(pid: PID) -> f64 {
     let stats = linux_get_process_stats(pid);
     let secs_since_boot: f64 = fs::read_to_string("/proc/uptime")
         .unwrap()
@@ -136,7 +135,7 @@ pub fn linux_get_process_starttime(pid: usize) -> f64 {
     since_epoch - (since_epoch - ((secs_since_boot - (starttime / ticks_per_sec as f64)) as f64))
 }
 
-pub fn linux_get_process_stats(pid: usize) -> Vec<String> {
+pub fn linux_get_process_stats(pid: PID) -> Vec<String> {
     let initial_proc = format!("/proc/{}/stat", pid).to_owned();
     let stat_path = Path::new(&initial_proc);
     let mut stats: Vec<String> = Vec::new();
@@ -182,7 +181,7 @@ pub fn linux_get_cpu_stats() -> Vec<String> {
     return stats;
 }
 
-pub fn linux_get_process_memory(pid: &usize) -> String {
+pub fn linux_get_process_memory(pid: &PID) -> String {
     let mem_path = Path::new("/proc").join(pid.to_string()).join("status");
     if mem_path.exists() {
         let contents = fs::read_to_string(mem_path).unwrap();
@@ -195,20 +194,45 @@ pub fn linux_get_process_memory(pid: &usize) -> String {
     return "0 B".to_string();
 }
 
-pub fn linux_kill_all_processes(pid: i32) -> Result<(), MultErrorTuple> {
-    let mut processes: Vec<usize> = Vec::new();
-    compress_tree(&linux_get_all_processes(pid as usize), &mut processes);
+pub fn linux_kill_all_processes(pid: PID) -> Result<(), MultErrorTuple> {
+    let mut processes: Vec<PID> = Vec::new();
+    compress_tree(&linux_get_all_processes(pid), &mut processes);
     for child_pid in processes {
-        linux_kill_process(child_pid as i32)?;
+        unix_kill_process(child_pid as PID)?;
     }
     Ok(())
 }
 
-pub fn linux_kill_process(pid: i32) -> Result<(), MultErrorTuple> {
-    let res = unsafe { libc::kill(pid, SIGINT) };
-    if res == 0 {
-        return Ok(());
+pub fn linux_monitor_stats(pid: PID, files: Files) {
+    let mut cpu_time_total;
+    loop {
+        // Get usage metrics
+        let process_tree = linux_get_all_processes(pid);
+        save_task_processes(&files.process_dir, &process_tree);
+        cpu_time_total = linux_get_cpu_time_total(linux_get_cpu_stats());
+
+        // Sleep for measuring usage over time
+        thread::sleep(Duration::from_secs(1));
+
+        // Check for any alive processes
+        let usage_stats = Arc::new(Mutex::new(HashMap::new()));
+        let keep_running = Arc::new(Mutex::new(false));
+        search_tree(&process_tree, &|node: &TreeNode| {
+            if unix_proc_exists(node.pid) {
+                *keep_running.lock().unwrap() = true;
+                // Set cpu usage down here
+                usage_stats.lock().unwrap().insert(
+                    node.pid,
+                    UsageStats {
+                        #[cfg(target_os = "linux")]
+                        cpu_usage: linux_get_cpu_usage(node.pid, node.clone(), cpu_time_total),
+                    },
+                );
+            }
+        });
+        if !*keep_running.lock().unwrap() {
+            break;
+        }
+        save_usage_stats(&files.process_dir, &usage_stats.lock().unwrap());
     }
-    let errno = unsafe { *__errno_location() };
-    Err((MultError::LinuxError, Some(errno.to_string())))
 }

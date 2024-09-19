@@ -1,15 +1,15 @@
 use mult_lib::args::{parse_args, ParsedArgs};
 use mult_lib::colors::{color_string, OK_GREEN};
-use mult_lib::linux::proc::linux_get_all_processes;
 use mult_lib::proc::{get_proc_comm, proc_exists};
 use mult_lib::tree::compress_tree;
 use prettytable::Table;
 use std::{env, thread, time::Duration};
 
 use mult_lib::command::CommandManager;
-use mult_lib::error::{MultError, MultErrorTuple};
+use mult_lib::error::{MultError, MultErrorTuple, print_error};
 use mult_lib::table::{MainHeaders, ProcessHeaders, TableManager};
 use mult_lib::task::{Task, TaskManager};
+use mult_lib::proc::{PID, get_readable_runtime, read_usage_stats};
 
 const WATCH_FLAG: &str = "-w";
 const LIST_CHILDREN_FLAG: &str = "-a";
@@ -25,10 +25,14 @@ pub fn run() -> Result<(), MultErrorTuple> {
     table.create_headers();
     setup_table(&mut table, &parsed_args)?;
     if parsed_args.flags.contains(&WATCH_FLAG.to_string()) {
-        if cfg!(target_family = "windows") {
-            return Err((MultError::WindowsNotSupported, Some("-w".to_string())));
+        if cfg!(target_os = "linux") {
+            listen(&parsed_args)?;
+        } else {
+            print_error(
+                MultError::CustomError,
+                Some("-w option not supported on this OS.".to_string())
+            );
         }
-        listen(&parsed_args)?;
     } else {
         table.print();
     }
@@ -77,7 +81,7 @@ pub fn setup_table(
         };
         // Get memory stats
         let process_headers_opt =
-            get_process_headers(command.pid as usize, command.starttime, &task, true);
+            get_process_headers(command.pid, command.starttime, &task, true);
         if process_headers_opt.is_none() {
             table.insert_row(main_headers, None);
             continue;
@@ -85,7 +89,12 @@ pub fn setup_table(
         let mut process_headers = process_headers_opt.unwrap();
         let process_tree;
         #[cfg(target_os = "linux")] {
-            process_tree = linux_get_all_processes(command.pid as usize);
+            use mult_lib::linux::proc::linux_get_all_processes;
+            process_tree = linux_get_all_processes(command.pid);
+        }
+        #[cfg(target_os = "freebsd")] {
+            use mult_lib::bsd::proc::bsd_get_all_processes;
+            process_tree = bsd_get_all_processes(command.pid);
         }
         #[cfg(target_os = "windows")] {
             use std::ffi::OsString;
@@ -109,10 +118,10 @@ pub fn setup_table(
         if all_processes.len() > 1 {
             if parsed_args.flags.contains(&LIST_CHILDREN_FLAG.to_string()) {
                 for child_process_id in all_processes.iter() {
-                    if *child_process_id as u32 == command.pid {
+                    if *child_process_id == command.pid {
                         continue;
                     }
-                    if !proc_exists(*child_process_id as i32) {
+                    if !proc_exists(*child_process_id) {
                         continue;
                     }
                     if let Some(child_process_headers) =
@@ -120,7 +129,7 @@ pub fn setup_table(
                     {
                         main_headers
                             .command
-                            .push_str(&format!("\n  {}", get_proc_comm(*child_process_id as u32)?));
+                            .push_str(&format!("\n  {}", get_proc_comm(*child_process_id)?));
                         process_headers
                             .pid
                             .push_str(&format!("\n{}", child_process_headers.pid));
@@ -151,8 +160,8 @@ pub fn setup_table(
 }
 
 fn get_process_headers(
-    pid: usize,
-    starttime: u32,
+    pid: PID,
+    starttime: u64,
     task: &Task,
     is_main_process: bool,
 ) -> Option<ProcessHeaders> {
@@ -160,6 +169,8 @@ fn get_process_headers(
     return linux_get_process_headers(pid, starttime, task, is_main_process);
     #[cfg(target_os = "windows")]
     return win_get_process_headers(pid, starttime, task, is_main_process);
+    #[cfg(target_os = "freebsd")]
+    return bsd_get_process_headers(pid, starttime, task, is_main_process);
 }
 
 #[cfg(target_os = "windows")]
@@ -171,8 +182,6 @@ fn win_get_process_headers(
 ) -> Option<ProcessHeaders> {
     use std::ffi::OsString;
     use mult_lib::{
-        error::print_error,
-        proc::{get_readable_runtime, read_usage_stats},
         windows::proc::{win_get_memory_usage, win_get_process_runtime, win_get_process_stats},
     };
     use windows_sys::Win32::{
@@ -233,13 +242,17 @@ fn win_get_process_headers(
 
 #[cfg(target_os = "linux")]
 fn linux_get_process_headers(
-    pid: usize,
-    starttime: u32,
+    pid: PID,
+    starttime: u64,
     task: &Task,
     is_main_process: bool,
 ) -> Option<ProcessHeaders> {
-    use mult_lib::{linux::proc::{linux_get_process_memory, linux_get_process_runtime, linux_get_process_stats}, proc::{get_readable_runtime, read_usage_stats}};
-    let proc_stats = linux_get_process_stats(pid as usize);
+    use mult_lib::linux::proc::{
+        linux_get_process_memory,
+        linux_get_process_runtime,
+        linux_get_process_stats
+    };
+    let proc_stats = linux_get_process_stats(pid);
     if is_main_process && (proc_stats.len() == 0 || starttime != proc_stats[21].parse().unwrap()) {
         return None;
     }
@@ -248,15 +261,54 @@ fn linux_get_process_headers(
         Ok(val) => val,
         Err(_) => return None,
     };
-    if let Some(stats) = usage_stats.get(&(pid as usize)) {
+    if let Some(stats) = usage_stats.get(&(pid)) {
         cpu_usage = (stats.cpu_usage * 100.0).round() / 100.0;
     }
     // Get memory stats
     Some(ProcessHeaders {
         pid: pid.to_string(),
-        memory: linux_get_process_memory(&(pid as usize)),
+        memory: linux_get_process_memory(&(pid)),
         cpu: format!("{}%", cpu_usage),
-        runtime: get_readable_runtime(linux_get_process_runtime(proc_stats[21].parse().unwrap()) as u64),
+        runtime: get_readable_runtime(
+            linux_get_process_runtime(proc_stats[21].parse().unwrap()) as u64),
+        status: color_string(OK_GREEN, "Running").to_string(),
+    })
+}
+
+#[cfg(target_os = "freebsd")]
+fn bsd_get_process_headers(
+    pid: PID,
+    starttime: u64,
+    task: &Task,
+    is_main_process: bool,
+) -> Option<ProcessHeaders> {
+    use mult_lib::bsd::proc::bsd_get_process_stats;
+    use mult_lib::bsd::proc::bsd_get_runtime;
+    use mult_lib::proc::get_readable_memory;
+    let proc_stats_opt = bsd_get_process_stats(pid);
+    if is_main_process && (
+        proc_stats_opt.is_none() ||
+        (starttime != proc_stats_opt.unwrap().ki_start.tv_sec as u64)
+    ) {
+        return None;
+    }
+    let proc_stats = proc_stats_opt.unwrap();
+    let mut cpu_usage = 0.0;
+    let usage_stats = match read_usage_stats(task.id) {
+        Ok(val) => val,
+        Err(_) => return None,
+    };
+    if let Some(stats) = usage_stats.get(&pid) {
+        cpu_usage = (stats.cpu_usage * 100.0).round() / 100.0;
+    }
+    // Get memory stats
+    Some(ProcessHeaders {
+        pid: pid.to_string(),
+        memory: get_readable_memory(proc_stats.ki_size as f64),
+        cpu: format!("{}%", cpu_usage),
+        runtime: get_readable_runtime(
+            bsd_get_runtime(proc_stats.ki_start.tv_sec as u64)
+        ),
         status: color_string(OK_GREEN, "Running").to_string(),
     })
 }

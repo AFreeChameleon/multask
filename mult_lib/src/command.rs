@@ -6,6 +6,7 @@ use std::{
 };
 
 use crate::error::{MultError, MultErrorTuple};
+use crate::proc::PID;
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub struct MemStats {
@@ -16,10 +17,10 @@ pub struct MemStats {
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct CommandData {
     pub command: String,
-    pub pid: u32,
+    pub pid: PID,
     pub dir: String,
     pub name: String,
-    pub starttime: u32,
+    pub starttime: u64,
 }
 
 pub struct CommandManager {}
@@ -33,8 +34,11 @@ impl CommandManager {
             .join("data.bin");
         if data_file.exists() {
             let data_encoded: Vec<u8> = fs::read(data_file).unwrap();
-            let data_decoded: CommandData = bincode::deserialize(&data_encoded[..]).unwrap();
-            return Ok(data_decoded);
+            let data_decoded: Result<CommandData, Box<bincode::ErrorKind>> = bincode::deserialize(&data_encoded[..]);
+            if data_decoded.is_err() {
+                return Err((MultError::TaskNotFound, None));
+            }
+            return Ok(data_decoded.unwrap());
         }
         Err((MultError::TaskNotFound, None))
     }

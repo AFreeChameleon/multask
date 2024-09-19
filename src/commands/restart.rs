@@ -3,11 +3,10 @@ use std::env;
 use mult_lib::args::{parse_args, ParsedArgs};
 use mult_lib::command::{CommandManager, MemStats};
 use mult_lib::error::{print_info, print_success, MultError, MultErrorTuple};
-use mult_lib::linux::proc::linux_kill_all_processes;
 use mult_lib::task::TaskManager;
 
 #[cfg(target_family = "unix")]
-use mult_lib::linux::fork;
+use mult_lib::unix::fork;
 
 const MEMORY_LIMIT_FLAG: &str = "-m";
 const CPU_LIMIT_FLAG: &str = "-c";
@@ -23,13 +22,27 @@ pub fn run() -> Result<(), MultErrorTuple> {
         let task = TaskManager::get_task(&tasks, task_id)?;
         let command_data = CommandManager::read_command_data(task.id)?;
         print_info("Killing process...");
-        #[cfg(target_family = "windows")] {
-            use mult_lib::windows::fork;
+        #[cfg(target_os = "windows")] {
             use mult_lib::windows::proc::win_kill_all_processes;
-            win_kill_all_processes(command_data.pid, task_id)?;
+            match win_kill_all_processes(command_data.pid, task_id) {
+                Ok(_) => (),
+                Err(_) => print_info(&format!("Process {} is not running.", task_id)),
+            }
         }
-        #[cfg(target_os = "linux")]
-        linux_kill_all_processes(command_data.pid as i32)?;
+        #[cfg(target_os = "linux")] {
+            use mult_lib::linux::proc::linux_kill_all_processes;
+            match linux_kill_all_processes(command_data.pid as i32) {
+                Ok(_) => (),
+                Err(_) => print_info(&format!("Process {} is not running.", task_id)),
+            }
+        }
+        #[cfg(target_os = "freebsd")] {
+            use mult_lib::bsd::proc::bsd_kill_all_processes;
+            match bsd_kill_all_processes(command_data.pid as i32) {
+                Ok(_) => (),
+                Err(_) => print_info(&format!("Process {} is not running.", task_id)),
+            }
+        }
         let files = TaskManager::generate_task_files(task.id, &tasks);
         print_info("Restarting process...");
 

@@ -5,12 +5,6 @@ use mult_lib::command::MemStats;
 use mult_lib::error::{print_info, print_success, MultError, MultErrorTuple};
 use mult_lib::task::{Task, TaskManager};
 
-#[cfg(target_family = "unix")]
-use mult_lib::linux::fork;
-
-#[cfg(target_family = "windows")]
-use mult_lib::windows::fork;
-
 const MEMORY_LIMIT_FLAG: &str = "-m";
 const CPU_LIMIT_FLAG: &str = "-c";
 const FLAGS: [(&str, bool); 2] = [(MEMORY_LIMIT_FLAG, true), (CPU_LIMIT_FLAG, true)];
@@ -28,10 +22,14 @@ pub fn run() -> Result<(), MultErrorTuple> {
         tasks.push(Task { id: new_task_id });
         print_info("Running command...");
         let files = TaskManager::generate_task_files(new_task_id, &tasks);
-        #[cfg(target_family = "unix")]
-        fork::run_daemon(files, arg.to_string(), flags.clone())?;
-        #[cfg(target_family = "windows")]
-        fork::run_daemon(files, arg.to_string(), &flags, new_task_id)?;
+        #[cfg(target_family = "unix")] {
+            use mult_lib::unix::fork;
+            fork::run_daemon(files, arg.to_string(), flags.clone())?;
+        }
+        #[cfg(target_family = "windows")] {
+            use mult_lib::windows::fork;
+            fork::run_daemon(files, arg.to_string(), &flags, new_task_id)?;
+        }
 
         print_success(&format!("Process {} created.", new_task_id));
     }
