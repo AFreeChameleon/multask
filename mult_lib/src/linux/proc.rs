@@ -104,7 +104,7 @@ fn linux_get_process(pid: PID, tree_node: &mut TreeNode) {
     }
 }
 
-pub fn linux_get_process_runtime(starttime: u32) -> f64 {
+pub fn linux_get_process_runtime(starttime: u64) -> f64 {
     let secs_since_boot: f64 = fs::read_to_string("/proc/uptime")
         .unwrap()
         .split_whitespace()

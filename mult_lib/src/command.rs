@@ -34,8 +34,11 @@ impl CommandManager {
             .join("data.bin");
         if data_file.exists() {
             let data_encoded: Vec<u8> = fs::read(data_file).unwrap();
-            let data_decoded: CommandData = bincode::deserialize(&data_encoded[..]).unwrap();
-            return Ok(data_decoded);
+            let data_decoded: Result<CommandData, Box<bincode::ErrorKind>> = bincode::deserialize(&data_encoded[..]);
+            if data_decoded.is_err() {
+                return Err((MultError::TaskNotFound, None));
+            }
+            return Ok(data_decoded.unwrap());
         }
         Err((MultError::TaskNotFound, None))
     }

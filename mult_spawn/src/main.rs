@@ -1,4 +1,4 @@
-#![windows_subsystem = "windows"]
+#![cfg(target_os = "windows")]
 use home::home_dir;
 use mult_lib::command::{CommandData, CommandManager};
 use mult_lib::error::{MultError, MultErrorTuple};
