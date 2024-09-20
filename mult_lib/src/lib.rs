@@ -10,3 +10,4 @@ pub mod windows;
 pub mod linux;
 pub mod unix;
 pub mod bsd;
+pub mod macos;

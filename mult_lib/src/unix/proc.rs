@@ -16,7 +16,7 @@ pub fn unix_get_error_code(_pid: i32) -> i32 {
     #[cfg(target_os = "linux")] {
         errno = unsafe { *libc::__errno_location() };
     }
-    #[cfg(target_os = "freebsd")] {
+    #[cfg(any(target_os = "freebsd", target_os = "macos"))] {
         errno = unsafe { *libc::__error() };
     }
     return errno;

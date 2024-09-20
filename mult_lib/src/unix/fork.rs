@@ -175,6 +175,9 @@ fn get_command_data(pid: PID, command: String, dir: String) -> Result<CommandDat
         };
         return Ok(data);
     }
+    #[cfg(target_os = "macos")] {
+        use crate::macos::proc::macos_get_process_stats;
+    }
 }
 
 fn split_limit_cpu(pid: PID, limit: f32) {
