@@ -161,7 +161,7 @@ fn get_command_data(pid: PID, command: String, dir: String) -> Result<CommandDat
         return Ok(data);
     }
     #[cfg(target_os = "freebsd")] {
-        use crate::bsd::proc::bsd_get_process_stats;
+        use crate::bsd::proc::{bsd_get_process_stats, bsd_get_proc_info};
         let proc_stats = bsd_get_process_stats(pid);
         if proc_stats.is_none() {
             return Err((MultError::ProcessNotExists, None));
@@ -171,12 +171,25 @@ fn get_command_data(pid: PID, command: String, dir: String) -> Result<CommandDat
             command,
             dir,
             starttime: proc_stats.unwrap().ki_start.tv_sec as u64,
-            name: String::from_utf8(proc_stats.unwrap().ki_comm.iter().map(|&c| c as u8).collect()).unwrap(),
+            name: bsd_get_proc_info(proc_stats),
         };
         return Ok(data);
     }
     #[cfg(target_os = "macos")] {
         use crate::macos::proc::macos_get_process_stats;
+        use crate::macos::proc::macos_get_proc_name;
+        let proc_stats = macos_get_process_stats(pid);
+        if proc_stats.is_none() {
+            return Err((MultError::ProcessNotExists, None));
+        }
+        let data = CommandData {
+            pid,
+            command,
+            dir,
+            starttime: proc_stats.unwrap().pbsd.pbi_start_tvsec,
+            name: macos_get_proc_name(proc_stats.unwrap()),
+        };
+        return Ok(data);
     }
 }
 

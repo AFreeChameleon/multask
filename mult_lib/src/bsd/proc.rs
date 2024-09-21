@@ -159,3 +159,7 @@ pub fn bsd_monitor_stats(pid: PID, files: Files) {
         save_usage_stats(&files.process_dir, &usage_stats.lock().unwrap());
     }
 }
+
+pub fn bsd_get_proc_name(proc_stats: libc::kinfo_procs) -> String {
+    return String::from_utf8(proc_stats.unwrap().ki_comm.iter().map(|&c| c as u8).collect()).unwrap();
+}
