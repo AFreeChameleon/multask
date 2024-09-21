@@ -1,3 +1,4 @@
+#![cfg(target_os = "macos")]
 use std::{ffi::c_void, mem, ptr, time::{SystemTime, UNIX_EPOCH}};
 
 use crate::{error::MultErrorTuple, proc::PID, tree::TreeNode};
