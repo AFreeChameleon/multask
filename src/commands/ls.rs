@@ -1,7 +1,7 @@
 use mult_lib::args::{parse_args, ParsedArgs};
 use mult_lib::colors::{color_string, OK_GREEN};
 use mult_lib::proc::{get_proc_comm, proc_exists};
-use mult_lib::tree::compress_tree;
+use mult_lib::tree::{compress_tree, TreeNode};
 use prettytable::Table;
 use std::{env, thread, time::Duration};
 
@@ -87,32 +87,7 @@ pub fn setup_table(
             continue;
         }
         let mut process_headers = process_headers_opt.unwrap();
-        let process_tree;
-        #[cfg(target_os = "linux")] {
-            use mult_lib::linux::proc::linux_get_all_processes;
-            process_tree = linux_get_all_processes(command.pid);
-        }
-        #[cfg(target_os = "freebsd")] {
-            use mult_lib::bsd::proc::bsd_get_all_processes;
-            process_tree = bsd_get_all_processes(command.pid);
-        }
-        #[cfg(target_os = "windows")] {
-            use std::ffi::OsString;
-            use mult_lib::windows::proc::win_get_all_processes;
-            use windows_sys::Win32::System::JobObjects::OpenJobObjectW;
-            process_tree = win_get_all_processes(
-                unsafe {
-                    OpenJobObjectW(
-                        0x1F001F, // JOB_OBJECT_ALL_ACCESS
-                        0,
-                        OsString::from(format!("Global\\mult-{}", task.id))
-                        .encode_wide().chain(Some(0)).collect::<Vec<u16>>().as_ptr() as *const u16,
-                    )
-                },
-                command.pid,
-            );
-        }
-
+        let process_tree = get_all_processes(command.pid);
         let mut all_processes = vec![];
         compress_tree(&process_tree, &mut all_processes);
         if all_processes.len() > 1 {
@@ -171,11 +146,15 @@ fn get_process_headers(
     return win_get_process_headers(pid, starttime, task, is_main_process);
     #[cfg(target_os = "freebsd")]
     return bsd_get_process_headers(pid, starttime, task, is_main_process);
+    #[cfg(target_os = "macos")]
+    return macos_get_process_headers(pid, starttime, task, is_main_process);
 }
+
+
 
 #[cfg(target_os = "windows")]
 fn win_get_process_headers(
-    pid: usize,
+    pid: PID,
     _starttime: u32,
     task: &Task,
     is_main_process: bool,
@@ -240,6 +219,7 @@ fn win_get_process_headers(
     })
 }
 
+
 #[cfg(target_os = "linux")]
 fn linux_get_process_headers(
     pid: PID,
@@ -271,6 +251,43 @@ fn linux_get_process_headers(
         cpu: format!("{}%", cpu_usage),
         runtime: get_readable_runtime(
             linux_get_process_runtime(proc_stats[21].parse().unwrap()) as u64),
+        status: color_string(OK_GREEN, "Running").to_string(),
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn macos_get_process_headers(
+    pid: PID,
+    starttime: u64,
+    task: &Task,
+    is_main_process: bool,
+) -> Option<ProcessHeaders> {
+    use mult_lib::macos::proc::macos_get_all_process_stats;
+    use mult_lib::macos::proc::macos_get_runtime;
+    use mult_lib::proc::get_readable_memory;
+
+    let proc_stats_opt = macos_get_all_process_stats(pid);
+    if is_main_process && (
+        proc_stats_opt.is_none() ||
+        (starttime != proc_stats_opt.unwrap().pbsd.pbi_start_tvsec as u64)
+    ) {
+        return None;
+    }
+    let proc_stats = proc_stats_opt.unwrap();
+    let mut cpu_usage = 0.0;
+    let usage_stats = match read_usage_stats(task.id) {
+        Ok(val) => val,
+        Err(_) => return None,
+    };
+    if let Some(stats) = usage_stats.get(&pid) {
+        cpu_usage = (stats.cpu_usage * 100.0).round() / 100.0;
+    }
+    Some(ProcessHeaders {
+        pid: pid.to_string(),
+        memory: get_readable_memory(proc_stats.ptinfo.pti_virtual_size as f64),
+        cpu: format!("{}%", cpu_usage),
+        runtime: get_readable_runtime(
+            macos_get_runtime(proc_stats.pbsd.pbi_start_tvsec) as u64),
         status: color_string(OK_GREEN, "Running").to_string(),
     })
 }
@@ -311,4 +328,37 @@ fn bsd_get_process_headers(
         ),
         status: color_string(OK_GREEN, "Running").to_string(),
     })
+}
+
+fn get_all_processes(pid: PID) -> TreeNode {
+    let process_tree;
+    #[cfg(target_os = "linux")] {
+        use mult_lib::linux::proc::linux_get_all_processes;
+        process_tree = linux_get_all_processes(command.pid);
+    }
+    #[cfg(target_os = "freebsd")] {
+        use mult_lib::bsd::proc::bsd_get_all_processes;
+        process_tree = bsd_get_all_processes(command.pid);
+    }
+    #[cfg(target_os = "macos")] {
+        use mult_lib::macos::proc::macos_get_all_processes;
+        process_tree = macos_get_all_processes(pid);
+    }
+    #[cfg(target_os = "windows")] {
+        use std::ffi::OsString;
+        use mult_lib::windows::proc::win_get_all_processes;
+        use windows_sys::Win32::System::JobObjects::OpenJobObjectW;
+        process_tree = win_get_all_processes(
+            unsafe {
+                OpenJobObjectW(
+                    0x1F001F, // JOB_OBJECT_ALL_ACCESS
+                    0,
+                    OsString::from(format!("Global\\mult-{}", task.id))
+                    .encode_wide().chain(Some(0)).collect::<Vec<u16>>().as_ptr() as *const u16,
+                )
+            },
+            command.pid,
+        );
+    }
+    return process_tree;
 }

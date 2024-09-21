@@ -30,3 +30,7 @@ pub fn unix_kill_process(pid: i32) -> Result<(), MultErrorTuple> {
     let errno = unix_get_error_code(pid);
     Err((MultError::UnixError, Some(errno.to_string())))
 }
+
+pub fn unix_convert_c_string(c_string: std::slice::Iter<i8>) -> String {
+    String::from_utf8(c_string.into_iter().map(|&c| c as u8).collect()).unwrap()
+}

@@ -35,6 +35,15 @@ pub fn get_proc_name(pid: PID) -> Result<String, MultErrorTuple> {
         use crate::bsd::proc::bsd_get_proc_comm;
         return bsd_get_proc_comm(pid);
     }
+    #[cfg(target_os = "macos")] {
+        use crate::macos::proc::macos_get_process_stats;
+        use crate::unix::proc::unix_convert_c_string;
+        let stats = macos_get_process_stats(pid);
+        if stats.is_none() {
+            return Ok(String::new());
+        }
+        Ok(unix_convert_c_string(stats.unwrap().pbi_name.iter()))
+    }
 }
 
 pub fn get_proc_comm(pid: PID) -> Result<String, MultErrorTuple> {
@@ -47,6 +56,16 @@ pub fn get_proc_comm(pid: PID) -> Result<String, MultErrorTuple> {
     #[cfg(target_os = "freebsd")] {
         use crate::bsd::proc::bsd_get_proc_comm;
         return bsd_get_proc_comm(pid);
+    }
+    #[cfg(target_os = "macos")] {
+        use crate::macos::proc::macos_get_process_stats;
+        use crate::unix::proc::unix_convert_c_string;
+        let stats = macos_get_process_stats(pid);
+        if stats.is_none() {
+            return Ok(String::new());
+        }
+
+        Ok(unix_convert_c_string(stats.unwrap().pbi_comm.iter()))
     }
 }
 

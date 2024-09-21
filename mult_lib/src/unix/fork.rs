@@ -11,7 +11,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH}
 };
 
-use crate::command::{CommandData, CommandManager, MemStats};
+use crate::{command::{CommandData, CommandManager, MemStats}, unix::proc::unix_convert_c_string};
 use crate::task::Files;
 use crate::{
     error::{print_info, MultError, MultErrorTuple},
@@ -186,8 +186,8 @@ fn get_command_data(pid: PID, command: String, dir: String) -> Result<CommandDat
             pid,
             command,
             dir,
-            starttime: proc_stats.unwrap().pbsd.pbi_start_tvsec,
-            name: macos_get_proc_name(proc_stats.unwrap()),
+            starttime: proc_stats.unwrap().pbi_start_tvsec,
+            name: unix_convert_c_string(proc_stats.unwrap().pbi_name.iter()),
         };
         return Ok(data);
     }
