@@ -224,7 +224,6 @@ pub fn linux_monitor_stats(pid: PID, files: Files) {
                 usage_stats.lock().unwrap().insert(
                     node.pid,
                     UsageStats {
-                        #[cfg(target_os = "linux")]
                         cpu_usage: linux_get_cpu_usage(node.pid, node.clone(), cpu_time_total),
                     },
                 );
