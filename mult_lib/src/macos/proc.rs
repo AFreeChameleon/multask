@@ -3,6 +3,8 @@ use std::{collections::HashMap, ffi::c_void, mem, ptr, sync::{Arc, Mutex}, threa
 
 use crate::{error::MultErrorTuple, proc::{save_task_processes, save_usage_stats, UsageStats, PID}, task::Files, tree::{search_tree, TreeNode}, unix::proc::unix_proc_exists};
 
+use super::cpu::macos_get_cpu_usage;
+
 const PROC_ALL_PIDS: u32 = 1;
 
 pub fn macos_get_process_stats(pid: PID) -> Option<libc::proc_bsdinfo> {
@@ -80,12 +82,10 @@ pub fn macos_get_runtime(starttime: u64) -> u64 {
 }
 
 pub fn macos_monitor_stats(pid: PID, files: Files) {
-    let mut cpu_time_total;
     loop {
         // Get usage metrics
         let process_tree = macos_get_all_processes(pid);
         save_task_processes(&files.process_dir, &process_tree);
-        cpu_time_total = macos_get_cpu_time_total(linux_get_cpu_stats());
 
         // Sleep for measuring usage over time
         thread::sleep(Duration::from_secs(1));
@@ -100,7 +100,7 @@ pub fn macos_monitor_stats(pid: PID, files: Files) {
                 usage_stats.lock().unwrap().insert(
                     node.pid,
                     UsageStats {
-                        cpu_usage: macos_get_cpu_usage(node.pid, node.clone(), cpu_time_total),
+                        cpu_usage: macos_get_cpu_usage(node.pid),
                     },
                 );
             }

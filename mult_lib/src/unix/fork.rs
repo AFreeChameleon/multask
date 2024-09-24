@@ -93,6 +93,10 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
         use crate::linux::proc::linux_monitor_stats;
         linux_monitor_stats(child.id() as PID, files);
     }
+    #[cfg(target_os = "macos")] {
+        use crate::macos::proc::macos_monitor_stats;
+        macos_monitor_stats(child.id() as PID, files);
+    }
     Ok(())
 }
 

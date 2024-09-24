@@ -6,7 +6,7 @@ use crate::proc::PID;
 const TASK_BASIC_INFO: libc::task_flavor_t = 4;
 const THREAD_INFO_MAX: u32 = 1024;
 
-pub fn macos_get_cpu_usage(pid: PID) {
+pub fn macos_get_cpu_usage(pid: PID) -> f32 {
     let mut port: libc::task_t = unsafe { mem::zeroed() };
     unsafe { libc::task_for_pid(
         libc::mach_task_self(),
@@ -23,7 +23,7 @@ pub fn macos_get_cpu_usage(pid: PID) {
     ) };
     if kr != libc::KERN_SUCCESS {
         // Return 0%
-        return;
+        return 0.0;
     }
 
     let mut thread_list: [libc::thread_act_t; THREAD_INFO_MAX as usize] = [0; 1024];
@@ -40,7 +40,7 @@ pub fn macos_get_cpu_usage(pid: PID) {
     ) };
     if kr != libc::KERN_SUCCESS {
         // Return 0%
-        return;
+        return 0.0;
     }
     let mut tot_cpu = 0;
     let mut basic_info_th: libc::thread_basic_info;
@@ -64,4 +64,5 @@ pub fn macos_get_cpu_usage(pid: PID) {
             tot_cpu = tot_cpu + basic_info_th.cpu_usage;
         }
     }
+    return tot_cpu as f32;
 }
