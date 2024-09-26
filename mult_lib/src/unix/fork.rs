@@ -41,32 +41,32 @@ macro_rules! spawn_logger {
 const SUPPORTED_SHELLS: [&str; 3] = ["/sh", "/bash", "/zsh"];
 
 pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), MultErrorTuple> {
-    let process_id;
-    let sid;
-    unsafe {
-        process_id = libc::fork();
-    }
-    // Fork failed
-    if process_id < 0 {
-        return Err((MultError::ForkFailed, None));
-    }
-    // Parent process - need to kill it
-    if process_id > 0 {
-        print_info(&format!("Process id of child process {}", process_id));
-        return Ok(());
-    }
-    unsafe {
-        libc::umask(0);
-        sid = libc::setsid();
-    }
-    if sid < 0 {
-        return Err((MultError::SetSidFailed, None));
-    }
-    unsafe {
-        libc::close(libc::STDIN_FILENO);
-        libc::close(libc::STDOUT_FILENO);
-        libc::close(libc::STDERR_FILENO);
-    }
+    //let process_id;
+    //let sid;
+    //unsafe {
+    //    process_id = libc::fork();
+    //}
+    //// Fork failed
+    //if process_id < 0 {
+    //    return Err((MultError::ForkFailed, None));
+    //}
+    //// Parent process - need to kill it
+    //if process_id > 0 {
+    //    print_info(&format!("Process id of child process {}", process_id));
+    //    return Ok(());
+    //}
+    //unsafe {
+    //    libc::umask(0);
+    //    sid = libc::setsid();
+    //}
+    //if sid < 0 {
+    //    return Err((MultError::SetSidFailed, None));
+    //}
+    //unsafe {
+    //    libc::close(libc::STDIN_FILENO);
+    //    libc::close(libc::STDOUT_FILENO);
+    //    libc::close(libc::STDERR_FILENO);
+    //}
     if stats.memory_limit > -1 {
         let memory_limit = libc::rlimit {
             rlim_cur: stats.memory_limit as _,

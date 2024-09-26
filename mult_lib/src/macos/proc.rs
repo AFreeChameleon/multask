@@ -5,7 +5,6 @@ use crate::{error::MultErrorTuple, proc::{save_task_processes, save_usage_stats,
 
 use super::cpu::macos_get_cpu_usage;
 
-const PROC_ALL_PIDS: u32 = 1;
 const PID_LIST_MAX: usize = 1024;
 
 pub fn macos_get_process_stats(pid: PID) -> Option<libc::proc_bsdinfo> {
