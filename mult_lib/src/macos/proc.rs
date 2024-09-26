@@ -1,11 +1,14 @@
 #![cfg(target_os = "macos")]
 use std::{collections::HashMap, ffi::c_void, mem, ptr, sync::{Arc, Mutex}, thread, time::{Duration, SystemTime, UNIX_EPOCH}};
 
+use libc::PROC_PIDTBSDINFO;
+
 use crate::{error::MultErrorTuple, proc::{save_task_processes, save_usage_stats, UsageStats, PID}, task::Files, tree::{search_tree, TreeNode}, unix::proc::unix_proc_exists};
 
 use super::cpu::macos_get_cpu_usage;
 
 const PROC_ALL_PIDS: u32 = 1;
+const PID_LIST_MAX: usize = 1024;
 
 pub fn macos_get_process_stats(pid: PID) -> Option<libc::proc_bsdinfo> {
     let mut info: libc::proc_bsdinfo = unsafe { mem::zeroed() };
@@ -64,14 +67,56 @@ pub fn macos_get_all_processes(pid: PID) -> TreeNode {
 
 fn macos_get_process(tree_node: &mut TreeNode) {
     let num_procs = unsafe {
-        libc::proc_listpids(PROC_ALL_PIDS, 0, ptr::null_mut(), 0)
+        libc::proc_listallpids(ptr::null_mut(), 0)
     };
-    let mut processes: Vec<PID> = vec![0; num_procs as usize];
-    unsafe { libc::proc_listpids(PROC_ALL_PIDS,
-        0,
+    let mut processes: [PID; PID_LIST_MAX] = [0; PID_LIST_MAX];
+    unsafe { libc::proc_listallpids(
         &mut processes as *mut _ as *mut c_void,
         mem::size_of::<PID>() as i32 * num_procs
     ) };
+    for pid in processes {
+        if pid == 0 {
+            continue;
+        }
+        let mut proc: libc::proc_bsdinfo = unsafe {
+            mem::zeroed()
+        };
+        let bsdinfo_size = mem::size_of::<libc::proc_bsdinfo>() as i32;
+        if unsafe { libc::proc_pidinfo(
+            pid,
+            libc::PROC_PIDTBSDINFO,
+            0,
+            &mut proc as *mut _ as *mut c_void,
+            bsdinfo_size
+        ) } != bsdinfo_size {
+            println!("Could not get proc info");
+            continue;
+        }
+        if proc.pbi_ppid as i32 == tree_node.pid {
+            let mut task: libc::proc_taskinfo = unsafe {
+                mem::zeroed()
+            };
+            let taskinfo_size = mem::size_of::<libc::proc_taskinfo>() as i32;
+            if unsafe { libc::proc_pidinfo(
+                pid,
+                libc::PROC_PIDTASKINFO,
+                0,
+                &mut task as *mut _ as *mut c_void,
+                taskinfo_size
+            ) } != taskinfo_size {
+                println!("Could not get task info");
+                continue;
+            }
+            let mut child = TreeNode {
+                pid: proc.pbi_pid as i32,
+                stime: task.pti_total_system,
+                utime: task.pti_total_user,
+                children: Vec::new()
+            };
+            macos_get_process(&mut child);
+            tree_node.children.push(child);
+        }
+    }
     println!("{:?}", processes);
 }
 

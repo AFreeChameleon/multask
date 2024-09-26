@@ -126,3 +126,10 @@ pub fn get_readable_memory(bytes: f64) -> String {
 
     [&result, SUFFIX[base.floor() as usize]].join(" ")
 }
+
+pub fn convert_vec_to_array<T, const N: usize>(
+    v: Vec<T>
+) -> [T; N] {
+    return v.try_into()
+        .unwrap_or_else(|v: Vec<T>| panic!());
+}
