@@ -14,14 +14,20 @@ const THREAD_INFO_MAX: u32 = 1024;
 
 pub fn macos_get_cpu_usage(pid: PID) -> f32 {
     let mut port: libc::task_t = unsafe { mem::zeroed() };
-    unsafe { libc::task_for_pid(
+    let mut kr = unsafe { libc::task_for_pid(
         libc::mach_task_self(),
         pid,
         &mut port
     ) };
+    if kr != libc::KERN_SUCCESS {
+        println!("0|hmm0 {} {}", kr, port);
+        // Return 0%
+        return 0.0;
+    }
     let mut tinfo: [i32; 1024] = [0; 1024];
     let mut task_info_count = THREAD_INFO_MAX;
-    let mut kr = unsafe { libc::task_info(
+    println!("0|during {} {}", port, pid);
+    kr = unsafe { libc::task_info(
         port,
         TASK_BASIC_INFO,
         tinfo.as_mut_ptr(),
