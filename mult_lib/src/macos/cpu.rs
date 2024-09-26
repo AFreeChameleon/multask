@@ -1,7 +1,12 @@
 use std::mem;
 use std::ptr;
+use std::thread;
+use std::time::Duration;
 
 use crate::proc::PID;
+use crate::tree::{TreeNode, search_tree};
+use crate::unix::proc::MILS_IN_SECOND;
+use crate::macos::proc::macos_get_all_processes;
 
 const TASK_BASIC_INFO: libc::task_flavor_t = 4;
 const THREAD_INFO_MAX: u32 = 1024;
@@ -65,4 +70,24 @@ pub fn macos_get_cpu_usage(pid: PID) -> f32 {
         }
     }
     return tot_cpu as f32;
+}
+
+pub fn macos_split_limit_cpu(pid: PID, limit: f32) {
+    let running_time = MILS_IN_SECOND * (limit / 100.0);
+    let idle_time = MILS_IN_SECOND - running_time;
+    let mut running = true;
+    loop {
+        let process_tree = macos_get_all_processes(pid);
+        let sig = if running {
+            libc::SIGSTOP
+        } else {
+            libc::SIGCONT
+        };
+        let timeout = if running { idle_time } else { running_time };
+        search_tree(&process_tree, &|node: &TreeNode| {
+            unsafe { libc::kill(node.pid, sig) };
+        });
+        thread::sleep(Duration::from_millis(timeout as u64));
+        running = !running;
+    }
 }

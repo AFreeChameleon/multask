@@ -41,32 +41,32 @@ macro_rules! spawn_logger {
 const SUPPORTED_SHELLS: [&str; 3] = ["/sh", "/bash", "/zsh"];
 
 pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), MultErrorTuple> {
-    //let process_id;
-    //let sid;
-    //unsafe {
-    //    process_id = libc::fork();
-    //}
-    //// Fork failed
-    //if process_id < 0 {
-    //    return Err((MultError::ForkFailed, None));
-    //}
-    //// Parent process - need to kill it
-    //if process_id > 0 {
-    //    print_info(&format!("Process id of child process {}", process_id));
-    //    return Ok(());
-    //}
-    //unsafe {
-    //    libc::umask(0);
-    //    sid = libc::setsid();
-    //}
-    //if sid < 0 {
-    //    return Err((MultError::SetSidFailed, None));
-    //}
-    //unsafe {
-    //    libc::close(libc::STDIN_FILENO);
-    //    libc::close(libc::STDOUT_FILENO);
-    //    libc::close(libc::STDERR_FILENO);
-    //}
+    let process_id;
+    let sid;
+    unsafe {
+        process_id = libc::fork();
+    }
+    // Fork failed
+    if process_id < 0 {
+        return Err((MultError::ForkFailed, None));
+    }
+    // Parent process - need to kill it
+    if process_id > 0 {
+        print_info(&format!("Process id of child process {}", process_id));
+        return Ok(());
+    }
+    unsafe {
+        libc::umask(0);
+        sid = libc::setsid();
+    }
+    if sid < 0 {
+        return Err((MultError::SetSidFailed, None));
+    }
+    unsafe {
+        libc::close(libc::STDIN_FILENO);
+        libc::close(libc::STDOUT_FILENO);
+        libc::close(libc::STDERR_FILENO);
+    }
     if stats.memory_limit > -1 {
         let memory_limit = libc::rlimit {
             rlim_cur: stats.memory_limit as _,
@@ -181,7 +181,6 @@ fn get_command_data(pid: PID, command: String, dir: String) -> Result<CommandDat
     }
     #[cfg(target_os = "macos")] {
         use crate::macos::proc::macos_get_process_stats;
-        use crate::macos::proc::macos_get_proc_name;
         let proc_stats = macos_get_process_stats(pid);
         if proc_stats.is_none() {
             return Err((MultError::ProcessNotExists, None));
@@ -205,6 +204,10 @@ fn split_limit_cpu(pid: PID, limit: f32) {
     #[cfg(target_os = "freebsd")] {
         use crate::bsd::cpu::bsd_split_limit_cpu;
         bsd_split_limit_cpu(pid, limit);
+    }
+    #[cfg(target_os = "macos")] {
+        use crate::macos::cpu::macos_split_limit_cpu;
+        macos_split_limit_cpu(pid, limit);
     }
 }
 

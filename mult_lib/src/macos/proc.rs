@@ -1,9 +1,7 @@
 #![cfg(target_os = "macos")]
 use std::{collections::HashMap, ffi::c_void, mem, ptr, sync::{Arc, Mutex}, thread, time::{Duration, SystemTime, UNIX_EPOCH}};
 
-use libc::PROC_PIDTBSDINFO;
-
-use crate::{error::MultErrorTuple, proc::{save_task_processes, save_usage_stats, UsageStats, PID}, task::Files, tree::{search_tree, TreeNode}, unix::proc::unix_proc_exists};
+use crate::{error::MultErrorTuple, proc::{save_task_processes, save_usage_stats, UsageStats, PID}, task::Files, tree::{compress_tree, search_tree, TreeNode}, unix::proc::{unix_kill_process, unix_proc_exists}};
 
 use super::cpu::macos_get_cpu_usage;
 
@@ -19,7 +17,8 @@ pub fn macos_get_process_stats(pid: PID) -> Option<libc::proc_bsdinfo> {
         &mut info as *mut _ as *mut c_void,
         mem::size_of::<libc::proc_bsdinfo>() as i32
     ) };
-    if res != mem::size_of::<libc::proc_bsdinfo>() as i32 {
+    if res != mem::size_of::<libc::proc_bsdinfo>() as i32 ||
+        info.pbi_status == libc::SZOMB {
         return None;
     }
     return Some(info);
@@ -89,7 +88,6 @@ fn macos_get_process(tree_node: &mut TreeNode) {
             &mut proc as *mut _ as *mut c_void,
             bsdinfo_size
         ) } != bsdinfo_size {
-            println!("Could not get proc info");
             continue;
         }
         if proc.pbi_ppid as i32 == tree_node.pid {
@@ -104,7 +102,6 @@ fn macos_get_process(tree_node: &mut TreeNode) {
                 &mut task as *mut _ as *mut c_void,
                 taskinfo_size
             ) } != taskinfo_size {
-                println!("Could not get task info");
                 continue;
             }
             let mut child = TreeNode {
@@ -117,7 +114,6 @@ fn macos_get_process(tree_node: &mut TreeNode) {
             tree_node.children.push(child);
         }
     }
-    println!("{:?}", processes);
 }
 
 pub fn macos_get_runtime(starttime: u64) -> u64 {
@@ -155,4 +151,19 @@ pub fn macos_monitor_stats(pid: PID, files: Files) {
         }
         save_usage_stats(&files.process_dir, &usage_stats.lock().unwrap());
     }
+}
+
+pub fn macos_kill_all_processes(pid: PID) -> Result<(), MultErrorTuple> {
+    let mut processes: Vec<PID> = Vec::new();
+    compress_tree(&macos_get_all_processes(pid), &mut processes);
+    println!("{:?}", processes);
+    for child_pid in processes {
+        unix_kill_process(child_pid as PID)?;
+    }
+    Ok(())
+}
+
+pub fn macos_proc_exists(pid: PID) -> bool {
+    let stats = macos_get_process_stats(pid);
+    return stats.is_some();
 }
