@@ -32,7 +32,8 @@ pub fn macos_get_all_process_stats(pid: PID) -> Option<libc::proc_taskallinfo> {
         &mut info as *mut _ as *mut c_void,
         mem::size_of::<libc::proc_taskallinfo>() as i32
     ) };
-    if res != mem::size_of::<libc::proc_taskallinfo>() as i32 {
+    if res != mem::size_of::<libc::proc_taskallinfo>() as i32 ||
+        info.pbsd.pbi_status == libc::SZOMB {
         return None;
     }
     return Some(info);
@@ -122,6 +123,7 @@ pub fn macos_get_runtime(starttime: u64) -> u64 {
 }
 
 pub fn macos_monitor_stats(pid: PID, files: Files) {
+    let existing_cpu_time = Arc::new(Mutex::new(0));
     loop {
         // Get usage metrics
         let process_tree = macos_get_all_processes(pid);
@@ -134,15 +136,20 @@ pub fn macos_monitor_stats(pid: PID, files: Files) {
         let usage_stats = Arc::new(Mutex::new(HashMap::new()));
         let keep_running = Arc::new(Mutex::new(false));
         search_tree(&process_tree, &|node: &TreeNode| {
-            if unix_proc_exists(node.pid) {
+            if macos_proc_exists(node.pid) {
                 *keep_running.lock().unwrap() = true;
                 // Set cpu usage down here
+                let (cpu_usage, cpu_time) = macos_get_cpu_usage(
+                    node.pid,
+                    *existing_cpu_time.lock().unwrap()
+                );
                 usage_stats.lock().unwrap().insert(
                     node.pid,
                     UsageStats {
-                        cpu_usage: macos_get_cpu_usage(node.pid),
+                        cpu_usage,
                     },
                 );
+                *existing_cpu_time.lock().unwrap() = cpu_time;
             }
         });
         if !*keep_running.lock().unwrap() {
@@ -155,7 +162,6 @@ pub fn macos_monitor_stats(pid: PID, files: Files) {
 pub fn macos_kill_all_processes(pid: PID) -> Result<(), MultErrorTuple> {
     let mut processes: Vec<PID> = Vec::new();
     compress_tree(&macos_get_all_processes(pid), &mut processes);
-    println!("{:?}", processes);
     for child_pid in processes {
         unix_kill_process(child_pid as PID)?;
     }

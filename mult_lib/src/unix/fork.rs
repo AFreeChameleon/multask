@@ -180,17 +180,17 @@ fn get_command_data(pid: PID, command: String, dir: String) -> Result<CommandDat
         return Ok(data);
     }
     #[cfg(target_os = "macos")] {
-        use crate::macos::proc::macos_get_process_stats;
-        let proc_stats = macos_get_process_stats(pid);
-        if proc_stats.is_none() {
+        use crate::macos::proc::macos_get_all_process_stats;
+        let all_stats = macos_get_all_process_stats(pid);
+        if all_stats.is_none() {
             return Err((MultError::ProcessNotExists, None));
         }
         let data = CommandData {
             pid,
             command,
             dir,
-            starttime: proc_stats.unwrap().pbi_start_tvsec,
-            name: unix_convert_c_string(proc_stats.unwrap().pbi_name.iter()),
+            starttime: all_stats.unwrap().pbsd.pbi_start_tvsec,
+            name: unix_convert_c_string(all_stats.unwrap().pbsd.pbi_name.iter()),
         };
         return Ok(data);
     }
