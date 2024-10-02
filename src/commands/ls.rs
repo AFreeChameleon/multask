@@ -267,10 +267,12 @@ fn macos_get_process_headers(
     use mult_lib::proc::get_readable_memory;
 
     let proc_stats_opt = macos_get_all_process_stats(pid);
+        println!("stats {}", pid);
     if is_main_process && (
         proc_stats_opt.is_none() ||
         (starttime != proc_stats_opt.unwrap().pbsd.pbi_start_tvsec as u64)
     ) {
+        println!("returning none {}", pid);
         return None;
     }
     let proc_stats = proc_stats_opt.unwrap();
@@ -281,6 +283,7 @@ fn macos_get_process_headers(
     };
     if let Some(stats) = usage_stats.get(&pid) {
         cpu_usage = (stats.cpu_usage * 100.0).round() / 100.0;
+        println!("stats {}", cpu_usage);
     }
     Some(ProcessHeaders {
         pid: pid.to_string(),

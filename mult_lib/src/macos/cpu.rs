@@ -13,6 +13,7 @@ use super::proc::macos_get_all_process_stats;
 
 const TASK_BASIC_INFO: libc::task_flavor_t = 4;
 const THREAD_INFO_MAX: u32 = 1024;
+const TIME_INTERVAL: f32 = 1E+9;
 
 fn calc_nanoseconds_per_mach_tick() -> u32 {
     let mut info: libc::mach_timebase_info_data_t = unsafe {
@@ -37,9 +38,9 @@ pub fn macos_get_cpu_usage(pid: PID, total_existing_time_ns: u64) -> (f32, u64) 
     let system_time_ns = mach_ticks_to_nanoseconds(all_stats.ptinfo.pti_total_system);
     let total_current_time_ns = user_time_ns + system_time_ns;
 
-    if total_current_time_ns != 0 && (1E-6 < time_interval_ns) {
+    if total_current_time_ns != 0 {
         let total_time_diff_ns = total_current_time_ns - total_existing_time_ns.to_owned();
-        let usage = (total_time_diff_ns as f32 / time_interval_ns as f32) * 100.0;
+        let usage = (total_time_diff_ns as f32 / TIME_INTERVAL) * 100.0;
         return (usage, total_current_time_ns);
     } else {
         return (0.0, total_existing_time_ns);
