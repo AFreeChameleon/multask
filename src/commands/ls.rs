@@ -281,9 +281,10 @@ fn macos_get_process_headers(
         Ok(val) => val,
         Err(_) => return None,
     };
+    println!("usage {:?}", usage_stats);
     if let Some(stats) = usage_stats.get(&pid) {
         cpu_usage = (stats.cpu_usage * 100.0).round() / 100.0;
-        println!("stats {}", cpu_usage);
+        println!("cpustats {}", cpu_usage);
     }
     Some(ProcessHeaders {
         pid: pid.to_string(),

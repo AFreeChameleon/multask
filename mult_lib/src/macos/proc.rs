@@ -60,6 +60,21 @@ pub fn macos_get_all_processes(pid: PID) -> TreeNode {
         utime: 0,
         children: Vec::new()
     };
+    let mut task: libc::proc_taskinfo = unsafe {
+        mem::zeroed()
+    };
+    let taskinfo_size = mem::size_of::<libc::proc_taskinfo>() as i32;
+    if unsafe { libc::proc_pidinfo(
+        pid,
+        libc::PROC_PIDTASKINFO,
+        0,
+        &mut task as *mut _ as *mut c_void,
+        taskinfo_size
+    ) } != taskinfo_size {
+        return head_node;
+    }
+    head_node.stime = task.pti_total_system;
+    head_node.utime = task.pti_total_user;
     macos_get_process(&mut head_node);
     head_node
 }
@@ -136,11 +151,12 @@ pub fn macos_monitor_stats(pid: PID, files: Files) {
         let usage_stats = Arc::new(Mutex::new(HashMap::new()));
         let keep_running = Arc::new(Mutex::new(false));
         search_tree(&process_tree, &|node: &TreeNode| {
+            println!("process {} {}", node.pid, macos_proc_exists(node.pid));
             if macos_proc_exists(node.pid) {
                 *keep_running.lock().unwrap() = true;
                 // Set cpu usage down here
                 let (cpu_usage, cpu_time) = macos_get_cpu_usage(
-                    node.pid,
+                    node,
                     *existing_cpu_time.lock().unwrap()
                 );
                 usage_stats.lock().unwrap().insert(

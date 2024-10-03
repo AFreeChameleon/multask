@@ -27,9 +27,12 @@ fn mach_ticks_to_nanoseconds(time: u64) -> u64 {
     return time * calc_nanoseconds_per_mach_tick() as u64;
 }
 
-pub fn macos_get_cpu_usage(pid: PID, total_existing_time_ns: u64) -> (f32, u64) {
-    let all_stats_opt = macos_get_all_process_stats(pid);
+pub fn macos_get_cpu_usage(node: &TreeNode, total_existing_time_ns: u64) -> (f32, u64) {
+    let all_stats_opt = macos_get_all_process_stats(node.pid);
+    // USE THIS INSTEAD
+    let total_existing_time_nss = mach_ticks_to_nanoseconds(node.utime) + mach_ticks_to_nanoseconds(node.stime);
     if all_stats_opt.is_none() {
+        println!("fail1");
         return (0.0, total_existing_time_ns);
     }
     let all_stats = all_stats_opt.unwrap();
@@ -39,11 +42,13 @@ pub fn macos_get_cpu_usage(pid: PID, total_existing_time_ns: u64) -> (f32, u64) 
     let total_current_time_ns = user_time_ns + system_time_ns;
 
     if total_current_time_ns != 0 {
+        println!("time: {} {}", total_current_time_ns, total_existing_time_ns.to_owned());
         let total_time_diff_ns = total_current_time_ns - total_existing_time_ns.to_owned();
         let usage = (total_time_diff_ns as f32 / TIME_INTERVAL) * 100.0;
         return (usage, total_current_time_ns);
     } else {
-        return (0.0, total_existing_time_ns);
+        println!("fail2");
+        return (0.0, total_current_time_ns);
     }
 }
 
