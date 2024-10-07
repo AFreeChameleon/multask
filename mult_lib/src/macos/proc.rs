@@ -151,13 +151,11 @@ pub fn macos_monitor_stats(pid: PID, files: Files) {
         let usage_stats = Arc::new(Mutex::new(HashMap::new()));
         let keep_running = Arc::new(Mutex::new(false));
         search_tree(&process_tree, &|node: &TreeNode| {
-            println!("process {} {}", node.pid, macos_proc_exists(node.pid));
             if macos_proc_exists(node.pid) {
                 *keep_running.lock().unwrap() = true;
                 // Set cpu usage down here
                 let (cpu_usage, cpu_time) = macos_get_cpu_usage(
-                    node,
-                    *existing_cpu_time.lock().unwrap()
+                    node
                 );
                 usage_stats.lock().unwrap().insert(
                     node.pid,
