@@ -110,14 +110,13 @@ fn run_command(command: &str, process_dir: &Path) -> Result<Child, MultErrorTupl
             {
                 val
             } else {
-                "/bin/sh".to_string()
+                "/bin/bash".to_string()
             }
         }
         Err(_) => return Err((MultError::OSNotSupported, None)),
     };
     let mut child = Command::new(shell_path)
         .args(["-c", &command])
-        .env("FORCE_COLOR", "true")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()

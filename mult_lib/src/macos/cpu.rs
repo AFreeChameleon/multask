@@ -49,19 +49,6 @@ pub fn macos_get_cpu_usage(node: &TreeNode) -> (f32, u64) {
     }
 }
 
-//pub fn macos_get_cpu_usage(pid: PID, node: TreeNode, old_total_time: u32) -> f32 {
-//    let stats = macos_get_all_process_stats(pid);
-//    let utime: u64 = stats.unwrap().ptinfo.pti_total_user;
-//    let stime: u64 = stats.unwrap().ptinfo.pti_total_system;
-//    let old_proc_times = node.utime + node.stime;
-//    let proc_times = utime + stime;
-//    let total_time = linux_get_cpu_time_total(cpu_stats);
-//    let cpu_usage = unsafe { libc::sysconf(libc::_SC_NPROCESSORS_ONLN) as f32 }
-//        * 100.0
-//        * ((proc_times - old_proc_times) as f32 / (total_time - old_total_time) as f32);
-//    return cpu_usage;
-//}
-
 pub fn macos_split_limit_cpu(pid: PID, limit: f32) {
     let running_time = MILS_IN_SECOND * (limit / 100.0);
     let idle_time = MILS_IN_SECOND - running_time;
