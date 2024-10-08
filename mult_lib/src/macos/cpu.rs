@@ -1,19 +1,15 @@
 #![cfg(target_os = "macos")]
 use std::mem;
-use std::ptr;
 use std::thread;
 use std::time::Duration;
 
 use crate::proc::PID;
 use crate::tree::{TreeNode, search_tree};
-use crate::unix::proc::unix_get_error_code;
 use crate::unix::proc::MILS_IN_SECOND;
 use crate::macos::proc::macos_get_all_processes;
 
 use super::proc::macos_get_all_process_stats;
 
-const TASK_BASIC_INFO: libc::task_flavor_t = 4;
-const THREAD_INFO_MAX: u32 = 1024;
 const TIME_INTERVAL: f32 = 1E+9;
 
 fn calc_nanoseconds_per_mach_tick() -> u32 {

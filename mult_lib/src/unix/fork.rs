@@ -101,7 +101,13 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
 }
 
 fn close_std_handles() {
-    let std_handles = [libc::STDIN_FILENO, libc::STDOUT_FILENO, libc::STDERR_FILENO];
+    let std_handles;
+    #[cfg(target_os = "macos")] {
+        std_handles = [libc::STDOUT_FILENO, libc::STDERR_FILENO];
+    }
+    #[cfg(not(target_os = "macos"))] {
+        std_handles = [libc::STDIN_FILENO, libc::STDOUT_FILENO, libc::STDERR_FILENO];
+    }
     for handle in std_handles {
         unsafe {
             if libc::fcntl(handle, libc::F_GETFD) != -1 && unix_get_error_code() != libc::EBADF {

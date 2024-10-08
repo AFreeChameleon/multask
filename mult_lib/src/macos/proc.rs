@@ -1,7 +1,7 @@
 #![cfg(target_os = "macos")]
 use std::{collections::HashMap, ffi::c_void, mem, ptr, sync::{Arc, Mutex}, thread, time::{Duration, SystemTime, UNIX_EPOCH}};
 
-use crate::{error::MultErrorTuple, proc::{save_task_processes, save_usage_stats, UsageStats, PID}, task::Files, tree::{compress_tree, search_tree, TreeNode}, unix::proc::{unix_kill_process, unix_proc_exists}};
+use crate::{error::MultErrorTuple, proc::{save_task_processes, save_usage_stats, UsageStats, PID}, task::Files, tree::{compress_tree, search_tree, TreeNode}, unix::proc::unix_kill_process};
 
 use super::cpu::macos_get_cpu_usage;
 
