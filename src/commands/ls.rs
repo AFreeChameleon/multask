@@ -86,6 +86,7 @@ pub fn setup_table(
             table.insert_row(main_headers, None);
             continue;
         }
+        proc_exists(command.pid); // REMOVE THIS BEFORE MERGE
         let mut process_headers = process_headers_opt.unwrap();
         let process_tree = get_all_processes(command.pid);
         let mut all_processes = vec![];
@@ -334,11 +335,11 @@ fn get_all_processes(pid: PID) -> TreeNode {
     let process_tree;
     #[cfg(target_os = "linux")] {
         use mult_lib::linux::proc::linux_get_all_processes;
-        process_tree = linux_get_all_processes(command.pid);
+        process_tree = linux_get_all_processes(pid);
     }
     #[cfg(target_os = "freebsd")] {
         use mult_lib::bsd::proc::bsd_get_all_processes;
-        process_tree = bsd_get_all_processes(command.pid);
+        process_tree = bsd_get_all_processes(pid);
     }
     #[cfg(target_os = "macos")] {
         use mult_lib::macos::proc::macos_get_all_processes;
@@ -357,7 +358,7 @@ fn get_all_processes(pid: PID) -> TreeNode {
                     .encode_wide().chain(Some(0)).collect::<Vec<u16>>().as_ptr() as *const u16,
                 )
             },
-            command.pid,
+            pid,
         );
     }
     return process_tree;

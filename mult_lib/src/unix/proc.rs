@@ -11,11 +11,13 @@ pub fn unix_proc_exists(pid: PID) -> bool {
         use crate::macos::proc::macos_proc_exists;
         return macos_proc_exists(pid);
     }
-    #[cfg(not(target_os = "freebsd"))]
-    return unsafe { libc::kill(pid, 0) } == 0;
+    #[cfg(target_os = "linux")] {
+        use crate::linux::proc::linux_proc_exists;
+        return linux_proc_exists(pid);
+    }
 }
 
-pub fn unix_get_error_code(_pid: PID) -> i32 {
+pub fn unix_get_error_code() -> i32 {
     let errno;
     #[cfg(target_os = "linux")] {
         errno = unsafe { *libc::__errno_location() };
@@ -31,7 +33,7 @@ pub fn unix_kill_process(pid: PID) -> Result<(), MultErrorTuple> {
     if res == 0 {
         return Ok(());
     }
-    let errno = unix_get_error_code(pid);
+    let errno = unix_get_error_code();
     Err((MultError::UnixError, Some(errno.to_string())))
 }
 

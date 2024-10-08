@@ -131,5 +131,5 @@ pub fn convert_vec_to_array<T, const N: usize>(
     v: Vec<T>
 ) -> [T; N] {
     return v.try_into()
-        .unwrap_or_else(|v: Vec<T>| panic!());
+        .unwrap_or_else(|_v: Vec<T>| panic!());
 }

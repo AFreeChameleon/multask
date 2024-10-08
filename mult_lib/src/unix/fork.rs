@@ -11,7 +11,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH}
 };
 
-use crate::{command::{CommandData, CommandManager, MemStats}, unix::proc::unix_convert_c_string};
+use crate::{command::{CommandData, CommandManager, MemStats}, unix::proc::unix_get_error_code};
 use crate::task::Files;
 use crate::{
     error::{print_info, MultError, MultErrorTuple},
@@ -54,6 +54,10 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
     if process_id > 0 {
         print_info(&format!("Process id of child process {}", process_id));
         return Ok(());
+    }
+    // Creates grandchild process to orphan it so no zombie processes are made
+    if unsafe { libc::fork() } > 0 {
+        unsafe { libc::_exit(0) };
     }
     close_std_handles();
     unsafe {
@@ -100,8 +104,7 @@ fn close_std_handles() {
     let std_handles = [libc::STDIN_FILENO, libc::STDOUT_FILENO, libc::STDERR_FILENO];
     for handle in std_handles {
         unsafe {
-            println!("GRRRR {} {} {}", libc::fcntl(handle, libc::F_GETFD), *libc::__error() != libc::EBADF, libc::close(handle));
-            if libc::fcntl(handle, libc::F_GETFD) != -1 && *libc::__error() != libc::EBADF {
+            if libc::fcntl(handle, libc::F_GETFD) != -1 && unix_get_error_code() != libc::EBADF {
                 libc::close(handle);
             }
         }
@@ -188,6 +191,7 @@ fn get_command_data(pid: PID, command: String, dir: String) -> Result<CommandDat
     }
     #[cfg(target_os = "macos")] {
         use crate::macos::proc::macos_get_all_process_stats;
+        use crate::unix::proc::unix_convert_c_string;
         let all_stats = macos_get_all_process_stats(pid);
         if all_stats.is_none() {
             return Err((MultError::ProcessNotExists, None));
