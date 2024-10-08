@@ -55,17 +55,13 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
         print_info(&format!("Process id of child process {}", process_id));
         return Ok(());
     }
+    close_std_handles();
     unsafe {
         libc::umask(0);
         sid = libc::setsid();
     }
     if sid < 0 {
         return Err((MultError::SetSidFailed, None));
-    }
-    unsafe {
-        libc::close(libc::STDIN_FILENO);
-        libc::close(libc::STDOUT_FILENO);
-        libc::close(libc::STDERR_FILENO);
     }
     if stats.memory_limit > -1 {
         let memory_limit = libc::rlimit {
@@ -98,6 +94,18 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
         macos_monitor_stats(child.id() as PID, files);
     }
     Ok(())
+}
+
+fn close_std_handles() {
+    let std_handles = [libc::STDIN_FILENO, libc::STDOUT_FILENO, libc::STDERR_FILENO];
+    for handle in std_handles {
+        unsafe {
+            println!("GRRRR {} {} {}", libc::fcntl(handle, libc::F_GETFD), *libc::__error() != libc::EBADF, libc::close(handle));
+            if libc::fcntl(handle, libc::F_GETFD) != -1 && *libc::__error() != libc::EBADF {
+                libc::close(handle);
+            }
+        }
+    }
 }
 
 fn run_command(command: &str, process_dir: &Path) -> Result<Child, MultErrorTuple> {
