@@ -86,7 +86,6 @@ pub fn setup_table(
             table.insert_row(main_headers, None);
             continue;
         }
-        proc_exists(command.pid); // REMOVE THIS BEFORE MERGE
         let mut process_headers = process_headers_opt.unwrap();
         let process_tree = get_all_processes(command.pid);
         let mut all_processes = vec![];
