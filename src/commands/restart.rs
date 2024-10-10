@@ -99,6 +99,11 @@ fn get_flag_values(parsed_args: &ParsedArgs) -> Result<MemStats, MultErrorTuple>
                 }
                 Ok(val) => val,
             };
+            if cpu_limit > 100 || cpu_limit < 1 {
+                return Err((MultError::InvalidArgument, Some(
+                    format!("{} valid values are between 1 and 100", CPU_LIMIT_FLAG.to_string())
+                )));
+            }
         }
     }
     Ok(MemStats {
