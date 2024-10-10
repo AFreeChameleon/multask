@@ -29,11 +29,22 @@ pub fn get_proc_name(pid: PID) -> Result<String, MultErrorTuple> {
         use crate::linux::proc::linux_get_proc_name;
         return linux_get_proc_name(pid);
     }
-    #[cfg(target_os = "windows")]
-    return win_get_proc_name(pid);
+    #[cfg(target_os = "windows")] {
+        use crate::windows::proc::win_get_proc_name;
+        return win_get_proc_name(pid);
+    }
     #[cfg(target_os = "freebsd")] {
         use crate::bsd::proc::bsd_get_proc_comm;
         return bsd_get_proc_comm(pid);
+    }
+    #[cfg(target_os = "macos")] {
+        use crate::macos::proc::macos_get_process_stats;
+        use crate::unix::proc::unix_convert_c_string;
+        let stats = macos_get_process_stats(pid);
+        if stats.is_none() {
+            return Ok(String::new());
+        }
+        Ok(unix_convert_c_string(stats.unwrap().pbi_name.iter()))
     }
 }
 
@@ -42,11 +53,23 @@ pub fn get_proc_comm(pid: PID) -> Result<String, MultErrorTuple> {
         use crate::linux::proc::linux_get_proc_comm;
         return linux_get_proc_comm(pid);
     }
-    #[cfg(target_os = "windows")]
-    return win_get_proc_name(pid);
+    #[cfg(target_os = "windows")] {
+        use crate::windows::proc::win_get_proc_name;
+        return win_get_proc_name(pid);
+    }
     #[cfg(target_os = "freebsd")] {
         use crate::bsd::proc::bsd_get_proc_comm;
         return bsd_get_proc_comm(pid);
+    }
+    #[cfg(target_os = "macos")] {
+        use crate::macos::proc::macos_get_process_stats;
+        use crate::unix::proc::unix_convert_c_string;
+        let stats = macos_get_process_stats(pid);
+        if stats.is_none() {
+            return Ok(String::new());
+        }
+
+        Ok(unix_convert_c_string(stats.unwrap().pbi_comm.iter()))
     }
 }
 
@@ -81,8 +104,10 @@ pub fn read_usage_stats(task_id: u32) -> Result<HashMap<PID, UsageStats>, MultEr
 pub fn proc_exists(pid: PID) -> bool {
     #[cfg(target_family = "unix")]
     return unix_proc_exists(pid);
-    #[cfg(target_os = "windows")]
-    return win_proc_exists(pid);
+    #[cfg(target_os = "windows")] {
+        use crate::windows::proc::win_proc_exists;
+        return win_proc_exists(pid);
+    }
 }
 
 pub fn get_readable_runtime(secs: u64) -> String {
@@ -106,4 +131,11 @@ pub fn get_readable_memory(bytes: f64) -> String {
     .to_owned();
 
     [&result, SUFFIX[base.floor() as usize]].join(" ")
+}
+
+pub fn convert_vec_to_array<T, const N: usize>(
+    v: Vec<T>
+) -> [T; N] {
+    return v.try_into()
+        .unwrap_or_else(|_v: Vec<T>| panic!());
 }

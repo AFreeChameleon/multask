@@ -11,7 +11,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH}
 };
 
-use crate::command::{CommandData, CommandManager, MemStats};
+use crate::{command::{CommandData, CommandManager, MemStats}, unix::proc::unix_get_error_code};
 use crate::task::Files;
 use crate::{
     error::{print_info, MultError, MultErrorTuple},
@@ -55,17 +55,17 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
         print_info(&format!("Process id of child process {}", process_id));
         return Ok(());
     }
+    // Creates grandchild process to orphan it so no zombie processes are made
+    if unsafe { libc::fork() } > 0 {
+        unsafe { libc::_exit(0) };
+    }
+    close_std_handles();
     unsafe {
         libc::umask(0);
         sid = libc::setsid();
     }
     if sid < 0 {
         return Err((MultError::SetSidFailed, None));
-    }
-    unsafe {
-        libc::close(libc::STDIN_FILENO);
-        libc::close(libc::STDOUT_FILENO);
-        libc::close(libc::STDERR_FILENO);
     }
     if stats.memory_limit > -1 {
         let memory_limit = libc::rlimit {
@@ -93,7 +93,28 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
         use crate::linux::proc::linux_monitor_stats;
         linux_monitor_stats(child.id() as PID, files);
     }
+    #[cfg(target_os = "macos")] {
+        use crate::macos::proc::macos_monitor_stats;
+        macos_monitor_stats(child.id() as PID, files);
+    }
     Ok(())
+}
+
+fn close_std_handles() {
+    let std_handles;
+    #[cfg(target_os = "macos")] {
+        std_handles = [libc::STDOUT_FILENO, libc::STDERR_FILENO];
+    }
+    #[cfg(not(target_os = "macos"))] {
+        std_handles = [libc::STDIN_FILENO, libc::STDOUT_FILENO, libc::STDERR_FILENO];
+    }
+    for handle in std_handles {
+        unsafe {
+            if libc::fcntl(handle, libc::F_GETFD) != -1 && unix_get_error_code() != libc::EBADF {
+                libc::close(handle);
+            }
+        }
+    }
 }
 
 fn run_command(command: &str, process_dir: &Path) -> Result<Child, MultErrorTuple> {
@@ -106,14 +127,13 @@ fn run_command(command: &str, process_dir: &Path) -> Result<Child, MultErrorTupl
             {
                 val
             } else {
-                "/bin/sh".to_string()
+                "/bin/bash".to_string()
             }
         }
         Err(_) => return Err((MultError::OSNotSupported, None)),
     };
     let mut child = Command::new(shell_path)
         .args(["-c", &command])
-        .env("FORCE_COLOR", "true")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -161,7 +181,7 @@ fn get_command_data(pid: PID, command: String, dir: String) -> Result<CommandDat
         return Ok(data);
     }
     #[cfg(target_os = "freebsd")] {
-        use crate::bsd::proc::bsd_get_process_stats;
+        use crate::bsd::proc::{bsd_get_process_stats, bsd_get_proc_info};
         let proc_stats = bsd_get_process_stats(pid);
         if proc_stats.is_none() {
             return Err((MultError::ProcessNotExists, None));
@@ -171,7 +191,23 @@ fn get_command_data(pid: PID, command: String, dir: String) -> Result<CommandDat
             command,
             dir,
             starttime: proc_stats.unwrap().ki_start.tv_sec as u64,
-            name: String::from_utf8(proc_stats.unwrap().ki_comm.iter().map(|&c| c as u8).collect()).unwrap(),
+            name: bsd_get_proc_info(proc_stats),
+        };
+        return Ok(data);
+    }
+    #[cfg(target_os = "macos")] {
+        use crate::macos::proc::macos_get_all_process_stats;
+        use crate::unix::proc::unix_convert_c_string;
+        let all_stats = macos_get_all_process_stats(pid);
+        if all_stats.is_none() {
+            return Err((MultError::ProcessNotExists, None));
+        }
+        let data = CommandData {
+            pid,
+            command,
+            dir,
+            starttime: all_stats.unwrap().pbsd.pbi_start_tvsec,
+            name: unix_convert_c_string(all_stats.unwrap().pbsd.pbi_name.iter()),
         };
         return Ok(data);
     }
@@ -185,6 +221,10 @@ fn split_limit_cpu(pid: PID, limit: f32) {
     #[cfg(target_os = "freebsd")] {
         use crate::bsd::cpu::bsd_split_limit_cpu;
         bsd_split_limit_cpu(pid, limit);
+    }
+    #[cfg(target_os = "macos")] {
+        use crate::macos::cpu::macos_split_limit_cpu;
+        macos_split_limit_cpu(pid, limit);
     }
 }
 

@@ -35,6 +35,13 @@ pub fn run() -> Result<(), MultErrorTuple> {
                 Err(_) => print_info(&format!("Process {} is not running.", task_id)),
             }
         }
+        #[cfg(target_os = "macos")] {
+            use mult_lib::macos::proc::macos_kill_all_processes;
+            match macos_kill_all_processes(command_data.pid as i32) {
+                Ok(_) => (),
+                Err(_) => print_info(&format!("Process {} is not running.", task_id)),
+            }
+        }
         new_tasks = new_tasks.into_iter().filter(|t| t.id != task_id).collect();
         let process_dir = Path::new(&home::home_dir().unwrap())
             .join(".multi-tasker")

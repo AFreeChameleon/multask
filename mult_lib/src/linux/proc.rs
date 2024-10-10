@@ -55,6 +55,12 @@ pub fn linux_get_proc_comm(pid: PID) -> Result<String, MultErrorTuple> {
 }
 
 pub fn linux_proc_exists(pid: PID) -> bool {
+    if let Some(state) = linux_get_process_state(pid) {
+        if state == "Z" {
+            return false;
+        }
+        return true;
+    }
     return unsafe { libc::kill(pid, 0) } == 0;
 }
 
@@ -139,7 +145,7 @@ pub fn linux_get_process_stats(pid: PID) -> Vec<String> {
     let initial_proc = format!("/proc/{}/stat", pid).to_owned();
     let stat_path = Path::new(&initial_proc);
     let mut stats: Vec<String> = Vec::new();
-    if stat_path.exists() {
+    if stat_path.exists() && linux_proc_exists(pid) {
         let contents = fs::read_to_string(stat_path).unwrap();
         let mut inside_brackets = false;
         let mut value = String::new();
@@ -194,6 +200,19 @@ pub fn linux_get_process_memory(pid: &PID) -> String {
     return "0 B".to_string();
 }
 
+pub fn linux_get_process_state(pid: PID) -> Option<String> {
+    let path = Path::new("/proc").join(pid.to_string()).join("status");
+    if path.exists() {
+        let contents = fs::read_to_string(&path).unwrap();
+        if let Some(state) = contents.lines().find(|line| line.starts_with("State")) {
+            let mut state_line = state.split_whitespace();
+            let p_state = state_line.nth(1).unwrap();
+            return Some(p_state.to_owned());
+        }
+    }
+    return None;
+}
+
 pub fn linux_kill_all_processes(pid: PID) -> Result<(), MultErrorTuple> {
     let mut processes: Vec<PID> = Vec::new();
     compress_tree(&linux_get_all_processes(pid), &mut processes);
@@ -224,7 +243,6 @@ pub fn linux_monitor_stats(pid: PID, files: Files) {
                 usage_stats.lock().unwrap().insert(
                     node.pid,
                     UsageStats {
-                        #[cfg(target_os = "linux")]
                         cpu_usage: linux_get_cpu_usage(node.pid, node.clone(), cpu_time_total),
                     },
                 );
@@ -236,3 +254,4 @@ pub fn linux_monitor_stats(pid: PID, files: Files) {
         save_usage_stats(&files.process_dir, &usage_stats.lock().unwrap());
     }
 }
+

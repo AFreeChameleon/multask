@@ -27,7 +27,7 @@ use windows_sys::Win32::{
 };
 
 use crate::{
-    error::{print_error, print_warning, MultError, MultErrorTuple}, proc::get_readable_memory, tree::{compress_tree, TreeNode}
+    error::{print_error, print_warning, MultError, MultErrorTuple}, proc::{get_readable_memory, PID}, tree::{compress_tree, TreeNode}
 };
 
 use super::fork::cast_to_c_void;
@@ -40,7 +40,7 @@ fn convert_filetime64_to_unix_epoch(filetime64: u64) -> u64 {
     return (filetime64 / 10000000) - 11644473600;
 }
 
-pub fn win_get_all_processes(job: *mut c_void, pid: u32) -> TreeNode {
+pub fn win_get_all_processes(job: *mut c_void, pid: PID) -> TreeNode {
     #[repr(C)]
     struct Jobs {
         header: JOBOBJECT_BASIC_PROCESS_ID_LIST,
@@ -64,16 +64,16 @@ pub fn win_get_all_processes(job: *mut c_void, pid: u32) -> TreeNode {
         return TreeNode::empty();
     }
     let list = &jobs.list[..jobs.header.NumberOfProcessIdsInList as usize];
-    let mut stats = win_get_process_stats(pid as usize);
+    let mut stats = win_get_process_stats(pid);
     let mut head_node = TreeNode {
-        pid: pid as usize,
+        pid,
         stime: stats[0].parse().unwrap(),
         utime: stats[1].parse().unwrap(),
         children: Vec::new(),
     };
     for child_pid_ref in list {
-        let child_pid = child_pid_ref.to_owned();
-        if child_pid == (pid as usize) || child_pid == 0 {
+        let child_pid = child_pid_ref.to_owned() as PID;
+        if child_pid == pid || child_pid == 0 {
             continue;
         }
         stats = win_get_process_stats(child_pid);
@@ -87,7 +87,7 @@ pub fn win_get_all_processes(job: *mut c_void, pid: u32) -> TreeNode {
     return head_node;
 }
 
-pub fn win_get_process_stats(pid: usize) -> Vec<String> {
+pub fn win_get_process_stats(pid: PID) -> Vec<String> {
     let process = unsafe { OpenProcess(PROCESS_ALL_ACCESS, 1, pid as u32) };
     let mut lp_creation_time = FILETIME::empty();
     let mut lp_exit_time = FILETIME::empty();
@@ -154,7 +154,7 @@ pub fn win_proc_exists(pid: u32) -> bool {
     return true;
 }
 
-pub fn win_get_memory_usage(pid: &usize) -> String {
+pub fn win_get_memory_usage(pid: &PID) -> String {
     let process = unsafe { OpenProcess(PROCESS_QUERY_INFORMATION, 1, pid.to_owned() as u32) };
     if process.is_null() {
         return "0 B".to_string();
