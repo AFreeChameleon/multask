@@ -2,13 +2,7 @@
 use home::home_dir;
 use libc;
 use std::{
-    env,
-    fs::File,
-    io::{BufRead, BufReader, Write},
-    path::Path,
-    process::{Child, Command, Stdio},
-    thread,
-    time::{SystemTime, UNIX_EPOCH}
+    env, fs::File, io::{BufRead, BufReader, Write}, path::Path, process::{Child, Command, Stdio}, ptr, thread, time::{SystemTime, UNIX_EPOCH}
 };
 
 use crate::{command::{CommandData, CommandManager, MemStats}, unix::proc::unix_get_error_code};
@@ -41,43 +35,49 @@ macro_rules! spawn_logger {
 const SUPPORTED_SHELLS: [&str; 3] = ["/sh", "/bash", "/zsh"];
 
 pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), MultErrorTuple> {
-    let process_id;
-    let sid;
-    unsafe {
-        process_id = libc::fork();
-    }
-    // Fork failed
-    if process_id < 0 {
-        return Err((MultError::ForkFailed, None));
-    }
-    // Parent process - need to kill it
-    if process_id > 0 {
-        print_info(&format!("Process id of child process {}", process_id));
-        return Ok(());
-    }
-    // Creates grandchild process to orphan it so no zombie processes are made
-    if unsafe { libc::fork() } > 0 {
-        unsafe { libc::_exit(0) };
-    }
-    close_std_handles();
-    unsafe {
-        libc::umask(0);
-        sid = libc::setsid();
-    }
-    if sid < 0 {
-        return Err((MultError::SetSidFailed, None));
-    }
+    //let process_id;
+    //let sid;
+    //unsafe {
+    //    process_id = libc::fork();
+    //}
+    //// Fork failed
+    //if process_id < 0 {
+    //    return Err((MultError::ForkFailed, None));
+    //}
+    //// Parent process - need to kill it
+    //if process_id > 0 {
+    //    print_info(&format!("Process id of child process {}", process_id));
+    //    return Ok(());
+    //}
+    //// Creates grandchild process to orphan it so no zombie processes are made
+    //if unsafe { libc::fork() } > 0 {
+    //    unsafe { libc::_exit(0) };
+    //}
+    //close_std_handles();
+    //unsafe {
+    //    libc::umask(0);
+    //    sid = libc::setsid();
+    //}
+    //if sid < 0 {
+    //    return Err((MultError::SetSidFailed, None));
+    //}
+    // Do daemon stuff here
+    let child = run_command(&command, &files.process_dir)?;
     if stats.memory_limit > -1 {
         let memory_limit = libc::rlimit {
             rlim_cur: stats.memory_limit as _,
             rlim_max: stats.memory_limit as _,
         };
         unsafe {
-            libc::setrlimit(libc::RLIMIT_AS, &memory_limit);
+            libc::syscall(
+                libc::SYS_prlimit64,
+                child.id() as i64,
+                libc::RLIMIT_AS,
+                &memory_limit,
+                ptr::null::<libc::rlimit>()
+            );
         }
     }
-    // Do daemon stuff here
-    let child = run_command(&command, &files.process_dir)?;
     if stats.cpu_limit > -1 {
         let child_id = child.id();
         thread::spawn(move || {
