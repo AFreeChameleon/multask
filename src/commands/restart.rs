@@ -7,6 +7,8 @@ use mult_lib::task::TaskManager;
 
 #[cfg(target_family = "unix")]
 use mult_lib::unix::fork;
+#[cfg(target_family = "windows")]
+use mult_lib::windows::fork;
 
 const MEMORY_LIMIT_FLAG: &str = "-m";
 const CPU_LIMIT_FLAG: &str = "-c";

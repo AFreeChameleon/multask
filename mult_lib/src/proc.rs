@@ -29,8 +29,10 @@ pub fn get_proc_name(pid: PID) -> Result<String, MultErrorTuple> {
         use crate::linux::proc::linux_get_proc_name;
         return linux_get_proc_name(pid);
     }
-    #[cfg(target_os = "windows")]
-    return win_get_proc_name(pid);
+    #[cfg(target_os = "windows")] {
+        use crate::windows::proc::win_get_proc_name;
+        return win_get_proc_name(pid);
+    }
     #[cfg(target_os = "freebsd")] {
         use crate::bsd::proc::bsd_get_proc_comm;
         return bsd_get_proc_comm(pid);
@@ -51,8 +53,10 @@ pub fn get_proc_comm(pid: PID) -> Result<String, MultErrorTuple> {
         use crate::linux::proc::linux_get_proc_comm;
         return linux_get_proc_comm(pid);
     }
-    #[cfg(target_os = "windows")]
-    return win_get_proc_name(pid);
+    #[cfg(target_os = "windows")] {
+        use crate::windows::proc::win_get_proc_name;
+        return win_get_proc_name(pid);
+    }
     #[cfg(target_os = "freebsd")] {
         use crate::bsd::proc::bsd_get_proc_comm;
         return bsd_get_proc_comm(pid);
@@ -100,8 +104,10 @@ pub fn read_usage_stats(task_id: u32) -> Result<HashMap<PID, UsageStats>, MultEr
 pub fn proc_exists(pid: PID) -> bool {
     #[cfg(target_family = "unix")]
     return unix_proc_exists(pid);
-    #[cfg(target_os = "windows")]
-    return win_proc_exists(pid);
+    #[cfg(target_os = "windows")] {
+        use crate::windows::proc::win_proc_exists;
+        return win_proc_exists(pid);
+    }
 }
 
 pub fn get_readable_runtime(secs: u64) -> String {

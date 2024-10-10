@@ -20,7 +20,7 @@ pub fn run() -> Result<(), MultErrorTuple> {
         let task = TaskManager::get_task(&tasks, task_id)?;
         let files = TaskManager::generate_task_files(task.id, &tasks);
         let command_data = CommandManager::read_command_data(task.id)?;
-        if proc_exists(command_data.pid as i32) {
+        if proc_exists(command_data.pid) {
             return Err((MultError::ProcessAlreadyRunning, None));
         }
         let current_dir = env::current_dir().unwrap();

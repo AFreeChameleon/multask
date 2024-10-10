@@ -1,3 +1,4 @@
+#![cfg(target_family = "unix")]
 use crate::{error::{MultError, MultErrorTuple}, proc::PID};
 
 pub static MILS_IN_SECOND: f32 = 1000.0;

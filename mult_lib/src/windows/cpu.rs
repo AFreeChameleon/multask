@@ -6,7 +6,7 @@ use windows_sys::Win32::{
     System::SystemInformation::{GetSystemInfo, GetSystemTimeAsFileTime, SYSTEM_INFO},
 };
 
-use crate::tree::TreeNode;
+use crate::{proc::PID, tree::TreeNode};
 
 use super::proc::{combine_filetime, win_get_process_stats};
 
@@ -16,7 +16,7 @@ pub fn win_get_processor_count() -> u32 {
     return system_info.dwNumberOfProcessors;
 }
 
-pub fn win_get_cpu_usage(pid: usize, last_time: u64, node: TreeNode) -> u64 {
+pub fn win_get_cpu_usage(pid: PID, last_time: u64, node: TreeNode) -> u64 {
     let processor_count = win_get_processor_count() as u64;
     let stats = win_get_process_stats(pid);
     if stats.len() == 0 {

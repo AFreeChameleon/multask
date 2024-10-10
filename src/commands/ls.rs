@@ -87,7 +87,7 @@ pub fn setup_table(
             continue;
         }
         let mut process_headers = process_headers_opt.unwrap();
-        let process_tree = get_all_processes(command.pid);
+        let process_tree = get_all_processes(command.pid, task.to_owned());
         let mut all_processes = vec![];
         compress_tree(&process_tree, &mut all_processes);
         if all_processes.len() > 1 {
@@ -155,18 +155,18 @@ fn get_process_headers(
 #[cfg(target_os = "windows")]
 fn win_get_process_headers(
     pid: PID,
-    _starttime: u32,
+    _starttime: u64,
     task: &Task,
     is_main_process: bool,
 ) -> Option<ProcessHeaders> {
-    use std::ffi::OsString;
+    use std::{ffi::OsString, os::windows::ffi::OsStrExt};
     use mult_lib::{
         windows::proc::{win_get_memory_usage, win_get_process_runtime, win_get_process_stats},
     };
     use windows_sys::Win32::{
         Foundation::GetLastError,
         System::{
-            JobObjects::IsProcessInJob,
+            JobObjects::{IsProcessInJob, OpenJobObjectW},
             Threading::{OpenProcess, PROCESS_QUERY_INFORMATION},
         },
     };
@@ -206,13 +206,13 @@ fn win_get_process_headers(
         Ok(val) => val,
         Err(_) => return None,
     };
-    if let Some(stats) = usage_stats.get(&(pid as usize)) {
+    if let Some(stats) = usage_stats.get(&pid) {
         cpu_usage = (stats.cpu_usage * 100.0).round() / 100.0;
     }
 
     Some(ProcessHeaders {
         pid: pid.to_string(),
-        memory: win_get_memory_usage(&(pid as usize)),
+        memory: win_get_memory_usage(&pid),
         cpu: format!("{}%", cpu_usage),
         runtime: get_readable_runtime(win_get_process_runtime(proc_stats[2].parse().unwrap())),
         status: color_string(OK_GREEN, "Running").to_string(),
@@ -330,7 +330,7 @@ fn bsd_get_process_headers(
     })
 }
 
-fn get_all_processes(pid: PID) -> TreeNode {
+fn get_all_processes(pid: PID, _task: Task) -> TreeNode {
     let process_tree;
     #[cfg(target_os = "linux")] {
         use mult_lib::linux::proc::linux_get_all_processes;
@@ -345,7 +345,7 @@ fn get_all_processes(pid: PID) -> TreeNode {
         process_tree = macos_get_all_processes(pid);
     }
     #[cfg(target_os = "windows")] {
-        use std::ffi::OsString;
+        use std::{ffi::OsString, os::windows::ffi::OsStrExt};
         use mult_lib::windows::proc::win_get_all_processes;
         use windows_sys::Win32::System::JobObjects::OpenJobObjectW;
         process_tree = win_get_all_processes(
@@ -353,8 +353,8 @@ fn get_all_processes(pid: PID) -> TreeNode {
                 OpenJobObjectW(
                     0x1F001F, // JOB_OBJECT_ALL_ACCESS
                     0,
-                    OsString::from(format!("Global\\mult-{}", task.id))
-                    .encode_wide().chain(Some(0)).collect::<Vec<u16>>().as_ptr() as *const u16,
+                    OsString::from(format!("Global\\mult-{}", _task.id))
+                        .encode_wide().chain(Some(0)).collect::<Vec<u16>>().as_ptr() as *const u16,
                 )
             },
             pid,
