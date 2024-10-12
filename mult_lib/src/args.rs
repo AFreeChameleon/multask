@@ -65,9 +65,59 @@ pub fn parse_args(
     Ok(parsed_args)
 }
 
+
+pub fn parse_string_to_bytes(val: String) -> Option<u64> {
+    let chars = val.chars();
+    let mut number_str = String::new();
+    let mut factor_str = String::new();
+    for char in chars {
+        if char.is_numeric() && factor_str == String::new() {
+            number_str.push(char);
+        } else {
+            factor_str.push(char);
+        }
+    }
+    let number: u64 = number_str.parse().unwrap();
+    if factor_str.len() > 2 {
+        return None;
+    }
+    if factor_str == "B" {
+        return Some(number);
+    }
+    let mut multiplier = match factor_str.to_lowercase().chars().nth(0) {
+        Some('b') => { return Some(number / 8) },
+        Some('k') => 1000,
+        Some('m') => 1e+6 as u64,
+        Some('g') => 1e+9 as u64,
+        Some('t') => 1e+12 as u64,
+        _ => { return None }
+    };
+    multiplier *= match factor_str.chars().nth(1) {
+        Some('b') => 8,
+        Some('B') => 1,
+        _ => { return None }
+    };
+
+    return Some(number as u64 * multiplier);
+}
+
 #[cfg(test)]
 mod tests {
+    use crate::args::parse_string_to_bytes;
+
     use super::parse_args;
+
+    #[test]
+    fn parses_valid_string_to_bytes() {
+        let gb_string = String::from("12Gb");
+        let gbytes_string = String::from("12GB");
+        let mbytes_string = String::from("12mB");
+        let bytes_string = String::from("12B");
+        assert_eq!((12e+9 * 8.0) as u64, parse_string_to_bytes(gb_string).unwrap());
+        assert_eq!(12e+9 as u64, parse_string_to_bytes(gbytes_string).unwrap());
+        assert_eq!(12e+6 as u64, parse_string_to_bytes(mbytes_string).unwrap());
+        assert_eq!(12, parse_string_to_bytes(bytes_string).unwrap());
+    }
 
     #[test]
     fn parses_args_allow_values() {
