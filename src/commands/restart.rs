@@ -89,6 +89,11 @@ fn get_flag_values(parsed_args: &ParsedArgs) -> Result<ForkFlagTuple, MultErrorT
                 }
                 Ok(val) => val,
             };
+            if memory_limit < 1 {
+                return Err((MultError::InvalidArgument, Some(
+                    format!("{} value must be over 1", CPU_LIMIT_FLAG.to_string())
+                )));
+            }
         }
     }
     let mut cpu_limit: i32 = -1;
