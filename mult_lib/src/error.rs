@@ -34,7 +34,7 @@ pub enum MultError {
     SetSidFailed,
     CgroupsMissing,
     // Unix only
-    UnixError
+    UnixError,
 }
 
 const RUN_FIX_TEXT: &str = "Try running `mlt health --fix-all` to fix this.";

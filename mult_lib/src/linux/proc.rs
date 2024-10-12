@@ -4,21 +4,20 @@ use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH, Duration};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use crate::proc::{get_readable_memory, PID, save_usage_stats, UsageStats, save_task_processes};
+use crate::proc::{get_readable_memory, save_task_processes, save_usage_stats, UsageStats, PID};
 use crate::task::Files;
-use crate::tree::{search_tree, compress_tree};
+use crate::tree::{compress_tree, search_tree};
 use crate::unix::proc::{unix_kill_process, unix_proc_exists};
 use crate::{
     error::{MultError, MultErrorTuple},
     tree::TreeNode,
 };
 
-use super::cpu::{linux_get_cpu_usage, linux_get_cpu_time_total};
-
+use super::cpu::{linux_get_cpu_time_total, linux_get_cpu_usage};
 
 pub fn linux_get_proc_name(pid: PID) -> Result<String, MultErrorTuple> {
     let mut proc_name = String::new();
@@ -254,4 +253,3 @@ pub fn linux_monitor_stats(pid: PID, files: Files) {
         save_usage_stats(&files.process_dir, &usage_stats.lock().unwrap());
     }
 }
-

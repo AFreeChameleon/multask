@@ -11,7 +11,6 @@ use std::{
     time::Duration,
 };
 use std::{
-    ptr,
     env,
     fs::File,
     io::{BufRead, BufReader, Write},
@@ -19,16 +18,16 @@ use std::{
     path::Path,
     process,
     process::{Command, Stdio},
-    thread,
+    ptr, thread,
     time::{SystemTime, UNIX_EPOCH},
 };
 use windows_sys::Win32::Foundation::GetLastError;
 use windows_sys::Win32::System::JobObjects::{
-    AssignProcessToJobObject, CreateJobObjectW,
-    JobObjectCpuRateControlInformation, JobObjectExtendedLimitInformation,
-    SetInformationJobObject, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION,
-    JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-    JOB_OBJECT_CPU_RATE_CONTROL_ENABLE, JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP,
+    AssignProcessToJobObject, CreateJobObjectW, JobObjectCpuRateControlInformation,
+    JobObjectExtendedLimitInformation, SetInformationJobObject,
+    JOBOBJECT_CPU_RATE_CONTROL_INFORMATION, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0,
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_CPU_RATE_CONTROL_ENABLE,
+    JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP,
 };
 use windows_sys::Win32::System::ProcessStatus::GetProcessImageFileNameW;
 
@@ -59,7 +58,9 @@ fn main() -> Result<(), MultErrorTuple> {
     let cpu_limit = &args[5];
 
     let job_name: Vec<u16> = OsString::from(format!("Global\\mult-{}", task_id))
-        .encode_wide().chain(Some(0)).collect();
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
     let job_handle = create_job(
         job_name.as_ptr() as *mut u16,
         mem_limit.parse().unwrap(),

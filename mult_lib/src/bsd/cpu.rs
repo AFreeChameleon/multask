@@ -1,26 +1,29 @@
 #![cfg(target_os = "freebsd")]
 
+use crate::bsd::proc::bsd_get_all_processes;
+use crate::proc::PID;
+use crate::tree::{search_tree, TreeNode};
+use crate::unix::proc::MILS_IN_SECOND;
+use std::ffi::{c_void, CString};
 use std::mem;
 use std::ptr;
 use std::thread;
-use std::ffi::{c_void, CString};
 use std::time::Duration;
-use crate::bsd::proc::bsd_get_all_processes;
-use crate::tree::{search_tree, TreeNode};
-use crate::proc::PID;
-use crate::unix::proc::MILS_IN_SECOND;
 
 pub fn bsd_get_cpu_usage(stats: libc::kinfo_proc) -> f32 {
     let mut kernel_f_scale: u32 = 0;
     let mut len = mem::size_of::<u32>();
     let param = CString::new("kern.fscale").unwrap();
-    if unsafe { libc::sysctlbyname(
-        param.as_ptr() as *const i8,
-        &mut kernel_f_scale as *mut _ as *mut c_void,
-        &mut len as *mut usize,
-        ptr::null(),
-        0
-    ) } == -1 {
+    if unsafe {
+        libc::sysctlbyname(
+            param.as_ptr() as *const i8,
+            &mut kernel_f_scale as *mut _ as *mut c_void,
+            &mut len as *mut usize,
+            ptr::null(),
+            0,
+        )
+    } == -1
+    {
         // htop says so
         kernel_f_scale = 2048;
     }

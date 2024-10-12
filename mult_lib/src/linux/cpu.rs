@@ -3,12 +3,12 @@ use std::{thread, time::Duration};
 
 use libc;
 
+use crate::proc::PID;
+use crate::unix::proc::MILS_IN_SECOND;
 use crate::{
     linux::proc::{linux_get_all_processes, linux_get_cpu_stats, linux_get_process_stats},
     tree::{search_tree, TreeNode},
 };
-use crate::proc::PID;
-use crate::unix::proc::MILS_IN_SECOND;
 
 pub fn linux_split_limit_cpu(pid: PID, limit: f32) {
     let running_time = MILS_IN_SECOND * (limit / 100.0);

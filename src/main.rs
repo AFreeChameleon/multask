@@ -1,7 +1,5 @@
 use commands::{create, delete, health, help, logs, ls, restart, start, stop};
-use mult_lib::{
-    error::{print_error, MultError},
-};
+use mult_lib::error::{print_error, MultError};
 use std::env::args;
 
 mod commands;
@@ -9,7 +7,8 @@ mod commands;
 const NO_MODE_TEXT: &str = "No mode given.\n
 For a full list of commands: mlt help";
 fn main() {
-    #[cfg(target_family = "windows")] {
+    #[cfg(target_family = "windows")]
+    {
         use mult_lib::colors::set_virtual_terminal;
         set_virtual_terminal(true).unwrap();
     }

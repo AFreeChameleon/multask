@@ -3,19 +3,17 @@ use std::mem;
 use std::thread;
 use std::time::Duration;
 
-use crate::proc::PID;
-use crate::tree::{TreeNode, search_tree};
-use crate::unix::proc::MILS_IN_SECOND;
 use crate::macos::proc::macos_get_all_processes;
+use crate::proc::PID;
+use crate::tree::{search_tree, TreeNode};
+use crate::unix::proc::MILS_IN_SECOND;
 
 use super::proc::macos_get_all_process_stats;
 
 const TIME_INTERVAL: f32 = 1E+9;
 
 fn calc_nanoseconds_per_mach_tick() -> u32 {
-    let mut info: libc::mach_timebase_info_data_t = unsafe {
-        mem::zeroed()
-    };
+    let mut info: libc::mach_timebase_info_data_t = unsafe { mem::zeroed() };
     unsafe { libc::mach_timebase_info(&mut info) };
     return info.numer / info.denom;
 }

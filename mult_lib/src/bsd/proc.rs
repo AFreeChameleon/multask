@@ -1,31 +1,34 @@
 #![cfg(target_os = "freebsd")]
 
-use std::{ptr, ffi::CString};
-use std::time::{UNIX_EPOCH, SystemTime, Duration};
-use std::thread;
+use crate::bsd::cpu::bsd_get_cpu_usage;
+use crate::error::MultErrorTuple;
+use crate::proc::{get_readable_memory, save_task_processes, save_usage_stats, UsageStats, PID};
+use crate::task::Files;
+use crate::tree::{compress_tree, search_tree, TreeNode};
+use crate::unix::proc::unix_kill_process;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use crate::proc::{get_readable_memory, PID, save_usage_stats, UsageStats, save_task_processes};
-use crate::tree::{compress_tree, TreeNode, search_tree};
-use crate::error::MultErrorTuple;
-use crate::unix::proc::unix_kill_process;
-use crate::task::Files;
-use crate::bsd::cpu::bsd_get_cpu_usage;
+use std::thread;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{ffi::CString, ptr};
 
 pub fn bsd_get_process_stats(pid: PID) -> Option<libc::kinfo_proc> {
     let mut errbuf: [i8; 1024] = [0; 1024];
     let dev_null = CString::new("/dev/null").unwrap();
-    let kd = unsafe { libc::kvm_openfiles(
-        ptr::null(), dev_null.as_ptr() as *const i8, ptr::null(),
-        libc::O_RDONLY, &mut errbuf as *mut i8
-    ) };
+    let kd = unsafe {
+        libc::kvm_openfiles(
+            ptr::null(),
+            dev_null.as_ptr() as *const i8,
+            ptr::null(),
+            libc::O_RDONLY,
+            &mut errbuf as *mut i8,
+        )
+    };
     if kd.is_null() {
         return None;
     }
     let mut num_procs = -1;
-    let procs = unsafe {
-        libc::kvm_getprocs(kd, libc::KERN_PROC_PID, pid, &mut num_procs)
-    };
+    let procs = unsafe { libc::kvm_getprocs(kd, libc::KERN_PROC_PID, pid, &mut num_procs) };
     if procs.is_null() || unsafe { (*procs).ki_stat == libc::SZOMB } {
         return None;
     }
@@ -35,17 +38,20 @@ pub fn bsd_get_process_stats(pid: PID) -> Option<libc::kinfo_proc> {
 fn bsd_get_child_processes(ppid: PID) -> Option<Vec<libc::kinfo_proc>> {
     let mut errbuf: [i8; 1024] = [0; 1024];
     let dev_null = CString::new("/dev/null").unwrap();
-    let kd = unsafe { libc::kvm_openfiles(
-        ptr::null(), dev_null.as_ptr() as *const i8, ptr::null(),
-        libc::O_RDONLY, &mut errbuf as *mut i8
-    ) };
+    let kd = unsafe {
+        libc::kvm_openfiles(
+            ptr::null(),
+            dev_null.as_ptr() as *const i8,
+            ptr::null(),
+            libc::O_RDONLY,
+            &mut errbuf as *mut i8,
+        )
+    };
     if kd.is_null() {
         return None;
     }
     let mut num_procs: i32 = 0;
-    let procs = unsafe {
-        libc::kvm_getprocs(kd, libc::KERN_PROC_PROC, 0, &mut num_procs)
-    };
+    let procs = unsafe { libc::kvm_getprocs(kd, libc::KERN_PROC_PROC, 0, &mut num_procs) };
     if procs.is_null() || num_procs < 0 {
         return None;
     }
@@ -69,7 +75,7 @@ pub fn bsd_get_all_processes(pid: PID) -> TreeNode {
         pid,
         utime: 0,
         stime: 0,
-        children: Vec::new()
+        children: Vec::new(),
     };
     bsd_get_process(&mut head_node);
     head_node
@@ -145,12 +151,10 @@ pub fn bsd_monitor_stats(pid: PID, files: Files) {
                 if stats.is_some() {
                     cpu_usage = bsd_get_cpu_usage(stats.unwrap());
                 }
-                usage_stats.lock().unwrap().insert(
-                    node.pid,
-                    UsageStats {
-                        cpu_usage
-                    },
-                );
+                usage_stats
+                    .lock()
+                    .unwrap()
+                    .insert(node.pid, UsageStats { cpu_usage });
             }
         });
         if !*keep_running.lock().unwrap() {
@@ -161,5 +165,13 @@ pub fn bsd_monitor_stats(pid: PID, files: Files) {
 }
 
 pub fn bsd_get_proc_name(proc_stats: libc::kinfo_procs) -> String {
-    return String::from_utf8(proc_stats.unwrap().ki_comm.iter().map(|&c| c as u8).collect()).unwrap();
+    return String::from_utf8(
+        proc_stats
+            .unwrap()
+            .ki_comm
+            .iter()
+            .map(|&c| c as u8)
+            .collect(),
+    )
+    .unwrap();
 }

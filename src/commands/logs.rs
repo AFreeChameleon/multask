@@ -34,7 +34,7 @@ pub fn run() -> Result<(), MultErrorTuple> {
         .join(".multi-tasker")
         .join("processes")
         .join(task_id.to_string());
-    
+
     let out_file_path = file_path.join("stdout.out");
     let err_file_path = file_path.join("stderr.err");
 
@@ -51,7 +51,9 @@ pub fn run() -> Result<(), MultErrorTuple> {
     print_info(&format!("Printing the last {} lines of logs.", last_lines_to_print).to_string());
     let start_idx = if sorted_lines.len() < last_lines_to_print {
         0
-    } else { sorted_lines.len() - last_lines_to_print };
+    } else {
+        sorted_lines.len() - last_lines_to_print
+    };
     for i in start_idx..sorted_lines.len() {
         print!("{}", sorted_lines[i].content);
     }

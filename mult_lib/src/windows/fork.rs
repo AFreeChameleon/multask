@@ -3,11 +3,21 @@
 use crate::{
     command::MemStats,
     error::{print_error, MultError, MultErrorTuple},
-    task::Files
+    task::Files,
 };
-use windows_sys::Win32::{Foundation::GetLastError, System::Threading::{CreateProcessW, CREATE_BREAKAWAY_FROM_JOB, CREATE_NO_WINDOW, DETACHED_PROCESS, STARTUPINFOEXW}};
 use std::{
-    env, ffi::{c_void, OsString}, os::windows::ffi::OsStrExt, path::Path, ptr
+    env,
+    ffi::{c_void, OsString},
+    os::windows::ffi::OsStrExt,
+    path::Path,
+    ptr,
+};
+use windows_sys::Win32::{
+    Foundation::GetLastError,
+    System::Threading::{
+        CreateProcessW, CREATE_BREAKAWAY_FROM_JOB, CREATE_NO_WINDOW, DETACHED_PROCESS,
+        STARTUPINFOEXW,
+    },
 };
 
 pub fn cast_to_c_void<T>(var: &mut T) -> *mut c_void {
@@ -30,7 +40,10 @@ pub fn run_daemon(
             task_id,
             flags.memory_limit,
             flags.cpu_limit
-        )).encode_wide().chain(Some(0)).collect();
+        ))
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
         unsafe {
             let mut process_info = std::mem::zeroed();
             let mut si: STARTUPINFOEXW = std::mem::zeroed();
@@ -57,4 +70,3 @@ pub fn run_daemon(
     }
     Ok(())
 }
-
