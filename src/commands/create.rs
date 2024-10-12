@@ -1,6 +1,6 @@
 use std::env;
 
-use mult_lib::args::{parse_args, ParsedArgs};
+use mult_lib::args::{parse_args, parse_string_to_bytes, ParsedArgs};
 use mult_lib::error::{print_info, print_success, MultError, MultErrorTuple};
 use mult_lib::proc::ForkFlagTuple;
 use mult_lib::task::{Task, TaskManager};
@@ -50,14 +50,19 @@ fn get_flag_values(parsed_args: &ParsedArgs) -> Result<ForkFlagTuple, MultErrorT
         .find(|(flag, _)| flag == MEMORY_LIMIT_FLAG)
     {
         if memory_limit_flag.1.is_some() {
-            memory_limit = match memory_limit_flag.1.unwrap().parse::<i64>() {
-                Err(_) => {
+            memory_limit = match parse_string_to_bytes(memory_limit_flag.1.unwrap()) {
+                None => {
                     return Err((
                         MultError::InvalidArgument,
-                        Some(MEMORY_LIMIT_FLAG.to_string()),
+                        Some(
+                            format!(
+                                "{} value must have a valid format (B, kB, mB, gB) at the end",
+                                MEMORY_LIMIT_FLAG.to_string()
+                            )
+                        ),
                     ))
                 }
-                Ok(val) => val,
+                Some(val) => val,
             };
             if memory_limit < 1 {
                 return Err((MultError::InvalidArgument, Some(

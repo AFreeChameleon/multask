@@ -66,7 +66,7 @@ pub fn parse_args(
 }
 
 
-pub fn parse_string_to_bytes(val: String) -> Option<u64> {
+pub fn parse_string_to_bytes(val: String) -> Option<i64> {
     let chars = val.chars();
     let mut number_str = String::new();
     let mut factor_str = String::new();
@@ -77,7 +77,7 @@ pub fn parse_string_to_bytes(val: String) -> Option<u64> {
             factor_str.push(char);
         }
     }
-    let number: u64 = number_str.parse().unwrap();
+    let number: i64 = number_str.parse().unwrap();
     if factor_str.len() > 2 {
         return None;
     }
@@ -87,9 +87,9 @@ pub fn parse_string_to_bytes(val: String) -> Option<u64> {
     let mut multiplier = match factor_str.to_lowercase().chars().nth(0) {
         Some('b') => { return Some(number / 8) },
         Some('k') => 1000,
-        Some('m') => 1e+6 as u64,
-        Some('g') => 1e+9 as u64,
-        Some('t') => 1e+12 as u64,
+        Some('m') => 1e+6 as i64,
+        Some('g') => 1e+9 as i64,
+        Some('t') => 1e+12 as i64,
         _ => { return None }
     };
     multiplier *= match factor_str.chars().nth(1) {
@@ -98,7 +98,7 @@ pub fn parse_string_to_bytes(val: String) -> Option<u64> {
         _ => { return None }
     };
 
-    return Some(number as u64 * multiplier);
+    return Some(number as i64 * multiplier);
 }
 
 #[cfg(test)]
@@ -108,15 +108,17 @@ mod tests {
     use super::parse_args;
 
     #[test]
-    fn parses_valid_string_to_bytes() {
+    fn parses_strings_to_bytes() {
         let gb_string = String::from("12Gb");
         let gbytes_string = String::from("12GB");
         let mbytes_string = String::from("12mB");
         let bytes_string = String::from("12B");
-        assert_eq!((12e+9 * 8.0) as u64, parse_string_to_bytes(gb_string).unwrap());
-        assert_eq!(12e+9 as u64, parse_string_to_bytes(gbytes_string).unwrap());
-        assert_eq!(12e+6 as u64, parse_string_to_bytes(mbytes_string).unwrap());
+        let invalid_string = String::from("12LB");
+        assert_eq!((12e+9 * 8.0) as i64, parse_string_to_bytes(gb_string).unwrap());
+        assert_eq!(12e+9 as i64, parse_string_to_bytes(gbytes_string).unwrap());
+        assert_eq!(12e+6 as i64, parse_string_to_bytes(mbytes_string).unwrap());
         assert_eq!(12, parse_string_to_bytes(bytes_string).unwrap());
+        assert_eq!(None, parse_string_to_bytes(invalid_string));
     }
 
     #[test]
