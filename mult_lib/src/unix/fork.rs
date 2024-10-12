@@ -5,7 +5,7 @@ use std::{
     env, fs::File, io::{BufRead, BufReader, Write}, path::Path, process::{Child, Command, Stdio}, ptr, thread, time::{SystemTime, UNIX_EPOCH}
 };
 
-use crate::{command::{CommandData, CommandManager, MemStats}, unix::proc::unix_get_error_code};
+use crate::{command::{CommandData, CommandManager}, proc::ForkFlagTuple, unix::proc::unix_get_error_code};
 use crate::task::Files;
 use crate::{
     error::{print_info, MultError, MultErrorTuple},
@@ -34,39 +34,44 @@ macro_rules! spawn_logger {
 
 const SUPPORTED_SHELLS: [&str; 3] = ["/sh", "/bash", "/zsh"];
 
-pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), MultErrorTuple> {
-    //let process_id;
-    //let sid;
-    //unsafe {
-    //    process_id = libc::fork();
-    //}
-    //// Fork failed
-    //if process_id < 0 {
-    //    return Err((MultError::ForkFailed, None));
-    //}
-    //// Parent process - need to kill it
-    //if process_id > 0 {
-    //    print_info(&format!("Process id of child process {}", process_id));
-    //    return Ok(());
-    //}
-    //// Creates grandchild process to orphan it so no zombie processes are made
-    //if unsafe { libc::fork() } > 0 {
-    //    unsafe { libc::_exit(0) };
-    //}
-    //close_std_handles();
-    //unsafe {
-    //    libc::umask(0);
-    //    sid = libc::setsid();
-    //}
-    //if sid < 0 {
-    //    return Err((MultError::SetSidFailed, None));
-    //}
+pub fn run_daemon(
+    files: Files,
+    command: String,
+    stats: ForkFlagTuple
+) -> Result<(), MultErrorTuple> {
+    let (memory_limit, cpu_limit, interactive) = stats;
+    let process_id;
+    let sid;
+    unsafe {
+        process_id = libc::fork();
+    }
+    // Fork failed
+    if process_id < 0 {
+        return Err((MultError::ForkFailed, None));
+    }
+    // Parent process - need to kill it
+    if process_id > 0 {
+        print_info(&format!("Process id of child process {}", process_id));
+        return Ok(());
+    }
+    // Creates grandchild process to orphan it so no zombie processes are made
+    if unsafe { libc::fork() } > 0 {
+        unsafe { libc::_exit(0) };
+    }
+    close_std_handles();
+    unsafe {
+        libc::umask(0);
+        sid = libc::setsid();
+    }
+    if sid < 0 {
+        return Err((MultError::SetSidFailed, None));
+    }
     // Do daemon stuff here
-    let child = run_command(&command, &files.process_dir)?;
-    if stats.memory_limit > -1 {
+    let child = run_command(&command, &files.process_dir, interactive)?;
+    if memory_limit > -1 {
         let memory_limit = libc::rlimit {
-            rlim_cur: stats.memory_limit as _,
-            rlim_max: stats.memory_limit as _,
+            rlim_cur: memory_limit as _,
+            rlim_max: memory_limit as _,
         };
         unsafe {
             libc::syscall(
@@ -78,10 +83,10 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
             );
         }
     }
-    if stats.cpu_limit > -1 {
+    if cpu_limit > -1 {
         let child_id = child.id();
         thread::spawn(move || {
-            split_limit_cpu(child_id as PID, stats.cpu_limit as f32);
+            split_limit_cpu(child_id as PID, cpu_limit as f32);
         });
     }
 
@@ -117,7 +122,7 @@ fn close_std_handles() {
     }
 }
 
-fn run_command(command: &str, process_dir: &Path) -> Result<Child, MultErrorTuple> {
+fn run_command(command: &str, process_dir: &Path, interactive: bool) -> Result<Child, MultErrorTuple> {
     let shell_path = match env::var("SHELL") {
         Ok(val) => {
             if SUPPORTED_SHELLS
@@ -132,8 +137,9 @@ fn run_command(command: &str, process_dir: &Path) -> Result<Child, MultErrorTupl
         }
         Err(_) => return Err((MultError::OSNotSupported, None)),
     };
+    let args = if interactive { "-ic" } else { "-c" };
     let mut child = Command::new(shell_path)
-        .args(["-c", &command])
+        .args([args, &command])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()

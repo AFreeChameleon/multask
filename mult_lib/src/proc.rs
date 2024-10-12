@@ -24,6 +24,8 @@ pub struct UsageStats {
     pub cpu_usage: f32,
 }
 
+pub type ForkFlagTuple = (i64, i32, bool);
+
 pub fn get_proc_name(pid: PID) -> Result<String, MultErrorTuple> {
     #[cfg(target_os = "linux")] {
         use crate::linux::proc::linux_get_proc_name;

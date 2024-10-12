@@ -1,19 +1,24 @@
 use std::env;
 
 use mult_lib::args::{parse_args, ParsedArgs};
-use mult_lib::command::{CommandManager, MemStats};
+use mult_lib::command::CommandManager;
 use mult_lib::error::{print_success, MultError, MultErrorTuple};
-use mult_lib::proc::proc_exists;
+use mult_lib::proc::{proc_exists, ForkFlagTuple};
 use mult_lib::task::TaskManager;
 
 const MEMORY_LIMIT_FLAG: &str = "-m";
 const CPU_LIMIT_FLAG: &str = "-c";
-const FLAGS: [(&str, bool); 2] = [(MEMORY_LIMIT_FLAG, true), (CPU_LIMIT_FLAG, true)];
+const INTERACTIVE_FLAG: &str = "-i";
+const FLAGS: [(&str, bool); 3] = [
+    (MEMORY_LIMIT_FLAG, true),
+    (CPU_LIMIT_FLAG, true),
+    (INTERACTIVE_FLAG, false)
+];
 
 pub fn run() -> Result<(), MultErrorTuple> {
     let args = env::args();
     let parsed_args = parse_args(&args.collect::<Vec<String>>()[2..], &FLAGS, true)?;
-    let flags: MemStats = get_flag_values(&parsed_args)?;
+    let flags = get_flag_values(&parsed_args)?;
     let tasks = TaskManager::get_tasks()?;
     for arg in parsed_args.values.iter() {
         let task_id: u32 = TaskManager::parse_arg(Some(arg.to_string()))?;
@@ -41,7 +46,7 @@ pub fn run() -> Result<(), MultErrorTuple> {
     Ok(())
 }
 
-fn get_flag_values(parsed_args: &ParsedArgs) -> Result<MemStats, MultErrorTuple> {
+fn get_flag_values(parsed_args: &ParsedArgs) -> Result<ForkFlagTuple, MultErrorTuple> {
     let mut memory_limit: i64 = -1;
     if let Some(memory_limit_flag) = parsed_args
         .value_flags
@@ -82,8 +87,10 @@ fn get_flag_values(parsed_args: &ParsedArgs) -> Result<MemStats, MultErrorTuple>
             }
         }
     }
-    Ok(MemStats {
+    let interactive = parsed_args.flags.contains(&INTERACTIVE_FLAG.to_owned());
+    Ok((
         memory_limit,
         cpu_limit,
-    })
+        interactive
+    ))
 }
