@@ -83,6 +83,7 @@ pub fn run_daemon(
             rlim_cur: memory_limit as _,
             rlim_max: memory_limit as _,
         };
+        #[cfg(target_os = "linux")]
         unsafe {
             libc::syscall(
                 libc::SYS_prlimit64,
@@ -90,6 +91,13 @@ pub fn run_daemon(
                 libc::RLIMIT_AS,
                 &memory_limit,
                 ptr::null::<libc::rlimit>(),
+            );
+        }
+        #[cfg(not(target_os = "linux"))]
+        unsafe {
+            libc::setrlimit(
+                libc::RLIMIT_RSS,
+                &memory_limit
             );
         }
     }
