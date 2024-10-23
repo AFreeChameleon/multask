@@ -86,7 +86,7 @@ pub fn setup_table(
         let mut main_headers = MainHeaders {
             id: task.id,
             command: command.command.clone(),
-            dir: last_dirs
+            dir: last_dirs,
         };
         // Get memory stats
         let process_headers_opt = get_process_headers(command.pid, command.starttime, &task, true);

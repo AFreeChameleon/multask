@@ -1,7 +1,9 @@
 #![cfg(target_family = "windows")]
 
 use crate::{
-    error::{print_error, print_warning, MultError, MultErrorTuple}, proc::ForkFlagTuple, task::Files
+    error::{print_error, print_warning, MultError, MultErrorTuple},
+    proc::ForkFlagTuple,
+    task::Files,
 };
 use std::{
     env,

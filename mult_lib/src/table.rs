@@ -5,7 +5,7 @@ use crate::colors::{color_string, ERR_RED};
 pub struct MainHeaders {
     pub id: u32,
     pub command: String,
-    pub dir: String
+    pub dir: String,
 }
 
 pub struct ProcessHeaders {

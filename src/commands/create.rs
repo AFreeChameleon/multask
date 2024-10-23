@@ -2,8 +2,7 @@ use std::env;
 
 use home::home_dir;
 use mult_lib::args::{
-    get_fork_flag_values, parse_args, CPU_LIMIT_FLAG,
-    INTERACTIVE_FLAG, MEMORY_LIMIT_FLAG,
+    get_fork_flag_values, parse_args, CPU_LIMIT_FLAG, INTERACTIVE_FLAG, MEMORY_LIMIT_FLAG,
 };
 use mult_lib::command::CommandData;
 use mult_lib::error::{print_info, print_success, MultErrorTuple};
@@ -35,13 +34,17 @@ pub fn run() -> Result<(), MultErrorTuple> {
         #[cfg(target_family = "unix")]
         {
             use mult_lib::unix::fork;
-            fork::run_daemon(files, CommandData {
-                pid: 0,
-                command: arg.to_string(),
-                dir: current_dir.display().to_string(),
-                name: String::new(),
-                starttime: 0
-            }, flags.clone())?;
+            fork::run_daemon(
+                files,
+                CommandData {
+                    pid: 0,
+                    command: arg.to_string(),
+                    dir: current_dir.display().to_string(),
+                    name: String::new(),
+                    starttime: 0,
+                },
+                flags.clone(),
+            )?;
         }
         #[cfg(target_family = "windows")]
         {

@@ -1,8 +1,7 @@
 use std::env;
 
 use mult_lib::args::{
-    get_fork_flag_values, parse_args, CPU_LIMIT_FLAG,
-    INTERACTIVE_FLAG, MEMORY_LIMIT_FLAG,
+    get_fork_flag_values, parse_args, CPU_LIMIT_FLAG, INTERACTIVE_FLAG, MEMORY_LIMIT_FLAG,
 };
 use mult_lib::command::CommandManager;
 use mult_lib::error::{print_info, print_success, MultErrorTuple};

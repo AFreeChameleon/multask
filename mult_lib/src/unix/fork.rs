@@ -1,7 +1,12 @@
 #![cfg(target_family = "unix")]
-use libc::{self, O_RDWR, O_WRONLY};
 use std::{
-    env, ffi::{c_char, c_int, CString}, fs::File, io::{BufRead, BufReader, Write}, path::Path, process::{Child, Command, Stdio}, ptr, thread, time::{SystemTime, UNIX_EPOCH}
+    env,
+    fs::File,
+    io::{BufRead, BufReader, Write},
+    path::Path,
+    process::{Child, Command, Stdio},
+    thread,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use crate::task::Files;
@@ -88,10 +93,7 @@ pub fn run_daemon(
         }
         #[cfg(not(target_os = "linux"))]
         unsafe {
-            libc::setrlimit(
-                libc::RLIMIT_RSS,
-                &memory_limit
-            );
+            libc::setrlimit(libc::RLIMIT_RSS, &memory_limit);
         }
     }
     if cpu_limit > -1 {
@@ -136,11 +138,6 @@ fn close_std_handles() {
             }
         }
     }
-    //unsafe { 
-    //libc::open("/dev/null".as_ptr() as *const _, libc::O_RDWR);
-    //libc::dup(0);
-    //libc::dup(0);
-    //}
 }
 
 fn run_command(
