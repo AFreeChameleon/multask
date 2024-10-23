@@ -3,6 +3,7 @@ use mult_lib::colors::{color_string, OK_GREEN};
 use mult_lib::proc::{get_proc_comm, proc_exists};
 use mult_lib::tree::{compress_tree, TreeNode};
 use prettytable::Table;
+use std::path::Path;
 use std::{env, thread, time::Duration};
 
 use mult_lib::command::CommandManager;
@@ -75,9 +76,17 @@ pub fn setup_table(
             Ok(result) => result,
             Err(err) => return Err(err),
         };
+        let mut command_path = Path::new(&command.dir).iter().rev();
+        let mut last_dirs = String::new();
+        for _ in 0..2 {
+            if let Some(p) = command_path.next() {
+                last_dirs.insert_str(0, &format!("/{}", &p.to_owned().into_string().unwrap()));
+            }
+        }
         let mut main_headers = MainHeaders {
             id: task.id,
             command: command.command.clone(),
+            dir: last_dirs
         };
         // Get memory stats
         let process_headers_opt = get_process_headers(command.pid, command.starttime, &task, true);
@@ -281,7 +290,7 @@ fn macos_get_process_headers(
     }
     Some(ProcessHeaders {
         pid: pid.to_string(),
-        memory: get_readable_memory(proc_stats.ptinfo.pti_virtual_size as f64),
+        memory: get_readable_memory(proc_stats.ptinfo.pti_resident_size as f64),
         cpu: format!("{}%", cpu_usage),
         runtime: get_readable_runtime(macos_get_runtime(proc_stats.pbsd.pbi_start_tvsec) as u64),
         status: color_string(OK_GREEN, "Running").to_string(),

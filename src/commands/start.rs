@@ -28,13 +28,11 @@ pub fn run() -> Result<(), MultErrorTuple> {
         if proc_exists(command_data.pid) {
             return Err((MultError::ProcessAlreadyRunning, None));
         }
-        let current_dir = env::current_dir().unwrap();
-        env::set_current_dir(&command_data.dir).unwrap();
-
+        println!("{}", command_data.dir);
         #[cfg(target_family = "unix")]
         {
             use mult_lib::unix::fork;
-            fork::run_daemon(files, command_data.command, flags.clone())?;
+            fork::run_daemon(files, command_data, flags.clone())?;
         }
         #[cfg(target_family = "windows")]
         {
@@ -42,7 +40,6 @@ pub fn run() -> Result<(), MultErrorTuple> {
             fork::run_daemon(files, command_data.command, &flags, task_id)?;
         }
 
-        env::set_current_dir(&current_dir).unwrap();
         print_success(&format!("Process {} started.", task_id));
     }
     Ok(())

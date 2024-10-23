@@ -1,5 +1,4 @@
 #![cfg(target_family = "unix")]
-use home::home_dir;
 use libc;
 use std::{
     env,
@@ -46,7 +45,7 @@ const SUPPORTED_SHELLS: [&str; 3] = ["/sh", "/bash", "/zsh"];
 
 pub fn run_daemon(
     files: Files,
-    command: String,
+    command: CommandData,
     stats: ForkFlagTuple,
 ) -> Result<(), MultErrorTuple> {
     let (memory_limit, cpu_limit, interactive) = stats;
@@ -130,7 +129,7 @@ fn close_std_handles() {
     let std_handles;
     #[cfg(target_os = "macos")]
     {
-        std_handles = [libc::STDOUT_FILENO, libc::STDERR_FILENO];
+        std_handles = [libc::STDIN_FILENO, libc::STDOUT_FILENO, libc::STDERR_FILENO];
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -146,7 +145,7 @@ fn close_std_handles() {
 }
 
 fn run_command(
-    command: &str,
+    command: &CommandData,
     process_dir: &Path,
     interactive: bool,
 ) -> Result<Child, MultErrorTuple> {
@@ -169,22 +168,18 @@ fn run_command(
         Err(_) => return Err((MultError::OSNotSupported, None)),
     };
     let mut child = Command::new(shell_path)
-        .args([args, &command])
+        .args([args, &command.command])
+        .current_dir(command.dir.to_string())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .expect("Command has failed.");
 
-    let current_dir = match env::current_dir() {
-        Ok(val) => val,
-        Err(_) => home_dir().unwrap(),
-    };
-
     let child_pid = child.id() as PID;
     let data = get_command_data(
         child_pid,
-        command.to_string(),
-        current_dir.display().to_string(),
+        command.command.to_string(),
+        command.dir.to_string(),
     );
     CommandManager::write_command_data(data?, process_dir);
 

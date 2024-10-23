@@ -65,7 +65,7 @@ pub fn run() -> Result<(), MultErrorTuple> {
         print_info("Restarting process...");
 
         #[cfg(target_family = "unix")]
-        fork::run_daemon(files, command_data.command, flags.clone())?;
+        fork::run_daemon(files, command_data, flags.clone())?;
         #[cfg(target_family = "windows")]
         fork::run_daemon(files, command_data.command, &flags, task_id)?;
 
