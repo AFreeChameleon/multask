@@ -1,13 +1,7 @@
 #![cfg(target_family = "unix")]
-use libc;
+use libc::{self, O_RDWR, O_WRONLY};
 use std::{
-    env,
-    fs::File,
-    io::{BufRead, BufReader, Write},
-    path::Path,
-    process::{Child, Command, Stdio},
-    ptr, thread,
-    time::{SystemTime, UNIX_EPOCH},
+    env, ffi::{c_char, c_int, CString}, fs::File, io::{BufRead, BufReader, Write}, path::Path, process::{Child, Command, Stdio}, ptr, thread, time::{SystemTime, UNIX_EPOCH}
 };
 
 use crate::task::Files;
@@ -142,6 +136,11 @@ fn close_std_handles() {
             }
         }
     }
+    //unsafe { 
+    //libc::open("/dev/null".as_ptr() as *const _, libc::O_RDWR);
+    //libc::dup(0);
+    //libc::dup(0);
+    //}
 }
 
 fn run_command(
@@ -172,6 +171,7 @@ fn run_command(
         .current_dir(command.dir.to_string())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
+        .stdin(Stdio::piped())
         .spawn()
         .expect("Command has failed.");
 
