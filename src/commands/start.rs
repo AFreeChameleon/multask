@@ -28,7 +28,6 @@ pub fn run() -> Result<(), MultErrorTuple> {
         if proc_exists(command_data.pid) {
             return Err((MultError::ProcessAlreadyRunning, None));
         }
-        println!("{}", command_data.dir);
         #[cfg(target_family = "unix")]
         {
             use mult_lib::unix::fork;
