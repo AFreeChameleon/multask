@@ -88,7 +88,7 @@ pub fn run_daemon(
                 child.id() as i64,
                 libc::RLIMIT_AS,
                 &memory_limit,
-                ptr::null::<libc::rlimit>(),
+                std::ptr::null::<libc::rlimit>(),
             );
         }
         #[cfg(not(target_os = "linux"))]

@@ -7,7 +7,7 @@ use mult_lib::args::parse_args;
 use mult_lib::error::{print_error, print_info, print_success, MultError, MultErrorTuple};
 use mult_lib::task::TaskManager;
 
-const FIX_ALL_FLAG: &str = "--fix-all";
+const FIX_ALL_FLAG: &str = "-f";
 const FLAGS: [(&str, bool); 1] = [(FIX_ALL_FLAG, false)];
 
 pub fn run() -> Result<(), MultErrorTuple> {

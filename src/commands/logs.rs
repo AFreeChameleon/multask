@@ -15,8 +15,8 @@ use mult_lib::{
     task::TaskManager,
 };
 
-const LINES_FLAG: &str = "--lines";
-const WATCH_FLAG: &str = "--watch";
+const LINES_FLAG: &str = "-l";
+const WATCH_FLAG: &str = "-w";
 const FLAGS: [(&str, bool); 2] = [(LINES_FLAG, true), (WATCH_FLAG, false)];
 
 // Add --watch & --lines
