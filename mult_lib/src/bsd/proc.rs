@@ -67,7 +67,10 @@ fn bsd_get_child_processes(ppid: PID) -> Option<Vec<libc::kinfo_proc>> {
 }
 
 pub fn bsd_get_process_memory(stats: libc::kinfo_proc) -> String {
-    get_readable_memory(stats.ki_size as f64)
+    let page_size = unsafe {
+        libc::sysconf(libc::_SC_PAGE_SIZE)
+    };
+    get_readable_memory((stats.ki_rssize * page_size as isize) as f64)
 }
 
 pub fn bsd_get_all_processes(pid: PID) -> TreeNode {

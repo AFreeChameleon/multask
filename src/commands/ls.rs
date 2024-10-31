@@ -306,7 +306,7 @@ fn bsd_get_process_headers(
 ) -> Option<ProcessHeaders> {
     use mult_lib::bsd::proc::bsd_get_process_stats;
     use mult_lib::bsd::proc::bsd_get_runtime;
-    use mult_lib::proc::get_readable_memory;
+    use mult_lib::bsd::proc::bsd_get_process_memory;
     let proc_stats_opt = bsd_get_process_stats(pid);
     if is_main_process
         && (proc_stats_opt.is_none()
@@ -323,10 +323,11 @@ fn bsd_get_process_headers(
     if let Some(stats) = usage_stats.get(&pid) {
         cpu_usage = (stats.cpu_usage * 100.0).round() / 100.0;
     }
+
     // Get memory stats
     Some(ProcessHeaders {
         pid: pid.to_string(),
-        memory: get_readable_memory(proc_stats.ki_size as f64),
+        memory: bsd_get_process_memory(proc_stats),
         cpu: format!("{}%", cpu_usage),
         runtime: get_readable_runtime(bsd_get_runtime(proc_stats.ki_start.tv_sec as u64)),
         status: color_string(OK_GREEN, "Running").to_string(),
