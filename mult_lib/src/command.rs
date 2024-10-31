@@ -37,7 +37,7 @@ impl CommandManager {
             let data_decoded: Result<CommandData, Box<bincode::ErrorKind>> =
                 bincode::deserialize(&data_encoded[..]);
             if data_decoded.is_err() {
-                return Err((MultError::TaskNotFound, None));
+                return Err((MultError::TaskFileCorrupted, Some(task_id.to_string())));
             }
             return Ok(data_decoded.unwrap());
         }

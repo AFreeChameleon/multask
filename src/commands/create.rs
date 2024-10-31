@@ -1,10 +1,8 @@
 use std::env;
 
-use home::home_dir;
 use mult_lib::args::{
     get_fork_flag_values, parse_args, CPU_LIMIT_FLAG, INTERACTIVE_FLAG, MEMORY_LIMIT_FLAG,
 };
-use mult_lib::command::CommandData;
 use mult_lib::error::{print_info, print_success, MultErrorTuple};
 use mult_lib::task::{Task, TaskManager};
 
@@ -27,13 +25,15 @@ pub fn run() -> Result<(), MultErrorTuple> {
         tasks.push(Task { id: new_task_id });
         print_info("Running command...");
         let files = TaskManager::generate_task_files(new_task_id, &tasks);
-        let current_dir = match env::current_dir() {
-            Ok(val) => val,
-            Err(_) => home_dir().unwrap(),
-        };
         #[cfg(target_family = "unix")]
         {
+            use home::home_dir;
+            use mult_lib::command::CommandData;
             use mult_lib::unix::fork;
+            let current_dir = match env::current_dir() {
+                Ok(val) => val,
+                Err(_) => home_dir().unwrap(),
+            };
             fork::run_daemon(
                 files,
                 CommandData {

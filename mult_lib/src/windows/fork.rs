@@ -34,7 +34,7 @@ pub fn run_daemon(
         let spawn_dir = Path::new(&exe_dir).parent().unwrap();
         let (memory_limit, cpu_limit, interactive) = flags;
         if interactive.to_owned() {
-            print_warning("interactive flag is disabled on Windows.");
+            print_warning("Interactive flag is disabled on Windows.");
         }
         let mut command_line: Vec<u16> = OsString::from(format!(
             "{} {} \"{}\" {} {} {}",
