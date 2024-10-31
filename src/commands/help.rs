@@ -4,7 +4,7 @@ const HELP_TEXT: &str = "usage: mlt [options] [value]
 options:
     create  Create a process and run it. [value] must be a command e.g \"ping google.com\"
             -m [num]    Set maximum memory limit e.g 4GB
-            -c [num]    Set maximum cpu percentage limit e.g 20
+            -c [num]    Set limit cpu usage by percentage e.g 20
             -i          Interactive mode (can use aliased commands on your environment)
 
     stop    Stops a process. [value] must be a task id e.g 0
