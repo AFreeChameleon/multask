@@ -211,7 +211,7 @@ fn get_command_data(pid: PID, command: String, dir: String) -> Result<CommandDat
     }
     #[cfg(target_os = "freebsd")]
     {
-        use crate::bsd::proc::{bsd_get_proc_info, bsd_get_process_stats};
+        use crate::bsd::proc::{bsd_get_proc_name, bsd_get_process_stats};
         let proc_stats = bsd_get_process_stats(pid);
         if proc_stats.is_none() {
             return Err((MultError::ProcessNotExists, None));
@@ -221,7 +221,7 @@ fn get_command_data(pid: PID, command: String, dir: String) -> Result<CommandDat
             command,
             dir,
             starttime: proc_stats.unwrap().ki_start.tv_sec as u64,
-            name: bsd_get_proc_info(proc_stats),
+            name: bsd_get_proc_name(proc_stats),
         };
         return Ok(data);
     }
