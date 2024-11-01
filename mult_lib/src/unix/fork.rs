@@ -116,7 +116,7 @@ pub fn run_daemon(
     #[cfg(target_os = "macos")]
     {
         use crate::macos::proc::macos_monitor_stats;
-        macos_monitor_stats(child.id() as PID, files);
+        macos_monitor_stats(child.id() as PID, files, stats);
     }
     Ok(())
 }

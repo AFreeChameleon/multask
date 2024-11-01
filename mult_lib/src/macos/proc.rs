@@ -10,7 +10,7 @@ use std::{
 
 use crate::{
     error::MultErrorTuple,
-    proc::{save_task_processes, save_usage_stats, UsageStats, PID},
+    proc::{save_task_processes, save_usage_stats, ForkFlagTuple, UsageStats, PID},
     task::Files,
     tree::{compress_tree, search_tree, TreeNode},
     unix::proc::unix_kill_process,
@@ -32,6 +32,23 @@ pub fn macos_get_process_stats(pid: PID) -> Option<libc::proc_bsdinfo> {
         )
     };
     if res != mem::size_of::<libc::proc_bsdinfo>() as i32 || info.pbi_status == libc::SZOMB {
+        return None;
+    }
+    return Some(info);
+}
+
+pub fn macos_get_task_stats(pid: PID) -> Option<libc::proc_taskinfo> {
+    let mut info: libc::proc_taskinfo = unsafe { mem::zeroed() };
+    let res = unsafe {
+        libc::proc_pidinfo(
+            pid,
+            libc::PROC_PIDTASKINFO,
+            0,
+            &mut info as *mut _ as *mut c_void,
+            mem::size_of::<libc::proc_taskinfo>() as i32,
+        )
+    };
+    if res != mem::size_of::<libc::proc_taskinfo>() as i32 {
         return None;
     }
     return Some(info);
@@ -156,8 +173,9 @@ pub fn macos_get_runtime(starttime: u64) -> u64 {
     since_epoch - starttime
 }
 
-pub fn macos_monitor_stats(pid: PID, files: Files) {
+pub fn macos_monitor_stats(pid: PID, files: Files, stats: ForkFlagTuple) {
     let existing_cpu_time = Arc::new(Mutex::new(0));
+    let (memory_limit, _, _) = stats;
     loop {
         // Get usage metrics
         let process_tree = macos_get_all_processes(pid);
@@ -171,7 +189,13 @@ pub fn macos_monitor_stats(pid: PID, files: Files) {
         let keep_running = Arc::new(Mutex::new(false));
         search_tree(&process_tree, &|node: &TreeNode| {
             if macos_proc_exists(node.pid) {
-                *keep_running.lock().unwrap() = true;
+                if let Some(task_info) = macos_get_task_stats(node.pid) {
+                    *keep_running.lock().unwrap() = !(
+                        memory_limit != -1 && task_info.pti_resident_size > memory_limit as u64
+                    );
+                } else {
+                    *keep_running.lock().unwrap() = false;
+                }
                 // Set cpu usage down here
                 let (cpu_usage, cpu_time) = macos_get_cpu_usage(node);
                 usage_stats
