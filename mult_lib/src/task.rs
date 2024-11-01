@@ -39,7 +39,10 @@ impl TaskManager {
         }
         for file in PROCESS_FILES.iter() {
             if tasks_dir.join(file).exists() {
-                println!("Could not get {}", color_string(ERR_RED, file));
+                return Err((
+                    MultError::CustomError,
+                    Some(format!("Could not get {}", color_string(ERR_RED, file)))
+                ));
             }
         }
         Ok(())

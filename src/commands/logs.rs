@@ -19,7 +19,6 @@ const LINES_FLAG: &str = "-l";
 const WATCH_FLAG: &str = "-w";
 const FLAGS: [(&str, bool); 2] = [(LINES_FLAG, true), (WATCH_FLAG, false)];
 
-// Add --watch & --lines
 pub fn run() -> Result<(), MultErrorTuple> {
     let args = env::args();
     let parsed_args = parse_args(&args.collect::<Vec<String>>()[2..], &FLAGS, true)?;
