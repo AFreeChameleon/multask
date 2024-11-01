@@ -77,7 +77,7 @@ pub fn run_daemon(
     // Do daemon stuff here
     let child = run_command(&command, &files.process_dir, interactive)?;
     if memory_limit > -1 {
-        let memory_limit = libc::rlimit {
+        let memory_rlimit = libc::rlimit {
             rlim_cur: memory_limit as _,
             rlim_max: memory_limit as _,
         };
@@ -87,13 +87,13 @@ pub fn run_daemon(
                 libc::SYS_prlimit64,
                 child.id() as i64,
                 libc::RLIMIT_AS,
-                &memory_limit,
+                &memory_rlimit,
                 std::ptr::null::<libc::rlimit>(),
             );
         }
         #[cfg(not(target_os = "linux"))]
         unsafe {
-            libc::setrlimit(libc::RLIMIT_RSS, &memory_limit);
+            libc::setrlimit(libc::RLIMIT_RSS, &memory_rlimit);
         }
     }
     if cpu_limit > -1 {
@@ -106,7 +106,7 @@ pub fn run_daemon(
     #[cfg(target_os = "freebsd")]
     {
         use crate::bsd::proc::bsd_monitor_stats;
-        bsd_monitor_stats(child.id() as PID, files);
+        bsd_monitor_stats(child.id() as PID, files, stats);
     }
     #[cfg(target_os = "linux")]
     {

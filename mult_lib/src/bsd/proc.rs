@@ -1,16 +1,17 @@
 #![cfg(target_os = "freebsd")]
 
-use crate::bsd::cpu::bsd_get_cpu_usage;
-use crate::error::MultErrorTuple;
-use crate::proc::{get_readable_memory, save_task_processes, save_usage_stats, UsageStats, PID};
-use crate::task::Files;
-use crate::tree::{compress_tree, search_tree, TreeNode};
-use crate::unix::proc::unix_kill_process;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{ffi::CString, ptr};
+use crate::bsd::cpu::bsd_get_cpu_usage;
+use crate::error::MultErrorTuple;
+use crate::proc::{get_readable_memory, save_task_processes, save_usage_stats, UsageStats, PID};
+use crate::task::Files;
+use crate::proc::ForkFlagTuple;
+use crate::tree::{compress_tree, search_tree, TreeNode};
+use crate::unix::proc::unix_kill_process;
 
 pub fn bsd_get_process_stats(pid: PID) -> Option<libc::kinfo_proc> {
     let mut errbuf: [i8; 1024] = [0; 1024];
@@ -133,7 +134,8 @@ pub fn bsd_kill_all_processes(pid: PID) -> Result<(), MultErrorTuple> {
     Ok(())
 }
 
-pub fn bsd_monitor_stats(pid: PID, files: Files) {
+pub fn bsd_monitor_stats(pid: PID, files: Files, stats: ForkFlagTuple) {
+    let (memory_limit, _, _) = stats;
     loop {
         // Get usage metrics
         let process_tree = bsd_get_all_processes(pid);
@@ -147,17 +149,23 @@ pub fn bsd_monitor_stats(pid: PID, files: Files) {
         let keep_running = Arc::new(Mutex::new(false));
         search_tree(&process_tree, &|node: &TreeNode| {
             if bsd_proc_exists(node.pid) {
-                *keep_running.lock().unwrap() = true;
-                // Set cpu usage down here
-                let stats = bsd_get_process_stats(node.pid);
-                let mut cpu_usage = 0.0;
-                if stats.is_some() {
-                    cpu_usage = bsd_get_cpu_usage(stats.unwrap());
+                if let Some(stats) = bsd_get_process_stats(node.pid) {
+                    let page_size = unsafe {
+                        libc::sysconf(libc::_SC_PAGE_SIZE)
+                    };
+                    let memory_usage = stats.ki_rssize * page_size as isize;
+                    *keep_running.lock().unwrap() = !(
+                        memory_limit != -1 && memory_usage as i64 > memory_limit
+                    );
+                    // Set cpu usage down here
+                    let cpu_usage = bsd_get_cpu_usage(stats);
+                    usage_stats
+                        .lock()
+                        .unwrap()
+                        .insert(node.pid, UsageStats { cpu_usage });
+                } else {
+                    *keep_running.lock().unwrap() = false;
                 }
-                usage_stats
-                    .lock()
-                    .unwrap()
-                    .insert(node.pid, UsageStats { cpu_usage });
             }
         });
         if !*keep_running.lock().unwrap() {
