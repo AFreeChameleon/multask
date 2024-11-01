@@ -328,7 +328,6 @@ version = "0.2.0"
 dependencies = [
  "home",
  "mult_lib",
- "sysinfo",
  "windows-sys 0.59.0",
 ]
 

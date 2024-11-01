@@ -90,19 +90,20 @@ pub fn parse_string_to_bytes(val: String) -> Option<i64> {
     if factor_str == "B" {
         return Some(number);
     }
-    let mut multiplier = match factor_str.to_lowercase().chars().nth(0) {
-        Some('b') => return Some(number / 8),
+    let multiplier = match factor_str.to_lowercase().chars().nth(0) {
+        //Some('b') => return Some(number / 8),
+        Some('b') => number,
         Some('k') => 1000,
         Some('m') => 1e+6 as i64,
         Some('g') => 1e+9 as i64,
         Some('t') => 1e+12 as i64,
         _ => return None,
     };
-    multiplier *= match factor_str.chars().nth(1) {
-        Some('b') => 8,
-        Some('B') => 1,
-        _ => return None,
-    };
+    //multiplier *= match factor_str.chars().nth(1) {
+    //    Some('b') => 8,
+    //    Some('B') => 1,
+    //    _ => return None,
+    //};
 
     return Some(number as i64 * multiplier);
 }

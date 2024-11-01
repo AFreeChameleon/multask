@@ -23,11 +23,7 @@ use std::{
 };
 use windows_sys::Win32::Foundation::GetLastError;
 use windows_sys::Win32::System::JobObjects::{
-    AssignProcessToJobObject, CreateJobObjectW, JobObjectCpuRateControlInformation,
-    JobObjectExtendedLimitInformation, SetInformationJobObject,
-    JOBOBJECT_CPU_RATE_CONTROL_INFORMATION, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0,
-    JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_CPU_RATE_CONTROL_ENABLE,
-    JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP,
+    AssignProcessToJobObject, CreateJobObjectW, JobObjectCpuRateControlInformation, JobObjectExtendedLimitInformation, SetInformationJobObject, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_CPU_RATE_CONTROL_ENABLE, JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP, JOB_OBJECT_LIMIT_PROCESS_MEMORY
 };
 use windows_sys::Win32::System::ProcessStatus::GetProcessImageFileNameW;
 
@@ -189,7 +185,9 @@ fn create_job(
         }
         if mem_limit != -1 {
             let mut job_limit_info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = mem::zeroed();
-            job_limit_info.JobMemoryLimit = mem_limit as usize;
+            job_limit_info.BasicLimitInformation = mem::zeroed();
+            job_limit_info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_PROCESS_MEMORY;
+            job_limit_info.ProcessMemoryLimit = mem_limit as usize;
             if SetInformationJobObject(
                 job,
                 JobObjectExtendedLimitInformation,
