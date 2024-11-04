@@ -49,7 +49,7 @@ pub fn run() -> Result<(), MultErrorTuple> {
     #[cfg(target_family = "windows")]
     {
         use mult_lib::windows::fork;
-        fork::run_daemon(files, arg.to_string(), &flags, new_task_id)?;
+        fork::run_daemon(files, command, &flags, new_task_id)?;
     }
 
     print_success(&format!("Process {} created.", new_task_id));
