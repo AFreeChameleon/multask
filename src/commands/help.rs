@@ -34,7 +34,7 @@ options:
 
     delete  Deletes process. [value] must be a task id e.g 0
 
-    health  Checks state of mult, run this when mult is not working.
+    health  Checks state of multask, run this when multask is not working.
 
             -f          Tries to fix any errors `mlt health` throws.
 

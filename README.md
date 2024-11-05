@@ -58,7 +58,7 @@ options:
 
     delete  Deletes process. [value] must be a task id e.g 0
 
-    health  Checks state of mult, run this when mult is not working.
+    health  Checks state of mult, run this when multask is not working.
         -f          Tries to fix any errors `mlt health` throws.
 
     help    Shows available options.
@@ -116,7 +116,7 @@ To delete the process and all logs, run:
 > mlt delete 0
 ```
 
-If mult isn't working, you can run:
+If multask isn't working, you can run:
 
 ```
 > mlt health
