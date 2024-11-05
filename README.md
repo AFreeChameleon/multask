@@ -3,10 +3,10 @@
     <img src="https://github.com/afreechameleon/multask-docs/blob/develop/images/gecko.png?raw=true" alt="Logo" width="150" height="150">
   </a>
 
-  <h1 align="center">Multiad</h1>
+  <h1 align="center">Multask</h1>
 
   <p align="center">
-    A daemoniser for linux, mac & windows written in rust to simplify your developer environment.
+    A process manager for Linux, Mac, Windows & FreeBSD written in rust to simplify your developer environment.
   </p>
   <p align="center">
     Designed to organise projects which need processes running at the same time with flexible resource limits for scaling.
