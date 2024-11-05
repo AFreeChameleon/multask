@@ -9,6 +9,9 @@
     A process manager for Linux, Mac, Windows & FreeBSD written in rust to simplify your developer environment.
   </p>
   <p align="center">
+    <a href="https://afreechameleon.github.io/multask-docs/">Docs</a>
+  </p>
+  <p align="center">
     Designed to organise projects which need processes running at the same time with flexible resource limits for scaling.
   </p>
 </div>
