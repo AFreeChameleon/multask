@@ -1,11 +1,6 @@
 #![cfg(target_os = "macos")]
 use std::{
-    collections::HashMap,
-    ffi::c_void,
-    mem, ptr,
-    sync::{Arc, Mutex},
-    thread,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    collections::HashMap, ffi::c_void, mem, ptr, sync::{Arc, Mutex}, thread, time::{Duration, SystemTime, UNIX_EPOCH}
 };
 
 use crate::{
