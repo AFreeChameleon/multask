@@ -1,25 +1,28 @@
 <div align="center">
-  <a href="https://github.com/othneildrew/Best-README-Template">
-    <img src="gecko.png" alt="Logo" width="150" height="150">
+  <a href="https://afreechameleon.github.io/multask-docs/">
+    <img src="https://github.com/afreechameleon/multask-docs/blob/develop/images/gecko.png?raw=true" alt="Logo" width="150" height="150">
   </a>
 
-  <h3 align="center">Multiad</h3>
+  <h1 align="center">Multask</h1>
 
   <p align="center">
-    A daemoniser for linux, mac & windows written in rust to simplify your developer environment.
+    A process manager for Linux, Mac, Windows & FreeBSD written in rust to simplify your developer environment.
+  </p>
+  <p align="center">
+    Designed to organise projects which need processes running at the same time with flexible resource limits for scaling.
   </p>
 </div>
 
 ## Installation
 
-For Linux:
+For Linux, Mac & FreeBSD:
 ```
-curl -s "https://raw.githubusercontent.com/AFreeChameleon/multi-tasker/master/install.sh" | bash
+curl -s "https://github.com/AFreeChameleon/multask-docs/blob/develop/install/scripts/linux.sh?raw=true" | bash
 ```
 
 For Windows:
 ```
-powershell -c "irm https://raw.githubusercontent.com/AFreeChameleon/multi-tasker/master/install.ps1|iex"
+powershell -c "irm https://github.com/AFreeChameleon/multask-docs/blob/develop/install/scripts/win.ps1?raw=true|iex"
 ```
 
 ## Getting Started
@@ -55,7 +58,7 @@ options:
 
     delete  Deletes process. [value] must be a task id e.g 0
 
-    health  Checks state of mult, run this when mult is not working.
+    health  Checks state of mult, run this when multask is not working.
         -f          Tries to fix any errors `mlt health` throws.
 
     help    Shows available options.
@@ -113,7 +116,7 @@ To delete the process and all logs, run:
 > mlt delete 0
 ```
 
-If mult isn't working, you can run:
+If multask isn't working, you can run:
 
 ```
 > mlt health

@@ -291,21 +291,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mult"
-version = "0.2.0"
-dependencies = [
- "bincode",
- "home",
- "libc",
- "mult_lib",
- "notify",
- "prettytable",
- "sysinfo",
- "term",
- "windows-sys 0.59.0",
-]
-
-[[package]]
 name = "mult_lib"
 version = "0.2.0"
 dependencies = [
@@ -328,6 +313,21 @@ version = "0.2.0"
 dependencies = [
  "home",
  "mult_lib",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "multask"
+version = "0.2.0"
+dependencies = [
+ "bincode",
+ "home",
+ "libc",
+ "mult_lib",
+ "notify",
+ "prettytable",
+ "sysinfo",
+ "term",
  "windows-sys 0.59.0",
 ]
 

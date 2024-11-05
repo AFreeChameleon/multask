@@ -118,6 +118,8 @@ pub fn run_daemon(
         use crate::macos::proc::macos_monitor_stats;
         macos_monitor_stats(child.id() as PID, files, stats);
     }
+    // Killing process if this wrapper fails
+    unsafe { libc::kill(child.id() as _, libc::SIGINT); }
     Ok(())
 }
 
