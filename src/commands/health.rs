@@ -1,22 +1,20 @@
+use std::env;
 use std::fs;
 use std::path::Path;
-use std::env;
 
 use home::home_dir;
 use mult_lib::args::parse_args;
 use mult_lib::error::{print_error, print_info, print_success, MultError, MultErrorTuple};
 use mult_lib::task::TaskManager;
 
-const FIX_FLAG: &str = "--fix";
-const FLAGS: [(&str, bool); 1] = [
-    (FIX_FLAG, false)
-];
+const FIX_ALL_FLAG: &str = "-f";
+const FLAGS: [(&str, bool); 1] = [(FIX_ALL_FLAG, false)];
 
 pub fn run() -> Result<(), MultErrorTuple> {
     let args = env::args();
     let parsed_args = parse_args(&args.collect::<Vec<String>>()[2..], &FLAGS, false)?;
     let mut fix_enabled = false;
-    if parsed_args.flags.contains(&FIX_FLAG.to_string()) {
+    if parsed_args.flags.contains(&FIX_ALL_FLAG.to_string()) {
         print_info("Fix flag enabled.");
         fix_enabled = true;
     }
@@ -24,18 +22,17 @@ pub fn run() -> Result<(), MultErrorTuple> {
     match run_tests(fix_enabled) {
         Ok(()) => print_success("No failures detected."),
         Err(Some((err, descriptor))) => print_error(err, descriptor),
-        Err(_) => ()
+        Err(_) => (),
     };
     Ok(())
 }
 
 fn run_tests(fix_enabled: bool) -> Result<(), Option<MultErrorTuple>> {
     // Initial checks
-    let tasks_dir = Path::new(&home::home_dir().unwrap())
-        .join(".multi-tasker");
+    let tasks_dir = Path::new(&home_dir().unwrap()).join(".multi-tasker");
     if !tasks_dir.exists() && !tasks_dir.is_dir() {
         if !fix_enabled {
-            return Err(Some((MultError::MainDirNotExist, None)))
+            return Err(Some((MultError::MainDirNotExist, None)));
         }
         create_main_dir()?;
     } else {
@@ -47,7 +44,7 @@ fn run_tests(fix_enabled: bool) -> Result<(), Option<MultErrorTuple>> {
         Ok(val) => {
             print_success("Processes directory exists.");
             val
-        },
+        }
         Err(msg) => {
             if !fix_enabled {
                 return Err(Some(msg));
@@ -62,17 +59,17 @@ fn run_tests(fix_enabled: bool) -> Result<(), Option<MultErrorTuple>> {
             print_error(MultError::UnknownProcessInDir, Some(name.to_string()));
         }
         if !fix_enabled {
-            return Err(None)
+            return Err(None);
         }
     } else {
         print_success("Tasks file exists.");
     }
-    
+
     let tasks = match TaskManager::get_tasks() {
         Ok(val) => {
             print_success("Tasks file read.");
             val
-        },
+        }
         Err(msg) => {
             if !fix_enabled {
                 return Err(Some(msg));
@@ -90,7 +87,9 @@ fn run_tests(fix_enabled: bool) -> Result<(), Option<MultErrorTuple>> {
         }
         match TaskManager::test_task_files(task.id) {
             Ok(()) => (),
-            Err((err, desc)) => { print_error(err, desc); } 
+            Err((err, desc)) => {
+                print_error(err, desc);
+            }
         };
     }
     print_success("Task logs read.");
@@ -108,12 +107,12 @@ fn check_processes_dir(processes_dir: &Path) -> Result<Vec<String>, MultErrorTup
     if processes_dir.exists() && processes_dir.is_dir() {
         let entries = match fs::read_dir(processes_dir) {
             Ok(val) => val,
-            Err(_) => return Err((MultError::FailedReadingProcessDir, None))
+            Err(_) => return Err((MultError::FailedReadingProcessDir, None)),
         };
         for entry in entries {
             let entry = match entry {
                 Ok(val) => val,
-                Err(_) => return Err((MultError::FailedFormattingProcessEntry, None))
+                Err(_) => return Err((MultError::FailedFormattingProcessEntry, None)),
             };
             let Ok(file_name) = entry.file_name().into_string() else {
                 print_error(MultError::FailedConvertingProcessEntry, None);
@@ -122,7 +121,7 @@ fn check_processes_dir(processes_dir: &Path) -> Result<Vec<String>, MultErrorTup
             name_entries.push(file_name);
         }
     } else {
-        return Err((MultError::ProcessDirNotExist, None))
+        return Err((MultError::ProcessDirNotExist, None));
     }
     Ok(name_entries)
 }
@@ -154,9 +153,12 @@ fn delete_process(process: String) -> Result<(), MultErrorTuple> {
     } else if process_dir.is_file() {
         fs::remove_file(&process_dir).unwrap();
     }
-    print_success(format!(
-        "Deleted unknown process: {}",
-        &process_dir.display().to_string()).as_str()
+    print_success(
+        format!(
+            "Deleted unknown process: {}",
+            &process_dir.display().to_string()
+        )
+        .as_str(),
     );
     Ok(())
 }

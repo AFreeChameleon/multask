@@ -1,7 +1,7 @@
 workspace = { members = [ "mult_lib", "mult_spawn"] }
 [package]
-name = "mult"
-version = "0.1.0"
+name = "multask"
+version = "0.2.0"
 edition = "2021"
 
 [[bin]]
@@ -14,11 +14,22 @@ path = "src/main.rs"
 home = "0.5.9"
 bincode = "1.3.3"
 sysinfo = "0.30.5"
-colored = "2.1.0"
 prettytable = "0.10.0"
 notify = "6.1.1"
 term = "0.7"
 mult_lib = { path = "./mult_lib" }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59.0", features = [
+    "Win32_System_Threading",
+    "Win32_Security",
+    "Win32_System_Pipes",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Console",
+    "Win32_System_Services",
+    "Win32_System_JobObjects"
+] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2.153"
