@@ -17,12 +17,12 @@
 
 For Linux, Mac & FreeBSD:
 ```
-curl -s "https://afreechameleon.github.io/multask-docs/install/scripts/linux.sh" | bash
+curl -s "https://github.com/AFreeChameleon/multask-docs/blob/develop/install/scripts/linux.sh?raw=true" | bash
 ```
 
 For Windows:
 ```
-powershell -c "irm https://raw.githubusercontent.com/AFreeChameleon/multi-tasker/master/install.ps1|iex"
+powershell -c "irm https://github.com/AFreeChameleon/multask-docs/blob/develop/install/scripts/win.ps1?raw=true|iex"
 ```
 
 ## Getting Started
