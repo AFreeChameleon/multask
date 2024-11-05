@@ -1,13 +1,14 @@
-# Things to do:
-* Add watch support to other OSes
-* Make runtime not show hours or minutes if they don't exist
-* Have proper process clean up
-* Move from threads to async - will change a lot
-* Add interactive flag to fork to run commands with -ic
+<div align="center">
+  <a href="https://github.com/othneildrew/Best-README-Template">
+    <img src="gecko.png" alt="Logo" width="150" height="150">
+  </a>
 
-# Mult
+  <h3 align="center">Multiad</h3>
 
-A daemoniser for linux, mac & windows written in rust. Inspired by [pm2](https://github.com/Unitech/pm2).
+  <p align="center">
+    A daemoniser for linux, mac & windows written in rust to simplify your developer environment.
+  </p>
+</div>
 
 ## Installation
 
@@ -27,21 +28,37 @@ powershell -c "irm https://raw.githubusercontent.com/AFreeChameleon/multi-tasker
 > mlt help
 usage: mlt [options] [value]
 options:
-    create  Create a process and run it. [value] must be a command e.g "ping google.com"
+    create  Create a process and run it. [value] must be a command e.g \"ping google.com\"
+        -m [num]    Set maximum memory limit e.g 4GB
+        -c [num]    Set limit cpu usage by percentage e.g 20
+        -i          Interactive mode (can use aliased commands on your environment)
+
     stop    Stops a process. [value] must be a task id e.g 0
+
     start   Starts a process. [value] must be a task id e.g 0
+        -m [num]    Set maximum memory limit e.g 4GB
+        -c [num]    Set maximum cpu percentage limit e.g 20
+        -i          Interactive mode (can use aliased commands on your environment)
+
     restart Restarts a process. [value] must be a task id e.g 0
+        -m [num]    Set maximum memory limit e.g 4GB
+        -c [num]    Set maximum cpu percentage limit e.g 20
+        -i          Interactive mode (can use aliased commands on your environment)
+
     ls      Shows all processes.
-            --watch         Provides updating tables every 2 seconds.
+        -w          Provides updating tables every 2 seconds.
+        -a          Show all child processes.
 
     logs    Shows output from process. [value] must be a task id e.g 0
-            --lines [num]   See number of previous lines, default is 15.
-            --watch         Listen to new logs coming in.
+        -l [num]   See number of previous lines default is 15.
+        -w         Listen to new logs coming in.
 
     delete  Deletes process. [value] must be a task id e.g 0
-    help    Shows available options.
+
     health  Checks state of mult, run this when mult is not working.
-            --fix           Tries to fix any errors `mlt health` throws.
+        -f          Tries to fix any errors `mlt health` throws.
+
+    help    Shows available options.
 ```
 
 
@@ -54,7 +71,6 @@ Create a daemon process by typing:
 This will start a new daemon process running the command specified.
 
 To see your running processes, run:
-
 ```
 > mlt ls
 
@@ -118,3 +134,6 @@ Licensed under either of
 * Apache License, Version 2.0 (LICENSE-APACHE or http://www.apache.org/licenses/LICENSE-2.0)
 * MIT license (LICENSE-MIT or http://opensource.org/licenses/MIT) at your option.
 
+## Things to do:
+* Add watch support to other OSes
+* Move from threads to async - will change a lot

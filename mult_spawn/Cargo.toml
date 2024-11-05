@@ -8,7 +8,6 @@ edition = "2021"
 [dependencies]
 mult_lib = { path = "../mult_lib" }
 home = "0.5.9"
-sysinfo = "0.30.5"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59.0", features = [

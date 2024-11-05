@@ -3,13 +3,14 @@ use mult_lib::colors::{color_string, OK_GREEN};
 use mult_lib::proc::{get_proc_comm, proc_exists};
 use mult_lib::tree::{compress_tree, TreeNode};
 use prettytable::Table;
+use std::path::Path;
 use std::{env, thread, time::Duration};
 
 use mult_lib::command::CommandManager;
-use mult_lib::error::{MultError, MultErrorTuple, print_error};
+use mult_lib::error::{print_error, MultError, MultErrorTuple};
+use mult_lib::proc::{get_readable_runtime, read_usage_stats, PID};
 use mult_lib::table::{MainHeaders, ProcessHeaders, TableManager};
 use mult_lib::task::{Task, TaskManager};
-use mult_lib::proc::{PID, get_readable_runtime, read_usage_stats};
 
 const WATCH_FLAG: &str = "-w";
 const LIST_CHILDREN_FLAG: &str = "-a";
@@ -30,7 +31,7 @@ pub fn run() -> Result<(), MultErrorTuple> {
         } else {
             print_error(
                 MultError::CustomError,
-                Some("-w option not supported on this OS.".to_string())
+                Some("-w option not supported on this OS.".to_string()),
             );
         }
     } else {
@@ -75,13 +76,20 @@ pub fn setup_table(
             Ok(result) => result,
             Err(err) => return Err(err),
         };
+        let mut command_path = Path::new(&command.dir).iter().rev();
+        let mut last_dirs = String::new();
+        for _ in 0..2 {
+            if let Some(p) = command_path.next() {
+                last_dirs.insert_str(0, &format!("/{}", &p.to_owned().into_string().unwrap()));
+            }
+        }
         let mut main_headers = MainHeaders {
             id: task.id,
             command: command.command.clone(),
+            dir: last_dirs,
         };
         // Get memory stats
-        let process_headers_opt =
-            get_process_headers(command.pid, command.starttime, &task, true);
+        let process_headers_opt = get_process_headers(command.pid, command.starttime, &task, true);
         if process_headers_opt.is_none() {
             table.insert_row(main_headers, None);
             continue;
@@ -150,8 +158,6 @@ fn get_process_headers(
     return macos_get_process_headers(pid, starttime, task, is_main_process);
 }
 
-
-
 #[cfg(target_os = "windows")]
 fn win_get_process_headers(
     pid: PID,
@@ -159,10 +165,10 @@ fn win_get_process_headers(
     task: &Task,
     is_main_process: bool,
 ) -> Option<ProcessHeaders> {
-    use std::{ffi::OsString, os::windows::ffi::OsStrExt};
-    use mult_lib::{
-        windows::proc::{win_get_memory_usage, win_get_process_runtime, win_get_process_stats},
+    use mult_lib::windows::proc::{
+        win_get_memory_usage, win_get_process_runtime, win_get_process_stats,
     };
+    use std::{ffi::OsString, os::windows::ffi::OsStrExt};
     use windows_sys::Win32::{
         Foundation::GetLastError,
         System::{
@@ -172,7 +178,9 @@ fn win_get_process_headers(
     };
 
     let lp_name: Vec<u16> = OsString::from(format!("Global\\mult-{}", task.id))
-        .encode_wide().chain(Some(0)).collect();
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
 
     // Check if job object exists already
     let job = unsafe {
@@ -219,7 +227,6 @@ fn win_get_process_headers(
     })
 }
 
-
 #[cfg(target_os = "linux")]
 fn linux_get_process_headers(
     pid: PID,
@@ -228,9 +235,7 @@ fn linux_get_process_headers(
     is_main_process: bool,
 ) -> Option<ProcessHeaders> {
     use mult_lib::linux::proc::{
-        linux_get_process_memory,
-        linux_get_process_runtime,
-        linux_get_process_stats
+        linux_get_process_memory, linux_get_process_runtime, linux_get_process_stats,
     };
     let proc_stats = linux_get_process_stats(pid);
     if is_main_process && (proc_stats.len() == 0 || starttime != proc_stats[21].parse().unwrap()) {
@@ -250,7 +255,8 @@ fn linux_get_process_headers(
         memory: linux_get_process_memory(&(pid)),
         cpu: format!("{}%", cpu_usage),
         runtime: get_readable_runtime(
-            linux_get_process_runtime(proc_stats[21].parse().unwrap()) as u64),
+            linux_get_process_runtime(proc_stats[21].parse().unwrap()) as u64
+        ),
         status: color_string(OK_GREEN, "Running").to_string(),
     })
 }
@@ -267,10 +273,10 @@ fn macos_get_process_headers(
     use mult_lib::proc::get_readable_memory;
 
     let proc_stats_opt = macos_get_all_process_stats(pid);
-    if is_main_process && (
-        proc_stats_opt.is_none() ||
-        (starttime != proc_stats_opt.unwrap().pbsd.pbi_start_tvsec as u64)
-    ) {
+    if is_main_process
+        && (proc_stats_opt.is_none()
+            || (starttime != proc_stats_opt.unwrap().pbsd.pbi_start_tvsec as u64))
+    {
         return None;
     }
     let proc_stats = proc_stats_opt.unwrap();
@@ -284,10 +290,9 @@ fn macos_get_process_headers(
     }
     Some(ProcessHeaders {
         pid: pid.to_string(),
-        memory: get_readable_memory(proc_stats.ptinfo.pti_virtual_size as f64),
+        memory: get_readable_memory(proc_stats.ptinfo.pti_resident_size as f64),
         cpu: format!("{}%", cpu_usage),
-        runtime: get_readable_runtime(
-            macos_get_runtime(proc_stats.pbsd.pbi_start_tvsec) as u64),
+        runtime: get_readable_runtime(macos_get_runtime(proc_stats.pbsd.pbi_start_tvsec) as u64),
         status: color_string(OK_GREEN, "Running").to_string(),
     })
 }
@@ -301,12 +306,12 @@ fn bsd_get_process_headers(
 ) -> Option<ProcessHeaders> {
     use mult_lib::bsd::proc::bsd_get_process_stats;
     use mult_lib::bsd::proc::bsd_get_runtime;
-    use mult_lib::proc::get_readable_memory;
+    use mult_lib::bsd::proc::bsd_get_process_memory;
     let proc_stats_opt = bsd_get_process_stats(pid);
-    if is_main_process && (
-        proc_stats_opt.is_none() ||
-        (starttime != proc_stats_opt.unwrap().ki_start.tv_sec as u64)
-    ) {
+    if is_main_process
+        && (proc_stats_opt.is_none()
+            || (starttime != proc_stats_opt.unwrap().ki_start.tv_sec as u64))
+    {
         return None;
     }
     let proc_stats = proc_stats_opt.unwrap();
@@ -318,35 +323,38 @@ fn bsd_get_process_headers(
     if let Some(stats) = usage_stats.get(&pid) {
         cpu_usage = (stats.cpu_usage * 100.0).round() / 100.0;
     }
+
     // Get memory stats
     Some(ProcessHeaders {
         pid: pid.to_string(),
-        memory: get_readable_memory(proc_stats.ki_size as f64),
+        memory: bsd_get_process_memory(proc_stats),
         cpu: format!("{}%", cpu_usage),
-        runtime: get_readable_runtime(
-            bsd_get_runtime(proc_stats.ki_start.tv_sec as u64)
-        ),
+        runtime: get_readable_runtime(bsd_get_runtime(proc_stats.ki_start.tv_sec as u64)),
         status: color_string(OK_GREEN, "Running").to_string(),
     })
 }
 
 fn get_all_processes(pid: PID, _task: Task) -> TreeNode {
     let process_tree;
-    #[cfg(target_os = "linux")] {
+    #[cfg(target_os = "linux")]
+    {
         use mult_lib::linux::proc::linux_get_all_processes;
         process_tree = linux_get_all_processes(pid);
     }
-    #[cfg(target_os = "freebsd")] {
+    #[cfg(target_os = "freebsd")]
+    {
         use mult_lib::bsd::proc::bsd_get_all_processes;
         process_tree = bsd_get_all_processes(pid);
     }
-    #[cfg(target_os = "macos")] {
+    #[cfg(target_os = "macos")]
+    {
         use mult_lib::macos::proc::macos_get_all_processes;
         process_tree = macos_get_all_processes(pid);
     }
-    #[cfg(target_os = "windows")] {
-        use std::{ffi::OsString, os::windows::ffi::OsStrExt};
+    #[cfg(target_os = "windows")]
+    {
         use mult_lib::windows::proc::win_get_all_processes;
+        use std::{ffi::OsString, os::windows::ffi::OsStrExt};
         use windows_sys::Win32::System::JobObjects::OpenJobObjectW;
         process_tree = win_get_all_processes(
             unsafe {
@@ -354,7 +362,10 @@ fn get_all_processes(pid: PID, _task: Task) -> TreeNode {
                     0x1F001F, // JOB_OBJECT_ALL_ACCESS
                     0,
                     OsString::from(format!("Global\\mult-{}", _task.id))
-                        .encode_wide().chain(Some(0)).collect::<Vec<u16>>().as_ptr() as *const u16,
+                        .encode_wide()
+                        .chain(Some(0))
+                        .collect::<Vec<u16>>()
+                        .as_ptr() as *const u16,
                 )
             },
             pid,

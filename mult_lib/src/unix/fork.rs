@@ -1,6 +1,4 @@
 #![cfg(target_family = "unix")]
-use home::home_dir;
-use libc;
 use std::{
     env,
     fs::File,
@@ -8,11 +6,15 @@ use std::{
     path::Path,
     process::{Child, Command, Stdio},
     thread,
-    time::{SystemTime, UNIX_EPOCH}
+    time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::{command::{CommandData, CommandManager, MemStats}, unix::proc::unix_get_error_code};
 use crate::task::Files;
+use crate::{
+    command::{CommandData, CommandManager},
+    proc::ForkFlagTuple,
+    unix::proc::unix_get_error_code,
+};
 use crate::{
     error::{print_info, MultError, MultErrorTuple},
     proc::PID,
@@ -40,7 +42,12 @@ macro_rules! spawn_logger {
 
 const SUPPORTED_SHELLS: [&str; 3] = ["/sh", "/bash", "/zsh"];
 
-pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), MultErrorTuple> {
+pub fn run_daemon(
+    files: Files,
+    command: CommandData,
+    stats: ForkFlagTuple,
+) -> Result<(), MultErrorTuple> {
+    let (memory_limit, cpu_limit, interactive) = stats;
     let process_id;
     let sid;
     unsafe {
@@ -67,45 +74,61 @@ pub fn run_daemon(files: Files, command: String, stats: MemStats) -> Result<(), 
     if sid < 0 {
         return Err((MultError::SetSidFailed, None));
     }
-    if stats.memory_limit > -1 {
-        let memory_limit = libc::rlimit {
-            rlim_cur: stats.memory_limit as _,
-            rlim_max: stats.memory_limit as _,
+    // Do daemon stuff here
+    let child = run_command(&command, &files.process_dir, interactive)?;
+    if memory_limit > -1 {
+        let memory_rlimit = libc::rlimit {
+            rlim_cur: memory_limit as _,
+            rlim_max: memory_limit as _,
         };
+        #[cfg(target_os = "linux")]
         unsafe {
-            libc::setrlimit(libc::RLIMIT_AS, &memory_limit);
+            libc::syscall(
+                libc::SYS_prlimit64,
+                child.id() as i64,
+                libc::RLIMIT_AS,
+                &memory_rlimit,
+                std::ptr::null::<libc::rlimit>(),
+            );
+        }
+        #[cfg(not(target_os = "linux"))]
+        unsafe {
+            libc::setrlimit(libc::RLIMIT_RSS, &memory_rlimit);
         }
     }
-    // Do daemon stuff here
-    let child = run_command(&command, &files.process_dir)?;
-    if stats.cpu_limit > -1 {
+    if cpu_limit > -1 {
         let child_id = child.id();
         thread::spawn(move || {
-            split_limit_cpu(child_id as PID, stats.cpu_limit as f32);
+            split_limit_cpu(child_id as PID, cpu_limit as f32);
         });
     }
 
-    #[cfg(target_os = "freebsd")] {
+    #[cfg(target_os = "freebsd")]
+    {
         use crate::bsd::proc::bsd_monitor_stats;
-        bsd_monitor_stats(child.id() as PID, files);
+        bsd_monitor_stats(child.id() as PID, files, stats);
     }
-    #[cfg(target_os = "linux")] {
+    #[cfg(target_os = "linux")]
+    {
         use crate::linux::proc::linux_monitor_stats;
         linux_monitor_stats(child.id() as PID, files);
     }
-    #[cfg(target_os = "macos")] {
+    #[cfg(target_os = "macos")]
+    {
         use crate::macos::proc::macos_monitor_stats;
-        macos_monitor_stats(child.id() as PID, files);
+        macos_monitor_stats(child.id() as PID, files, stats);
     }
     Ok(())
 }
 
 fn close_std_handles() {
     let std_handles;
-    #[cfg(target_os = "macos")] {
-        std_handles = [libc::STDOUT_FILENO, libc::STDERR_FILENO];
+    #[cfg(target_os = "macos")]
+    {
+        std_handles = [libc::STDIN_FILENO, libc::STDOUT_FILENO, libc::STDERR_FILENO];
     }
-    #[cfg(not(target_os = "macos"))] {
+    #[cfg(not(target_os = "macos"))]
+    {
         std_handles = [libc::STDIN_FILENO, libc::STDOUT_FILENO, libc::STDERR_FILENO];
     }
     for handle in std_handles {
@@ -117,7 +140,12 @@ fn close_std_handles() {
     }
 }
 
-fn run_command(command: &str, process_dir: &Path) -> Result<Child, MultErrorTuple> {
+fn run_command(
+    command: &CommandData,
+    process_dir: &Path,
+    interactive: bool,
+) -> Result<Child, MultErrorTuple> {
+    let mut args = "-c";
     let shell_path = match env::var("SHELL") {
         Ok(val) => {
             if SUPPORTED_SHELLS
@@ -125,6 +153,9 @@ fn run_command(command: &str, process_dir: &Path) -> Result<Child, MultErrorTupl
                 .find(|shell_name| val.ends_with(shell_name))
                 .is_some()
             {
+                if interactive {
+                    args = "-ic"
+                }
                 val
             } else {
                 "/bin/bash".to_string()
@@ -133,22 +164,19 @@ fn run_command(command: &str, process_dir: &Path) -> Result<Child, MultErrorTupl
         Err(_) => return Err((MultError::OSNotSupported, None)),
     };
     let mut child = Command::new(shell_path)
-        .args(["-c", &command])
+        .args([args, &command.command])
+        .current_dir(command.dir.to_string())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
+        .stdin(Stdio::piped())
         .spawn()
         .expect("Command has failed.");
-
-    let current_dir = match env::current_dir() {
-        Ok(val) => val,
-        Err(_) => home_dir().unwrap(),
-    };
 
     let child_pid = child.id() as PID;
     let data = get_command_data(
         child_pid,
-        command.to_string(),
-        current_dir.display().to_string()
+        command.command.to_string(),
+        command.dir.to_string(),
     );
     CommandManager::write_command_data(data?, process_dir);
 
@@ -164,9 +192,10 @@ fn run_command(command: &str, process_dir: &Path) -> Result<Child, MultErrorTupl
 }
 
 fn get_command_data(pid: PID, command: String, dir: String) -> Result<CommandData, MultErrorTuple> {
-    #[cfg(target_os = "linux")] {
-        use crate::linux::proc::linux_get_process_stats;
+    #[cfg(target_os = "linux")]
+    {
         use crate::linux::proc::linux_get_proc_name;
+        use crate::linux::proc::linux_get_process_stats;
         let stats = linux_get_process_stats(pid);
         if stats.len() == 0 {
             return Err((MultError::ProcessNotExists, None));
@@ -180,8 +209,9 @@ fn get_command_data(pid: PID, command: String, dir: String) -> Result<CommandDat
         };
         return Ok(data);
     }
-    #[cfg(target_os = "freebsd")] {
-        use crate::bsd::proc::{bsd_get_process_stats, bsd_get_proc_info};
+    #[cfg(target_os = "freebsd")]
+    {
+        use crate::bsd::proc::{bsd_get_proc_name, bsd_get_process_stats};
         let proc_stats = bsd_get_process_stats(pid);
         if proc_stats.is_none() {
             return Err((MultError::ProcessNotExists, None));
@@ -191,11 +221,12 @@ fn get_command_data(pid: PID, command: String, dir: String) -> Result<CommandDat
             command,
             dir,
             starttime: proc_stats.unwrap().ki_start.tv_sec as u64,
-            name: bsd_get_proc_info(proc_stats),
+            name: bsd_get_proc_name(proc_stats),
         };
         return Ok(data);
     }
-    #[cfg(target_os = "macos")] {
+    #[cfg(target_os = "macos")]
+    {
         use crate::macos::proc::macos_get_all_process_stats;
         use crate::unix::proc::unix_convert_c_string;
         let all_stats = macos_get_all_process_stats(pid);
@@ -214,17 +245,19 @@ fn get_command_data(pid: PID, command: String, dir: String) -> Result<CommandDat
 }
 
 fn split_limit_cpu(pid: PID, limit: f32) {
-    #[cfg(target_os = "linux")] {
+    #[cfg(target_os = "linux")]
+    {
         use crate::linux::cpu::linux_split_limit_cpu;
         linux_split_limit_cpu(pid, limit);
     }
-    #[cfg(target_os = "freebsd")] {
+    #[cfg(target_os = "freebsd")]
+    {
         use crate::bsd::cpu::bsd_split_limit_cpu;
         bsd_split_limit_cpu(pid, limit);
     }
-    #[cfg(target_os = "macos")] {
+    #[cfg(target_os = "macos")]
+    {
         use crate::macos::cpu::macos_split_limit_cpu;
         macos_split_limit_cpu(pid, limit);
     }
 }
-

@@ -3,3 +3,4 @@ logs.log
 libmult.so
 libmult.a
 mult.o
+*.swp

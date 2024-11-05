@@ -5,6 +5,7 @@ use crate::colors::{color_string, ERR_RED};
 pub struct MainHeaders {
     pub id: u32,
     pub command: String,
+    pub dir: String,
 }
 
 pub struct ProcessHeaders {
@@ -44,6 +45,7 @@ impl TableManager {
         self.ascii_table.set_titles(Row::new(vec![
             Cell::new("id").style_spec("b"),
             Cell::new("command").style_spec("b"),
+            Cell::new("location").style_spec("b"),
             Cell::new("pid").style_spec("b"),
             Cell::new("status").style_spec("b"),
             Cell::new("memory").style_spec("b"),
@@ -56,6 +58,7 @@ impl TableManager {
         let mut row: Vec<Cell> = vec![
             Cell::new(&headers.id.to_string()),
             Cell::new(&headers.command),
+            Cell::new(&headers.dir),
         ];
         if let Some(p) = process {
             row.extend(vec![

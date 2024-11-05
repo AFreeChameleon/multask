@@ -1,13 +1,23 @@
 #![cfg(target_family = "windows")]
 
 use crate::{
-    command::MemStats,
-    error::{print_error, MultError, MultErrorTuple},
-    task::Files
+    error::{print_error, print_warning, MultError, MultErrorTuple},
+    proc::ForkFlagTuple,
+    task::Files,
 };
-use windows_sys::Win32::{Foundation::GetLastError, System::Threading::{CreateProcessW, CREATE_BREAKAWAY_FROM_JOB, CREATE_NO_WINDOW, DETACHED_PROCESS, STARTUPINFOEXW}};
 use std::{
-    env, ffi::{c_void, OsString}, os::windows::ffi::OsStrExt, path::Path, ptr
+    env,
+    ffi::{c_void, OsString},
+    os::windows::ffi::OsStrExt,
+    path::Path,
+    ptr,
+};
+use windows_sys::Win32::{
+    Foundation::GetLastError,
+    System::Threading::{
+        CreateProcessW, CREATE_BREAKAWAY_FROM_JOB, CREATE_NO_WINDOW, DETACHED_PROCESS,
+        STARTUPINFOEXW,
+    },
 };
 
 pub fn cast_to_c_void<T>(var: &mut T) -> *mut c_void {
@@ -17,20 +27,27 @@ pub fn cast_to_c_void<T>(var: &mut T) -> *mut c_void {
 pub fn run_daemon(
     files: Files,
     command: String,
-    flags: &MemStats,
+    flags: &ForkFlagTuple,
     task_id: u32,
 ) -> Result<(), MultErrorTuple> {
     if let Ok(exe_dir) = env::current_exe() {
         let spawn_dir = Path::new(&exe_dir).parent().unwrap();
+        let (memory_limit, cpu_limit, interactive) = flags;
+        if interactive.to_owned() {
+            print_warning("Interactive flag is disabled on Windows.");
+        }
         let mut command_line: Vec<u16> = OsString::from(format!(
             "{} {} \"{}\" {} {} {}",
             spawn_dir.join("mult_spawn.exe").display().to_string(),
             files.process_dir.display().to_string(),
             command,
             task_id,
-            flags.memory_limit,
-            flags.cpu_limit
-        )).encode_wide().chain(Some(0)).collect();
+            memory_limit,
+            cpu_limit
+        ))
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
         unsafe {
             let mut process_info = std::mem::zeroed();
             let mut si: STARTUPINFOEXW = std::mem::zeroed();
@@ -57,4 +74,3 @@ pub fn run_daemon(
     }
     Ok(())
 }
-

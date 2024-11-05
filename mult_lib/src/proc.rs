@@ -24,20 +24,26 @@ pub struct UsageStats {
     pub cpu_usage: f32,
 }
 
+pub type ForkFlagTuple = (i64, i32, bool);
+
 pub fn get_proc_name(pid: PID) -> Result<String, MultErrorTuple> {
-    #[cfg(target_os = "linux")] {
+    #[cfg(target_os = "linux")]
+    {
         use crate::linux::proc::linux_get_proc_name;
         return linux_get_proc_name(pid);
     }
-    #[cfg(target_os = "windows")] {
+    #[cfg(target_os = "windows")]
+    {
         use crate::windows::proc::win_get_proc_name;
         return win_get_proc_name(pid);
     }
-    #[cfg(target_os = "freebsd")] {
+    #[cfg(target_os = "freebsd")]
+    {
         use crate::bsd::proc::bsd_get_proc_comm;
         return bsd_get_proc_comm(pid);
     }
-    #[cfg(target_os = "macos")] {
+    #[cfg(target_os = "macos")]
+    {
         use crate::macos::proc::macos_get_process_stats;
         use crate::unix::proc::unix_convert_c_string;
         let stats = macos_get_process_stats(pid);
@@ -49,19 +55,23 @@ pub fn get_proc_name(pid: PID) -> Result<String, MultErrorTuple> {
 }
 
 pub fn get_proc_comm(pid: PID) -> Result<String, MultErrorTuple> {
-    #[cfg(target_os = "linux")] {
+    #[cfg(target_os = "linux")]
+    {
         use crate::linux::proc::linux_get_proc_comm;
         return linux_get_proc_comm(pid);
     }
-    #[cfg(target_os = "windows")] {
+    #[cfg(target_os = "windows")]
+    {
         use crate::windows::proc::win_get_proc_name;
         return win_get_proc_name(pid);
     }
-    #[cfg(target_os = "freebsd")] {
+    #[cfg(target_os = "freebsd")]
+    {
         use crate::bsd::proc::bsd_get_proc_comm;
         return bsd_get_proc_comm(pid);
     }
-    #[cfg(target_os = "macos")] {
+    #[cfg(target_os = "macos")]
+    {
         use crate::macos::proc::macos_get_process_stats;
         use crate::unix::proc::unix_convert_c_string;
         let stats = macos_get_process_stats(pid);
@@ -72,7 +82,6 @@ pub fn get_proc_comm(pid: PID) -> Result<String, MultErrorTuple> {
         Ok(unix_convert_c_string(stats.unwrap().pbi_comm.iter()))
     }
 }
-
 
 pub fn save_task_processes(path: &Path, tree: &TreeNode) {
     let encoded_data = bincode::serialize::<TreeNode>(tree).unwrap();
@@ -104,7 +113,8 @@ pub fn read_usage_stats(task_id: u32) -> Result<HashMap<PID, UsageStats>, MultEr
 pub fn proc_exists(pid: PID) -> bool {
     #[cfg(target_family = "unix")]
     return unix_proc_exists(pid);
-    #[cfg(target_os = "windows")] {
+    #[cfg(target_os = "windows")]
+    {
         use crate::windows::proc::win_proc_exists;
         return win_proc_exists(pid);
     }
@@ -127,15 +137,12 @@ pub fn get_readable_memory(bytes: f64) -> String {
     }
     let base = bytes.log10() / UNIT.log10();
     let result = format!("{:.1}", UNIT.powf(base - base.floor()),)
-    .trim_end_matches(".0")
-    .to_owned();
+        .trim_end_matches(".0")
+        .to_owned();
 
     [&result, SUFFIX[base.floor() as usize]].join(" ")
 }
 
-pub fn convert_vec_to_array<T, const N: usize>(
-    v: Vec<T>
-) -> [T; N] {
-    return v.try_into()
-        .unwrap_or_else(|_v: Vec<T>| panic!());
+pub fn convert_vec_to_array<T, const N: usize>(v: Vec<T>) -> [T; N] {
+    return v.try_into().unwrap_or_else(|_v: Vec<T>| panic!());
 }

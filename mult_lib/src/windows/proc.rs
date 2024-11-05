@@ -2,7 +2,10 @@
 use std::{
     ffi::OsString,
     mem,
-    os::{raw::c_void, windows::ffi::{OsStrExt, OsStringExt}},
+    os::{
+        raw::c_void,
+        windows::ffi::{OsStrExt, OsStringExt},
+    },
     ptr,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -11,23 +14,19 @@ use windows_sys::Win32::{
     Foundation::{GetLastError, FILETIME, STILL_ACTIVE},
     Storage::FileSystem::SYNCHRONIZE,
     System::{
-        JobObjects::{
-            OpenJobObjectW, QueryInformationJobObject, JOBOBJECT_BASIC_PROCESS_ID_LIST
-        },
-        ProcessStatus::{
-            GetProcessImageFileNameW, GetProcessMemoryInfo,
-            PROCESS_MEMORY_COUNTERS,
-        },
+        JobObjects::{OpenJobObjectW, QueryInformationJobObject, JOBOBJECT_BASIC_PROCESS_ID_LIST},
+        ProcessStatus::{GetProcessImageFileNameW, GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS},
         Threading::{
-            GetExitCodeProcess, GetProcessTimes, OpenProcess, TerminateProcess,
-            PROCESS_ALL_ACCESS, PROCESS_QUERY_INFORMATION,
-            PROCESS_TERMINATE,
+            GetExitCodeProcess, GetProcessTimes, OpenProcess, TerminateProcess, PROCESS_ALL_ACCESS,
+            PROCESS_QUERY_INFORMATION, PROCESS_TERMINATE,
         },
     },
 };
 
 use crate::{
-    error::{print_error, print_warning, MultError, MultErrorTuple}, proc::{get_readable_memory, PID}, tree::{compress_tree, TreeNode}
+    error::{print_error, print_warning, MultError, MultErrorTuple},
+    proc::{get_readable_memory, PID},
+    tree::{compress_tree, TreeNode},
 };
 
 use super::fork::cast_to_c_void;
@@ -166,7 +165,7 @@ pub fn win_get_memory_usage(pid: &PID) -> String {
             &mut mem_info,
             mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
         );
-        return get_readable_memory(mem_info.WorkingSetSize as f64)
+        return get_readable_memory(mem_info.WorkingSetSize as f64);
     }
 }
 
@@ -184,7 +183,9 @@ pub fn win_kill_all_processes(ppid: u32, task_id: u32) -> Result<(), MultErrorTu
         return Err((MultError::ProcessNotExists, None));
     }
     let lp_name = OsString::from(format!("Global\\mult-{}", task_id))
-        .encode_wide().chain(Some(0)).collect::<Vec<u16>>();
+        .encode_wide()
+        .chain(Some(0))
+        .collect::<Vec<u16>>();
     let job = unsafe {
         OpenJobObjectW(
             0x1F001F, // JOB_OBJECT_ALL_ACCESS
@@ -208,7 +209,9 @@ pub fn win_kill_process(pid: u32) -> Result<(), MultErrorTuple> {
     let mut process_name = [0; 1024];
     let process_handle = unsafe {
         OpenProcess(
-            PROCESS_TERMINATE | PROCESS_QUERY_INFORMATION | SYNCHRONIZE, 1, pid as u32
+            PROCESS_TERMINATE | PROCESS_QUERY_INFORMATION | SYNCHRONIZE,
+            1,
+            pid as u32,
         )
     };
     if unsafe { GetProcessImageFileNameW(process_handle, process_name.as_mut_ptr(), 1024) } == 0 {
@@ -232,7 +235,11 @@ pub fn win_kill_process(pid: u32) -> Result<(), MultErrorTuple> {
     }
     if unsafe { TerminateProcess(process_handle, 1) } == 0 {
         unsafe {
-            print_warning(&format!("Failed to kill process: {}. error code: {}", pid, GetLastError()));
+            print_warning(&format!(
+                "Failed to kill process: {}. error code: {}",
+                pid,
+                GetLastError()
+            ));
         }
     }
     Ok(())
