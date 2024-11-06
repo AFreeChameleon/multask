@@ -20,22 +20,22 @@
 
 For Linux:
 ```
-curl -s "https://raw.githubusercontent.com/AFreeChameleon/multask-docs/refs/heads/develop/install/scripts/linux.sh" | bash
+curl -s "https://raw.githubusercontent.com/AFreeChameleon/multask-docs/refs/heads/master/install/scripts/linux.sh" | bash
 ```
 
 For Mac:
 ```
-curl -s "https://raw.githubusercontent.com/AFreeChameleon/multask-docs/refs/heads/develop/install/scripts/osx.sh" | bash
+curl -s "https://raw.githubusercontent.com/AFreeChameleon/multask-docs/refs/heads/master/install/scripts/osx.sh" | bash
 ```
 
 For FreeBSD:
 ```
-curl -s "https://raw.githubusercontent.com/AFreeChameleon/multask-docs/refs/heads/develop/install/scripts/freebsd.sh" | bash
+curl -s "https://raw.githubusercontent.com/AFreeChameleon/multask-docs/refs/heads/master/install/scripts/freebsd.sh" | bash
 ```
 
 For Windows:
 ```
-powershell -c "irm https://raw.githubusercontent.com/AFreeChameleon/multask-docs/refs/heads/develop/install/scripts/win.ps1|iex"
+powershell -c "irm https://raw.githubusercontent.com/AFreeChameleon/multask-docs/refs/heads/master/install/scripts/win.ps1|iex"
 ```
 
 ## Getting Started
