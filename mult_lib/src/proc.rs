@@ -7,6 +7,7 @@ use std::{collections::HashMap, fs::File};
 use std::fs;
 use std::path::Path;
 use std::u32;
+use crate::date::{seconds_to_datetime, DateTime};
 
 #[cfg(target_family = "unix")]
 use crate::unix::proc::unix_proc_exists;
@@ -113,12 +114,18 @@ pub fn read_usage_stats(task_id: u32) -> Result<HashMap<PID, UsageStats>, MultEr
 }
 
 pub fn write_shutdown_timestamp(stdout: &mut File) -> Result<(), MultErrorTuple> {
-    let now = SystemTime::now();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH).unwrap();
 
-    match stdout.write_all(format!(
-        "{:}|---------- Multask: process shutting down... ----------\n",
-        now.duration_since(UNIX_EPOCH).unwrap().as_millis(),
-    ).as_bytes()) {
+    let mut dt = DateTime::new();
+    seconds_to_datetime(now.as_secs() as i64, &mut dt);
+
+    let shutdown_message = format!(
+        "{:}|---------- Multask {}: process shutting down... ----------\n",
+        now.as_millis(),
+        dt
+    );
+    match stdout.write_all(shutdown_message.as_bytes()) {
         Ok(()) => 0,
         Err(_) => return Err((MultError::TaskFileNotExist, None))
     };

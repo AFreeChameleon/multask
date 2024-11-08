@@ -1,7 +1,7 @@
 #![cfg(target_family = "unix")]
 use std::{
     env,
-    fs::File,
+    fs::{File, OpenOptions},
     io::{BufRead, BufReader, Write},
     path::Path,
     process::{Child, Command, Stdio},
@@ -120,9 +120,9 @@ pub fn run_daemon(
             use crate::macos::proc::macos_monitor_stats;
             macos_monitor_stats(child.id() as PID, files, stats);
         }
+        write_shutdown_timestamp(&mut files.stdout)?;
         // Killing process if this wrapper fails
         unsafe { libc::kill(child.id() as _, libc::SIGINT); }
-        write_shutdown_timestamp(&mut files.stdout)?;
         if !persist {
             break;
         } else {
@@ -194,8 +194,14 @@ fn run_command(
     let stdout = child.stdout.take().unwrap();
     let stderr = child.stderr.take().unwrap();
 
-    let mut stdout_file = File::create(process_dir.join("stdout.out")).unwrap();
-    let mut stderr_file = File::create(process_dir.join("stderr.err")).unwrap();
+    let mut stdout_file = OpenOptions::new()
+        .create(true).append(true)
+        .open(process_dir.join("stdout.out"))
+        .unwrap();
+    let mut stderr_file  = OpenOptions::new()
+        .create(true).append(true)
+        .open(process_dir.join("stderr.err"))
+        .unwrap();
 
     spawn_logger!(stderr, stderr_file);
     spawn_logger!(stdout, stdout_file);

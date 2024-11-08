@@ -1,6 +1,6 @@
 use std::{
     env::args,
-    fs::{self, File},
+    fs::{self, File, OpenOptions},
     io::Write,
     path::Path,
 };
@@ -113,8 +113,14 @@ impl TaskManager {
             .join(task_id.to_string());
         fs::create_dir_all(&process_dir).unwrap();
 
-        let stdout = File::create(process_dir.join("stdout.out")).unwrap();
-        let stderr = File::create(process_dir.join("stderr.err")).unwrap();
+        let stdout = OpenOptions::new()
+            .create(true).append(true)
+            .open(process_dir.join("stdout.out"))
+            .unwrap();
+        let stderr = OpenOptions::new()
+            .create(true).append(true)
+            .open(process_dir.join("stdout.out"))
+            .unwrap();
 
         TaskManager::write_tasks_file(tasks);
 
