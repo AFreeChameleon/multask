@@ -12,8 +12,11 @@ pub fn run() -> Result<(), MultErrorTuple> {
     let tasks = TaskManager::get_tasks()?;
     for arg in parsed_args.values.iter() {
         let task_id: u32 = TaskManager::parse_arg(Some(arg.to_string()))?;
-        let task = TaskManager::get_task(&tasks, task_id)?;
+        let mut task = TaskManager::get_task(&tasks, task_id)?;
         let command_data = CommandManager::read_command_data(task.id)?;
+        // Setting persist option to false
+        task.options.3 = false;
+        TaskManager::edit_task(task)?;
         #[cfg(target_os = "windows")]
         {
             use mult_lib::windows::proc::win_kill_all_processes;
@@ -24,10 +27,15 @@ pub fn run() -> Result<(), MultErrorTuple> {
         }
         #[cfg(target_os = "linux")]
         {
-            use mult_lib::linux::proc::linux_kill_all_processes;
-            match linux_kill_all_processes(command_data.pid as i32) {
-                Ok(_) => (),
-                Err(_) => print_info(&format!("Process {} is not running.", task_id)),
+            use mult_lib::linux::proc::{linux_get_process_stats, linux_kill_all_processes};
+            let stats = linux_get_process_stats(command_data.pid as i32);
+            if stats.len() > 0 {
+                match linux_kill_all_processes(stats[3].parse().unwrap()) {
+                    Ok(_) => (),
+                    Err(_) => print_info(&format!("Process {} is not running.", task_id)),
+                }
+            } else {
+                print_info(&format!("Process {} is not running.", task_id));
             }
         }
         #[cfg(target_os = "freebsd")]

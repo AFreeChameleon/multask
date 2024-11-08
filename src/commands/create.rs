@@ -23,7 +23,7 @@ pub fn run() -> Result<(), MultErrorTuple> {
     if let Some(last_task) = tasks.last() {
         new_task_id = last_task.id + 1;
     }
-    tasks.push(Task { id: new_task_id });
+    tasks.push(Task { id: new_task_id, options: flags });
     print_info("Running command...");
     let mut files = TaskManager::generate_task_files(new_task_id, &tasks);
     #[cfg(target_family = "unix")]

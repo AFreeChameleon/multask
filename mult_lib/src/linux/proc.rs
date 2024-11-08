@@ -96,14 +96,16 @@ fn linux_get_process(pid: PID, tree_node: &mut TreeNode) {
             for c_pid in child_pids {
                 let usize_c_pid = c_pid.parse::<PID>().unwrap();
                 let process_stats = linux_get_process_stats(usize_c_pid);
-                let mut new_node = TreeNode {
-                    pid: usize_c_pid,
-                    utime: process_stats[13].parse().unwrap(),
-                    stime: process_stats[14].parse().unwrap(),
-                    children: Vec::new(),
-                };
-                linux_get_process(usize_c_pid, &mut new_node);
-                tree_node.children.push(new_node);
+                if process_stats.len() > 0 {
+                    let mut new_node = TreeNode {
+                        pid: usize_c_pid,
+                        utime: process_stats[13].parse().unwrap(),
+                        stime: process_stats[14].parse().unwrap(),
+                        children: Vec::new(),
+                    };
+                    linux_get_process(usize_c_pid, &mut new_node);
+                    tree_node.children.push(new_node);
+                }
             }
         }
     }

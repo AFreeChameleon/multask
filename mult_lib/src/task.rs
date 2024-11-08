@@ -1,14 +1,14 @@
 use std::{
     env::args,
     fs::{self, File, OpenOptions},
-    io::Write,
-    path::Path,
+    io::{Read, Write},
+    path::{Path, PathBuf},
 };
 
 use bincode;
 use home;
 
-use crate::command::{CommandData, CommandManager};
+use crate::{command::{CommandData, CommandManager}, proc::ForkFlagTuple};
 use crate::{
     colors::{color_string, ERR_RED},
     error::{MultError, MultErrorTuple},
@@ -25,6 +25,7 @@ pub struct Files {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Task {
     pub id: u32,
+    pub options: ForkFlagTuple
 }
 
 pub struct TaskManager {}
@@ -80,6 +81,14 @@ impl TaskManager {
         let mut tasks_file = File::create(tasks_file_dir).unwrap();
         let encoded_data: Vec<u8> = bincode::serialize::<Vec<Task>>(&new_tasks).unwrap();
         tasks_file.write_all(&encoded_data).unwrap();
+    }
+
+    pub fn edit_task(task: Task) -> Result<(), MultErrorTuple> {
+        let mut tasks = TaskManager::get_tasks()?;
+        let task_idx = tasks.iter().position(|t| t.id == task.id).unwrap();
+        tasks[task_idx] = task;
+        TaskManager::write_tasks_file(&tasks);
+        Ok(())
     }
 
     pub fn get_task_from_arg(

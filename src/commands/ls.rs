@@ -91,7 +91,7 @@ pub fn setup_table(
         // Get memory stats
         let process_headers_opt = get_process_headers(command.pid, command.starttime, &task, true);
         if process_headers_opt.is_none() {
-            table.insert_row(main_headers, None);
+            table.insert_row(&task, main_headers, None);
             continue;
         }
         let mut process_headers = process_headers_opt.unwrap();
@@ -137,7 +137,7 @@ pub fn setup_table(
             }
         }
 
-        table.insert_row(main_headers, Some(process_headers));
+        table.insert_row(&task, main_headers, Some(process_headers));
     }
     Ok(())
 }

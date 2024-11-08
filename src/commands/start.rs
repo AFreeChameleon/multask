@@ -23,7 +23,9 @@ pub fn run() -> Result<(), MultErrorTuple> {
     let tasks = TaskManager::get_tasks()?;
     for arg in parsed_args.values.iter() {
         let task_id: u32 = TaskManager::parse_arg(Some(arg.to_string()))?;
-        let task = TaskManager::get_task(&tasks, task_id)?;
+        let mut task = TaskManager::get_task(&tasks, task_id)?;
+        task.options = flags;
+        TaskManager::edit_task(task.clone())?;
         let mut files = TaskManager::generate_task_files(task.id, &tasks);
         let command_data = CommandManager::read_command_data(task.id)?;
         if proc_exists(command_data.pid) {

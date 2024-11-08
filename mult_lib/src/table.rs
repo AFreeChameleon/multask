@@ -1,6 +1,6 @@
 use prettytable::{format, Cell, Row, Table};
 
-use crate::colors::{color_string, ERR_RED};
+use crate::{colors::{color_string, ERR_RED, WARNING_ORANGE}, task::Task};
 
 pub struct MainHeaders {
     pub id: u32,
@@ -54,7 +54,7 @@ impl TableManager {
         ]));
     }
 
-    pub fn insert_row(&mut self, headers: MainHeaders, process: Option<ProcessHeaders>) {
+    pub fn insert_row(&mut self, task: &Task, headers: MainHeaders, process: Option<ProcessHeaders>) {
         let mut row: Vec<Cell> = vec![
             Cell::new(&headers.id.to_string()),
             Cell::new(&headers.command),
@@ -69,9 +69,16 @@ impl TableManager {
                 Cell::new(&p.runtime),
             ]);
         } else {
+            let status = if task.options.3 {
+                &color_string(WARNING_ORANGE, "Rebooting")
+            } else {
+                &color_string(ERR_RED, "Stopped")
+            };
             row.extend(vec![
                 Cell::new("N/A"),
-                Cell::new(&color_string(ERR_RED, "Stopped")),
+                Cell::new(
+                    status
+                ),
                 Cell::new("N/A"),
                 Cell::new("N/A"),
                 Cell::new("N/A"),

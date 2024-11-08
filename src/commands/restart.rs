@@ -7,8 +7,6 @@ use mult_lib::command::CommandManager;
 use mult_lib::error::{print_info, print_success, MultErrorTuple};
 use mult_lib::task::TaskManager;
 
-#[cfg(target_family = "unix")]
-use mult_lib::unix::fork;
 #[cfg(target_family = "windows")]
 use mult_lib::windows::fork;
 
@@ -26,7 +24,9 @@ pub fn run() -> Result<(), MultErrorTuple> {
     let flags = get_fork_flag_values(&parsed_args)?;
     for arg in parsed_args.values.iter() {
         let task_id: u32 = TaskManager::parse_arg(Some(arg.to_string()))?;
-        let task = TaskManager::get_task(&tasks, task_id)?;
+        let mut task = TaskManager::get_task(&tasks, task_id)?;
+        task.options = flags;
+        TaskManager::edit_task(task.clone())?;
         let command_data = CommandManager::read_command_data(task.id)?;
         print_info("Killing process...");
         #[cfg(target_os = "windows")]
@@ -39,10 +39,15 @@ pub fn run() -> Result<(), MultErrorTuple> {
         }
         #[cfg(target_os = "linux")]
         {
-            use mult_lib::linux::proc::linux_kill_all_processes;
-            match linux_kill_all_processes(command_data.pid as i32) {
-                Ok(_) => (),
-                Err(_) => print_info(&format!("Process {} is not running.", task_id)),
+            use mult_lib::linux::proc::{linux_get_process_stats, linux_kill_all_processes};
+            let stats = linux_get_process_stats(command_data.pid as i32);
+            if stats.len() > 0 {
+                match linux_kill_all_processes(stats[3].parse().unwrap()) {
+                    Ok(_) => (),
+                    Err(_) => print_info(&format!("Process {} is not running.", task_id)),
+                }
+            } else {
+                print_info(&format!("Process {} is not running.", task_id));
             }
         }
         #[cfg(target_os = "freebsd")]
@@ -64,8 +69,10 @@ pub fn run() -> Result<(), MultErrorTuple> {
         let mut files = TaskManager::generate_task_files(task.id, &tasks);
         print_info("Restarting process...");
 
-        #[cfg(target_family = "unix")]
-        fork::run_daemon(&mut files, command_data, flags.clone())?;
+        #[cfg(target_family = "unix")] {
+            use mult_lib::unix::fork;
+            fork::run_daemon(&mut files, command_data, flags.clone())?;
+        }
         #[cfg(target_family = "windows")]
         fork::run_daemon(files, command_data.command, &flags, task_id)?;
 

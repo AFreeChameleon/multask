@@ -126,7 +126,7 @@ pub fn run_daemon(
         if !persist {
             break;
         } else {
-            thread::sleep(Duration::from_millis(PERSIST_TIMEOUT));
+            thread::sleep(Duration::from_secs(PERSIST_TIMEOUT));
         }
     }
     Ok(())

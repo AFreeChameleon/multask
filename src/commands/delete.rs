@@ -24,10 +24,15 @@ pub fn run() -> Result<(), MultErrorTuple> {
             }
             #[cfg(target_os = "linux")]
             {
-                use mult_lib::linux::proc::linux_kill_all_processes;
-                match linux_kill_all_processes(command_data.pid as i32) {
-                    Ok(_) => (),
-                    Err(_) => print_info(&format!("Process {} is not running.", task_id)),
+                use mult_lib::linux::proc::{linux_get_process_stats, linux_kill_all_processes};
+                let stats = linux_get_process_stats(command_data.pid as i32);
+                if stats.len() > 0 {
+                    match linux_kill_all_processes(stats[3].parse().unwrap()) {
+                        Ok(_) => (),
+                        Err(_) => print_info(&format!("Process {} is not running.", task_id)),
+                    }
+                } else {
+                    print_info(&format!("Process {} is not running.", task_id));
                 }
             }
             #[cfg(target_os = "freebsd")]
