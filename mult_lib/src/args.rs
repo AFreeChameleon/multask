@@ -13,6 +13,7 @@ pub struct ParsedArgs {
 pub const MEMORY_LIMIT_FLAG: &str = "-m";
 pub const CPU_LIMIT_FLAG: &str = "-c";
 pub const INTERACTIVE_FLAG: &str = "-i";
+pub const PERSIST_FLAG: &str = "-p";
 
 // flags is an array of the name of the flag like --watch and if the flag has a value
 pub fn parse_args(
@@ -166,7 +167,8 @@ pub fn get_fork_flag_values(parsed_args: &ParsedArgs) -> Result<ForkFlagTuple, M
         }
     }
     let interactive = parsed_args.flags.contains(&INTERACTIVE_FLAG.to_owned());
-    Ok((memory_limit, cpu_limit, interactive))
+    let persist = parsed_args.flags.contains(&PERSIST_FLAG.to_owned());
+    Ok((memory_limit, cpu_limit, interactive, persist))
 }
 
 #[cfg(test)]

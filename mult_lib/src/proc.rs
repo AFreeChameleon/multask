@@ -1,7 +1,9 @@
 extern crate core;
 extern crate std;
 
-use std::collections::HashMap;
+use std::io::Write;
+use std::time::{SystemTime, UNIX_EPOCH};
+use std::{collections::HashMap, fs::File};
 use std::fs;
 use std::path::Path;
 use std::u32;
@@ -24,7 +26,7 @@ pub struct UsageStats {
     pub cpu_usage: f32,
 }
 
-pub type ForkFlagTuple = (i64, i32, bool);
+pub type ForkFlagTuple = (i64, i32, bool, bool);
 
 pub fn get_proc_name(pid: PID) -> Result<String, MultErrorTuple> {
     #[cfg(target_os = "linux")]
@@ -108,6 +110,19 @@ pub fn read_usage_stats(task_id: u32) -> Result<HashMap<PID, UsageStats>, MultEr
         return Ok(decoded);
     }
     Ok(HashMap::new())
+}
+
+pub fn write_shutdown_timestamp(stdout: &mut File) -> Result<(), MultErrorTuple> {
+    let now = SystemTime::now();
+
+    match stdout.write_all(format!(
+        "{:}|---------- Multask: process shutting down... ----------\n",
+        now.duration_since(UNIX_EPOCH).unwrap().as_millis(),
+    ).as_bytes()) {
+        Ok(()) => 0,
+        Err(_) => return Err((MultError::TaskFileNotExist, None))
+    };
+    Ok(())
 }
 
 pub fn proc_exists(pid: PID) -> bool {

@@ -221,7 +221,7 @@ pub fn linux_kill_all_processes(pid: PID) -> Result<(), MultErrorTuple> {
     Ok(())
 }
 
-pub fn linux_monitor_stats(pid: PID, files: Files) {
+pub fn linux_monitor_stats(pid: PID, files: &Files) {
     let mut cpu_time_total;
     loop {
         // Get usage metrics

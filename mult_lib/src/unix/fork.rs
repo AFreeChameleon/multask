@@ -6,10 +6,10 @@ use std::{
     path::Path,
     process::{Child, Command, Stdio},
     thread,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use crate::task::Files;
+use crate::{proc::write_shutdown_timestamp, task::Files};
 use crate::{
     command::{CommandData, CommandManager},
     proc::ForkFlagTuple,
@@ -41,13 +41,14 @@ macro_rules! spawn_logger {
 }
 
 const SUPPORTED_SHELLS: [&str; 3] = ["/sh", "/bash", "/zsh"];
+const PERSIST_TIMEOUT: u64 = 2;
 
 pub fn run_daemon(
-    files: Files,
+    files: &mut Files,
     command: CommandData,
     stats: ForkFlagTuple,
 ) -> Result<(), MultErrorTuple> {
-    let (memory_limit, cpu_limit, interactive) = stats;
+    let (memory_limit, cpu_limit, interactive, persist) = stats;
     let process_id;
     let sid;
     unsafe {
@@ -74,52 +75,60 @@ pub fn run_daemon(
     if sid < 0 {
         return Err((MultError::SetSidFailed, None));
     }
-    // Do daemon stuff here
-    let child = run_command(&command, &files.process_dir, interactive)?;
-    if memory_limit > -1 {
-        let memory_rlimit = libc::rlimit {
-            rlim_cur: memory_limit as _,
-            rlim_max: memory_limit as _,
-        };
-        #[cfg(target_os = "linux")]
-        unsafe {
-            libc::syscall(
-                libc::SYS_prlimit64,
-                child.id() as i64,
-                libc::RLIMIT_AS,
-                &memory_rlimit,
-                std::ptr::null::<libc::rlimit>(),
-            );
+    loop {
+        // Do daemon stuff here
+        let child = run_command(&command, &files.process_dir, interactive)?;
+        if memory_limit > -1 {
+            let memory_rlimit = libc::rlimit {
+                rlim_cur: memory_limit as _,
+                rlim_max: memory_limit as _,
+            };
+            #[cfg(target_os = "linux")]
+            unsafe {
+                libc::syscall(
+                    libc::SYS_prlimit64,
+                    child.id() as i64,
+                    libc::RLIMIT_AS,
+                    &memory_rlimit,
+                    std::ptr::null::<libc::rlimit>(),
+                );
+            }
+            #[cfg(not(target_os = "linux"))]
+            unsafe {
+                libc::setrlimit(libc::RLIMIT_RSS, &memory_rlimit);
+            }
         }
-        #[cfg(not(target_os = "linux"))]
-        unsafe {
-            libc::setrlimit(libc::RLIMIT_RSS, &memory_rlimit);
+        if cpu_limit > -1 {
+            let child_id = child.id();
+            thread::spawn(move || {
+                split_limit_cpu(child_id as PID, cpu_limit as f32);
+            });
         }
-    }
-    if cpu_limit > -1 {
-        let child_id = child.id();
-        thread::spawn(move || {
-            split_limit_cpu(child_id as PID, cpu_limit as f32);
-        });
-    }
 
-    #[cfg(target_os = "freebsd")]
-    {
-        use crate::bsd::proc::bsd_monitor_stats;
-        bsd_monitor_stats(child.id() as PID, files, stats);
+        #[cfg(target_os = "freebsd")]
+        {
+            use crate::bsd::proc::bsd_monitor_stats;
+            bsd_monitor_stats(child.id() as PID, files, stats);
+        }
+        #[cfg(target_os = "linux")]
+        {
+            use crate::linux::proc::linux_monitor_stats;
+            linux_monitor_stats(child.id() as PID, &files);
+        }
+        #[cfg(target_os = "macos")]
+        {
+            use crate::macos::proc::macos_monitor_stats;
+            macos_monitor_stats(child.id() as PID, files, stats);
+        }
+        // Killing process if this wrapper fails
+        unsafe { libc::kill(child.id() as _, libc::SIGINT); }
+        write_shutdown_timestamp(&mut files.stdout)?;
+        if !persist {
+            break;
+        } else {
+            thread::sleep(Duration::from_millis(PERSIST_TIMEOUT));
+        }
     }
-    #[cfg(target_os = "linux")]
-    {
-        use crate::linux::proc::linux_monitor_stats;
-        linux_monitor_stats(child.id() as PID, files);
-    }
-    #[cfg(target_os = "macos")]
-    {
-        use crate::macos::proc::macos_monitor_stats;
-        macos_monitor_stats(child.id() as PID, files, stats);
-    }
-    // Killing process if this wrapper fails
-    unsafe { libc::kill(child.id() as _, libc::SIGINT); }
     Ok(())
 }
 
