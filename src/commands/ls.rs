@@ -77,6 +77,7 @@ pub fn setup_table(
             Err(err) => return Err(err),
         };
         let mut command_path = Path::new(&command.dir).iter().rev();
+        // Getting the location
         let mut last_dirs = String::new();
         for _ in 0..2 {
             if let Some(p) = command_path.next() {

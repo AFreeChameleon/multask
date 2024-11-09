@@ -124,12 +124,11 @@ pub fn run_daemon(
         // Killing process if this wrapper fails
         unsafe { libc::kill(child.id() as _, libc::SIGINT); }
         if !persist {
-            break;
+            unsafe { libc::exit(0) };
         } else {
             thread::sleep(Duration::from_secs(PERSIST_TIMEOUT));
         }
     }
-    Ok(())
 }
 
 fn close_std_handles() {
