@@ -168,9 +168,9 @@ pub fn macos_get_runtime(starttime: u64) -> u64 {
     since_epoch - starttime
 }
 
-pub fn macos_monitor_stats(pid: PID, files: Files, stats: ForkFlagTuple) {
+pub fn macos_monitor_stats(pid: PID, files: &mut Files, stats: ForkFlagTuple) {
     let existing_cpu_time = Arc::new(Mutex::new(0));
-    let (memory_limit, _, _) = stats;
+    let (memory_limit, _, _, _) = stats;
     loop {
         // Get usage metrics
         let process_tree = macos_get_all_processes(pid);

@@ -134,8 +134,8 @@ pub fn bsd_kill_all_processes(pid: PID) -> Result<(), MultErrorTuple> {
     Ok(())
 }
 
-pub fn bsd_monitor_stats(pid: PID, files: Files, stats: ForkFlagTuple) {
-    let (memory_limit, _, _) = stats;
+pub fn bsd_monitor_stats(pid: PID, files: &mut Files, stats: ForkFlagTuple) {
+    let (memory_limit, _, _, _) = stats;
     loop {
         // Get usage metrics
         let process_tree = bsd_get_all_processes(pid);

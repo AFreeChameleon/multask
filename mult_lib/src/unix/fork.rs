@@ -1,15 +1,15 @@
 #![cfg(target_family = "unix")]
 use std::{
     env,
-    fs::{File, OpenOptions},
+    fs::OpenOptions,
     io::{BufRead, BufReader, Write},
     path::Path,
-    process::{Child, Command, Stdio},
+    process::{self, Child, Command, Stdio},
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use crate::{proc::write_shutdown_timestamp, task::Files};
+use crate::{proc::{write_shutdown_timestamp, PERSIST_TIMEOUT}, task::Files};
 use crate::{
     command::{CommandData, CommandManager},
     proc::ForkFlagTuple,
@@ -41,7 +41,6 @@ macro_rules! spawn_logger {
 }
 
 const SUPPORTED_SHELLS: [&str; 3] = ["/sh", "/bash", "/zsh"];
-const PERSIST_TIMEOUT: u64 = 2;
 
 pub fn run_daemon(
     files: &mut Files,
@@ -132,15 +131,7 @@ pub fn run_daemon(
 }
 
 fn close_std_handles() {
-    let std_handles;
-    #[cfg(target_os = "macos")]
-    {
-        std_handles = [libc::STDIN_FILENO, libc::STDOUT_FILENO, libc::STDERR_FILENO];
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        std_handles = [libc::STDIN_FILENO, libc::STDOUT_FILENO, libc::STDERR_FILENO];
-    }
+    let std_handles = [libc::STDIN_FILENO, libc::STDOUT_FILENO, libc::STDERR_FILENO];
     for handle in std_handles {
         unsafe {
             if libc::fcntl(handle, libc::F_GETFD) != -1 && unix_get_error_code() != libc::EBADF {
@@ -218,6 +209,7 @@ fn get_command_data(pid: PID, command: String, dir: String) -> Result<CommandDat
         }
         let data = CommandData {
             pid,
+            ppid: process::id() as i32,
             command,
             dir,
             starttime: stats[21].parse().unwrap(),
@@ -234,6 +226,7 @@ fn get_command_data(pid: PID, command: String, dir: String) -> Result<CommandDat
         }
         let data = CommandData {
             pid,
+            ppid: process::id() as i32,
             command,
             dir,
             starttime: proc_stats.unwrap().ki_start.tv_sec as u64,
@@ -251,6 +244,7 @@ fn get_command_data(pid: PID, command: String, dir: String) -> Result<CommandDat
         }
         let data = CommandData {
             pid,
+            ppid: process::id() as i32,
             command,
             dir,
             starttime: all_stats.unwrap().pbsd.pbi_start_tvsec,

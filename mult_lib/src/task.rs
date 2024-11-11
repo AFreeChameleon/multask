@@ -1,8 +1,8 @@
 use std::{
     env::args,
     fs::{self, File, OpenOptions},
-    io::{Read, Write},
-    path::{Path, PathBuf},
+    io::Write,
+    path::Path,
 };
 
 use bincode;
@@ -81,6 +81,7 @@ impl TaskManager {
         let mut tasks_file = File::create(tasks_file_dir).unwrap();
         let encoded_data: Vec<u8> = bincode::serialize::<Vec<Task>>(&new_tasks).unwrap();
         tasks_file.write_all(&encoded_data).unwrap();
+        tasks_file.flush().unwrap();
     }
 
     pub fn edit_task(task: Task) -> Result<(), MultErrorTuple> {

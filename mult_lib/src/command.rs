@@ -18,6 +18,7 @@ pub struct MemStats {
 pub struct CommandData {
     pub command: String,
     pub pid: PID,
+    pub ppid: PID,
     pub dir: String,
     pub name: String,
     pub starttime: u64,

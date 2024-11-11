@@ -25,12 +25,12 @@ pub fn run() -> Result<(), MultErrorTuple> {
     }
     tasks.push(Task { id: new_task_id, options: flags });
     print_info("Running command...");
-    let mut files = TaskManager::generate_task_files(new_task_id, &tasks);
     #[cfg(target_family = "unix")]
     {
         use home::home_dir;
         use mult_lib::command::CommandData;
         use mult_lib::unix::fork;
+        let mut files = TaskManager::generate_task_files(new_task_id, &tasks);
         let current_dir = match env::current_dir() {
             Ok(val) => val,
             Err(_) => home_dir().unwrap(),
@@ -39,6 +39,7 @@ pub fn run() -> Result<(), MultErrorTuple> {
             &mut files,
             CommandData {
                 pid: 0,
+                ppid: 0,
                 command,
                 dir: current_dir.display().to_string(),
                 name: String::new(),
@@ -50,6 +51,7 @@ pub fn run() -> Result<(), MultErrorTuple> {
     #[cfg(target_family = "windows")]
     {
         use mult_lib::windows::fork;
+        let files = TaskManager::generate_task_files(new_task_id, &tasks);
         fork::run_daemon(files, command, &flags, new_task_id)?;
     }
 

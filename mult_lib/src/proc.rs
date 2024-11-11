@@ -16,6 +16,8 @@ use crate::{
     tree::TreeNode,
 };
 
+pub const PERSIST_TIMEOUT: u64 = 2;
+
 // TODO - integrate this soon
 #[cfg(target_family = "unix")]
 pub type PID = i32;

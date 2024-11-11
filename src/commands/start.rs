@@ -20,25 +20,29 @@ pub fn run() -> Result<(), MultErrorTuple> {
     // 2 because thats the start of user args
     let parsed_args = parse_args(&args.collect::<Vec<String>>()[2..], &FLAGS, true)?;
     let flags = get_fork_flag_values(&parsed_args)?;
-    let tasks = TaskManager::get_tasks()?;
+    let mut tasks = TaskManager::get_tasks()?;
     for arg in parsed_args.values.iter() {
         let task_id: u32 = TaskManager::parse_arg(Some(arg.to_string()))?;
-        let mut task = TaskManager::get_task(&tasks, task_id)?;
-        task.options = flags;
-        TaskManager::edit_task(task.clone())?;
-        let mut files = TaskManager::generate_task_files(task.id, &tasks);
-        let command_data = CommandManager::read_command_data(task.id)?;
+        // This checks if the task exists
+        let _ = TaskManager::get_task(&tasks, task_id)?;
+
+        let task_idx = tasks.iter().position(|t| t.id == task_id).unwrap();
+        tasks[task_idx].options = flags;
+        let command_data = CommandManager::read_command_data(task_id)?;
+
         if proc_exists(command_data.pid) {
             return Err((MultError::ProcessAlreadyRunning, None));
         }
         #[cfg(target_family = "unix")]
         {
             use mult_lib::unix::fork;
+            let mut files = TaskManager::generate_task_files(task_id, &tasks);
             fork::run_daemon(&mut files, command_data, flags.clone())?;
         }
         #[cfg(target_family = "windows")]
         {
             use mult_lib::windows::fork;
+            let files = TaskManager::generate_task_files(task_id, &tasks);
             fork::run_daemon(files, command_data.command, &flags, task_id)?;
         }
 

@@ -32,18 +32,16 @@ pub fn run_daemon(
 ) -> Result<(), MultErrorTuple> {
     if let Ok(exe_dir) = env::current_exe() {
         let spawn_dir = Path::new(&exe_dir).parent().unwrap();
-        let (memory_limit, cpu_limit, interactive) = flags;
+        let (_, _, interactive, _) = flags;
         if interactive.to_owned() {
             print_warning("Interactive flag is disabled on Windows.");
         }
         let mut command_line: Vec<u16> = OsString::from(format!(
-            "{} {} \"{}\" {} {} {}",
+            "{} {} \"{}\" {}",
             spawn_dir.join("mult_spawn.exe").display().to_string(),
             files.process_dir.display().to_string(),
             command,
             task_id,
-            memory_limit,
-            cpu_limit
         ))
         .encode_wide()
         .chain(Some(0))
