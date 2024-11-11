@@ -12,12 +12,15 @@ pub fn run() -> Result<(), MultErrorTuple> {
     let tasks = TaskManager::get_tasks()?;
     for arg in parsed_args.values.iter() {
         let task_id: u32 = TaskManager::parse_arg(Some(arg.to_string()))?;
-        let task = TaskManager::get_task(&tasks, task_id)?;
+        let mut task = TaskManager::get_task(&tasks, task_id)?;
         let command_data = CommandManager::read_command_data(task.id)?;
+        // Setting persist option to false
+        task.options.3 = false;
+        TaskManager::edit_task(task)?;
         #[cfg(target_os = "windows")]
         {
             use mult_lib::windows::proc::win_kill_all_processes;
-            match win_kill_all_processes(command_data.pid, task_id) {
+            match win_kill_all_processes(command_data.ppid, task_id) {
                 Ok(_) => (),
                 Err(_) => print_info(&format!("Process {} is not running.", task_id)),
             }
@@ -25,7 +28,7 @@ pub fn run() -> Result<(), MultErrorTuple> {
         #[cfg(target_os = "linux")]
         {
             use mult_lib::linux::proc::linux_kill_all_processes;
-            match linux_kill_all_processes(command_data.pid as i32) {
+            match linux_kill_all_processes(command_data.ppid) {
                 Ok(_) => (),
                 Err(_) => print_info(&format!("Process {} is not running.", task_id)),
             }

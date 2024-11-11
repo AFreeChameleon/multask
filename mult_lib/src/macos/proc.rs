@@ -1,6 +1,11 @@
 #![cfg(target_os = "macos")]
 use std::{
-    collections::HashMap, ffi::c_void, mem, ptr, sync::{Arc, Mutex}, thread, time::{Duration, SystemTime, UNIX_EPOCH}
+    collections::HashMap,
+    ffi::c_void,
+    mem, ptr,
+    sync::{Arc, Mutex},
+    thread,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use crate::{
@@ -168,9 +173,9 @@ pub fn macos_get_runtime(starttime: u64) -> u64 {
     since_epoch - starttime
 }
 
-pub fn macos_monitor_stats(pid: PID, files: Files, stats: ForkFlagTuple) {
+pub fn macos_monitor_stats(pid: PID, files: &mut Files, stats: ForkFlagTuple) {
     let existing_cpu_time = Arc::new(Mutex::new(0));
-    let (memory_limit, _, _) = stats;
+    let (memory_limit, _, _, _) = stats;
     loop {
         // Get usage metrics
         let process_tree = macos_get_all_processes(pid);
@@ -185,9 +190,8 @@ pub fn macos_monitor_stats(pid: PID, files: Files, stats: ForkFlagTuple) {
         search_tree(&process_tree, &|node: &TreeNode| {
             if macos_proc_exists(node.pid) {
                 if let Some(task_info) = macos_get_task_stats(node.pid) {
-                    *keep_running.lock().unwrap() = !(
-                        memory_limit != -1 && task_info.pti_resident_size > memory_limit as u64
-                    );
+                    *keep_running.lock().unwrap() =
+                        !(memory_limit != -1 && task_info.pti_resident_size > memory_limit as u64);
                 } else {
                     *keep_running.lock().unwrap() = false;
                 }

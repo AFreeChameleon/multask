@@ -10,15 +10,23 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use windows_sys::Win32::{
-    Foundation::{GetLastError, FILETIME, STILL_ACTIVE},
-    Storage::FileSystem::SYNCHRONIZE,
-    System::{
-        JobObjects::{OpenJobObjectW, QueryInformationJobObject, JOBOBJECT_BASIC_PROCESS_ID_LIST},
-        ProcessStatus::{GetProcessImageFileNameW, GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS},
-        Threading::{
-            GetExitCodeProcess, GetProcessTimes, OpenProcess, TerminateProcess, PROCESS_ALL_ACCESS,
-            PROCESS_QUERY_INFORMATION, PROCESS_TERMINATE,
+use windows_sys::{
+    Wdk::System::Threading::{NtQueryInformationProcess, ProcessBasicInformation},
+    Win32::{
+        Foundation::{GetLastError, FILETIME, STILL_ACTIVE},
+        Storage::FileSystem::SYNCHRONIZE,
+        System::{
+            JobObjects::{
+                OpenJobObjectW, QueryInformationJobObject, JOBOBJECT_BASIC_PROCESS_ID_LIST,
+            },
+            ProcessStatus::{
+                GetProcessImageFileNameW, GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS,
+            },
+            Threading::{
+                GetExitCodeProcess, GetProcessTimes, OpenProcess, TerminateProcess,
+                PROCESS_ALL_ACCESS, PROCESS_BASIC_INFORMATION, PROCESS_QUERY_INFORMATION,
+                PROCESS_TERMINATE,
+            },
         },
     },
 };
@@ -120,7 +128,7 @@ pub fn win_get_process_stats(pid: PID) -> Vec<String> {
     ]
 }
 
-pub fn win_get_proc_name(pid: u32) -> Result<String, MultErrorTuple> {
+pub fn win_get_proc_name(pid: PID) -> Result<String, MultErrorTuple> {
     let mut process_name = [0; 1024];
     let process_handle = unsafe { OpenProcess(PROCESS_QUERY_INFORMATION, 1, pid as u32) };
     if unsafe { GetProcessImageFileNameW(process_handle, process_name.as_mut_ptr(), 1024) } == 0 {
@@ -138,7 +146,7 @@ pub fn win_get_proc_name(pid: u32) -> Result<String, MultErrorTuple> {
     Ok(exe_name)
 }
 
-pub fn win_proc_exists(pid: u32) -> bool {
+pub fn win_proc_exists(pid: PID) -> bool {
     let process_handle = unsafe { OpenProcess(PROCESS_QUERY_INFORMATION, 1, pid) };
     if process_handle.is_null() {
         return false;
@@ -178,7 +186,7 @@ pub fn win_get_process_runtime(starttime: u64) -> u64 {
     runtime
 }
 
-pub fn win_kill_all_processes(ppid: u32, task_id: u32) -> Result<(), MultErrorTuple> {
+pub fn win_kill_all_processes(ppid: PID, task_id: u32) -> Result<(), MultErrorTuple> {
     if !win_proc_exists(ppid) {
         return Err((MultError::ProcessNotExists, None));
     }
@@ -197,7 +205,7 @@ pub fn win_kill_all_processes(ppid: u32, task_id: u32) -> Result<(), MultErrorTu
     let mut all_processes = vec![];
     compress_tree(&process_tree, &mut all_processes);
     for pid in all_processes {
-        win_kill_process(pid as u32)?;
+        win_kill_process(pid as PID)?;
     }
     if job.is_null() {
         return Ok(());
@@ -205,13 +213,13 @@ pub fn win_kill_all_processes(ppid: u32, task_id: u32) -> Result<(), MultErrorTu
     Ok(())
 }
 
-pub fn win_kill_process(pid: u32) -> Result<(), MultErrorTuple> {
+pub fn win_kill_process(pid: PID) -> Result<(), MultErrorTuple> {
     let mut process_name = [0; 1024];
     let process_handle = unsafe {
         OpenProcess(
             PROCESS_TERMINATE | PROCESS_QUERY_INFORMATION | SYNCHRONIZE,
             1,
-            pid as u32,
+            pid as PID,
         )
     };
     if unsafe { GetProcessImageFileNameW(process_handle, process_name.as_mut_ptr(), 1024) } == 0 {
@@ -243,6 +251,20 @@ pub fn win_kill_process(pid: u32) -> Result<(), MultErrorTuple> {
         }
     }
     Ok(())
+}
+
+pub fn win_getppid(p_handle: *mut c_void) -> usize {
+    let mut basic_info: PROCESS_BASIC_INFORMATION = unsafe { mem::zeroed() };
+    unsafe {
+        NtQueryInformationProcess(
+            p_handle,
+            ProcessBasicInformation,
+            cast_to_c_void(&mut basic_info),
+            mem::size_of::<PROCESS_BASIC_INFORMATION>() as u32,
+            ptr::null_mut(),
+        );
+    }
+    basic_info.InheritedFromUniqueProcessId
 }
 
 trait Empty<T> {

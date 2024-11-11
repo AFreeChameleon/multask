@@ -25,7 +25,7 @@ pub fn run() -> Result<(), MultErrorTuple> {
             #[cfg(target_os = "linux")]
             {
                 use mult_lib::linux::proc::linux_kill_all_processes;
-                match linux_kill_all_processes(command_data.pid as i32) {
+                match linux_kill_all_processes(command_data.ppid) {
                     Ok(_) => (),
                     Err(_) => print_info(&format!("Process {} is not running.", task_id)),
                 }

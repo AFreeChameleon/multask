@@ -1,10 +1,13 @@
 extern crate core;
 extern crate std;
 
-use std::collections::HashMap;
+use crate::date::{seconds_to_datetime, DateTime};
 use std::fs;
+use std::io::Write;
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::u32;
+use std::{collections::HashMap, fs::File};
 
 #[cfg(target_family = "unix")]
 use crate::unix::proc::unix_proc_exists;
@@ -12,6 +15,8 @@ use crate::{
     error::{MultError, MultErrorTuple},
     tree::TreeNode,
 };
+
+pub const PERSIST_TIMEOUT: u64 = 2;
 
 // TODO - integrate this soon
 #[cfg(target_family = "unix")]
@@ -24,7 +29,7 @@ pub struct UsageStats {
     pub cpu_usage: f32,
 }
 
-pub type ForkFlagTuple = (i64, i32, bool);
+pub type ForkFlagTuple = (i64, i32, bool, bool);
 
 pub fn get_proc_name(pid: PID) -> Result<String, MultErrorTuple> {
     #[cfg(target_os = "linux")]
@@ -108,6 +113,24 @@ pub fn read_usage_stats(task_id: u32) -> Result<HashMap<PID, UsageStats>, MultEr
         return Ok(decoded);
     }
     Ok(HashMap::new())
+}
+
+pub fn write_shutdown_timestamp(stdout: &mut File) -> Result<(), MultErrorTuple> {
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+
+    let mut dt = DateTime::new();
+    seconds_to_datetime(now.as_secs() as i64, &mut dt);
+
+    let shutdown_message = format!(
+        "{:}|---------- Multask {}: process shutting down... ----------\n",
+        now.as_millis(),
+        dt
+    );
+    match stdout.write_all(shutdown_message.as_bytes()) {
+        Ok(()) => 0,
+        Err(_) => return Err((MultError::TaskFileNotExist, None)),
+    };
+    Ok(())
 }
 
 pub fn proc_exists(pid: PID) -> bool {

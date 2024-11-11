@@ -1,15 +1,14 @@
 #![cfg(target_family = "unix")]
 use std::{
     env,
-    fs::File,
+    fs::OpenOptions,
     io::{BufRead, BufReader, Write},
     path::Path,
-    process::{Child, Command, Stdio},
+    process::{self, Child, Command, Stdio},
     thread,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use crate::task::Files;
 use crate::{
     command::{CommandData, CommandManager},
     proc::ForkFlagTuple,
@@ -18,6 +17,10 @@ use crate::{
 use crate::{
     error::{print_info, MultError, MultErrorTuple},
     proc::PID,
+};
+use crate::{
+    proc::{write_shutdown_timestamp, PERSIST_TIMEOUT},
+    task::Files,
 };
 
 macro_rules! spawn_logger {
@@ -43,11 +46,11 @@ macro_rules! spawn_logger {
 const SUPPORTED_SHELLS: [&str; 3] = ["/sh", "/bash", "/zsh"];
 
 pub fn run_daemon(
-    files: Files,
+    files: &mut Files,
     command: CommandData,
     stats: ForkFlagTuple,
 ) -> Result<(), MultErrorTuple> {
-    let (memory_limit, cpu_limit, interactive) = stats;
+    let (memory_limit, cpu_limit, interactive, persist) = stats;
     let process_id;
     let sid;
     unsafe {
@@ -74,65 +77,66 @@ pub fn run_daemon(
     if sid < 0 {
         return Err((MultError::SetSidFailed, None));
     }
-    // Do daemon stuff here
-    let child = run_command(&command, &files.process_dir, interactive)?;
-    if memory_limit > -1 {
-        let memory_rlimit = libc::rlimit {
-            rlim_cur: memory_limit as _,
-            rlim_max: memory_limit as _,
-        };
-        #[cfg(target_os = "linux")]
-        unsafe {
-            libc::syscall(
-                libc::SYS_prlimit64,
-                child.id() as i64,
-                libc::RLIMIT_AS,
-                &memory_rlimit,
-                std::ptr::null::<libc::rlimit>(),
-            );
+    loop {
+        // Do daemon stuff here
+        let child = run_command(&command, &files.process_dir, interactive)?;
+        if memory_limit > -1 {
+            let memory_rlimit = libc::rlimit {
+                rlim_cur: memory_limit as _,
+                rlim_max: memory_limit as _,
+            };
+            #[cfg(target_os = "linux")]
+            unsafe {
+                libc::syscall(
+                    libc::SYS_prlimit64,
+                    child.id() as i64,
+                    libc::RLIMIT_AS,
+                    &memory_rlimit,
+                    std::ptr::null::<libc::rlimit>(),
+                );
+            }
+            #[cfg(not(target_os = "linux"))]
+            unsafe {
+                libc::setrlimit(libc::RLIMIT_RSS, &memory_rlimit);
+            }
         }
-        #[cfg(not(target_os = "linux"))]
-        unsafe {
-            libc::setrlimit(libc::RLIMIT_RSS, &memory_rlimit);
+        if cpu_limit > -1 {
+            let child_id = child.id();
+            thread::spawn(move || {
+                split_limit_cpu(child_id as PID, cpu_limit as f32);
+            });
         }
-    }
-    if cpu_limit > -1 {
-        let child_id = child.id();
-        thread::spawn(move || {
-            split_limit_cpu(child_id as PID, cpu_limit as f32);
-        });
-    }
 
-    #[cfg(target_os = "freebsd")]
-    {
-        use crate::bsd::proc::bsd_monitor_stats;
-        bsd_monitor_stats(child.id() as PID, files, stats);
+        #[cfg(target_os = "freebsd")]
+        {
+            use crate::bsd::proc::bsd_monitor_stats;
+            bsd_monitor_stats(child.id() as PID, files, stats);
+        }
+        #[cfg(target_os = "linux")]
+        {
+            use crate::linux::proc::linux_monitor_stats;
+            linux_monitor_stats(child.id() as PID, &files);
+        }
+        #[cfg(target_os = "macos")]
+        {
+            use crate::macos::proc::macos_monitor_stats;
+            macos_monitor_stats(child.id() as PID, files, stats);
+        }
+        write_shutdown_timestamp(&mut files.stdout)?;
+        // Killing process if this wrapper fails
+        unsafe {
+            libc::kill(child.id() as _, libc::SIGINT);
+        }
+        if !persist {
+            unsafe { libc::exit(0) };
+        } else {
+            thread::sleep(Duration::from_secs(PERSIST_TIMEOUT));
+        }
     }
-    #[cfg(target_os = "linux")]
-    {
-        use crate::linux::proc::linux_monitor_stats;
-        linux_monitor_stats(child.id() as PID, files);
-    }
-    #[cfg(target_os = "macos")]
-    {
-        use crate::macos::proc::macos_monitor_stats;
-        macos_monitor_stats(child.id() as PID, files, stats);
-    }
-    // Killing process if this wrapper fails
-    unsafe { libc::kill(child.id() as _, libc::SIGINT); }
-    Ok(())
 }
 
 fn close_std_handles() {
-    let std_handles;
-    #[cfg(target_os = "macos")]
-    {
-        std_handles = [libc::STDIN_FILENO, libc::STDOUT_FILENO, libc::STDERR_FILENO];
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        std_handles = [libc::STDIN_FILENO, libc::STDOUT_FILENO, libc::STDERR_FILENO];
-    }
+    let std_handles = [libc::STDIN_FILENO, libc::STDOUT_FILENO, libc::STDERR_FILENO];
     for handle in std_handles {
         unsafe {
             if libc::fcntl(handle, libc::F_GETFD) != -1 && unix_get_error_code() != libc::EBADF {
@@ -185,8 +189,16 @@ fn run_command(
     let stdout = child.stdout.take().unwrap();
     let stderr = child.stderr.take().unwrap();
 
-    let mut stdout_file = File::create(process_dir.join("stdout.out")).unwrap();
-    let mut stderr_file = File::create(process_dir.join("stderr.err")).unwrap();
+    let mut stdout_file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(process_dir.join("stdout.out"))
+        .unwrap();
+    let mut stderr_file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(process_dir.join("stderr.err"))
+        .unwrap();
 
     spawn_logger!(stderr, stderr_file);
     spawn_logger!(stdout, stdout_file);
@@ -204,6 +216,7 @@ fn get_command_data(pid: PID, command: String, dir: String) -> Result<CommandDat
         }
         let data = CommandData {
             pid,
+            ppid: process::id() as i32,
             command,
             dir,
             starttime: stats[21].parse().unwrap(),
@@ -220,6 +233,7 @@ fn get_command_data(pid: PID, command: String, dir: String) -> Result<CommandDat
         }
         let data = CommandData {
             pid,
+            ppid: process::id() as i32,
             command,
             dir,
             starttime: proc_stats.unwrap().ki_start.tv_sec as u64,
@@ -237,6 +251,7 @@ fn get_command_data(pid: PID, command: String, dir: String) -> Result<CommandDat
         }
         let data = CommandData {
             pid,
+            ppid: process::id() as i32,
             command,
             dir,
             starttime: all_stats.unwrap().pbsd.pbi_start_tvsec,

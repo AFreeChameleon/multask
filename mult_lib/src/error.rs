@@ -53,7 +53,10 @@ pub fn print_error(error: MultError, descriptor: Option<String>) {
             format!("Could not get task directory {}.", descriptor.unwrap())
         }
         MultError::TaskFileNotExist => format!("Could not get task file {}.", descriptor.unwrap()),
-        MultError::TaskFileCorrupted => format!("Task file {0} is corrupted, delete the process with 'mlt delete {0}'.", descriptor.unwrap()),
+        MultError::TaskFileCorrupted => format!(
+            "Task file {0} is corrupted, delete the process with 'mlt delete {0}'.",
+            descriptor.unwrap()
+        ),
         MultError::TaskBinFileUnreadable => "Failed to read from tasks file.".to_string(),
         MultError::TaskNotFound => {
             "No task exists with that id, use mlt ls to see the available tasks.".to_string()

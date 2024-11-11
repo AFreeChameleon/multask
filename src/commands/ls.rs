@@ -1,12 +1,12 @@
 use mult_lib::args::{parse_args, ParsedArgs};
-use mult_lib::colors::{color_string, OK_GREEN};
+use mult_lib::colors::{color_string, ERR_RED, OK_GREEN, WARNING_ORANGE};
 use mult_lib::proc::{get_proc_comm, proc_exists};
 use mult_lib::tree::{compress_tree, TreeNode};
 use prettytable::Table;
 use std::path::Path;
 use std::{env, thread, time::Duration};
 
-use mult_lib::command::CommandManager;
+use mult_lib::command::{CommandData, CommandManager};
 use mult_lib::error::{print_error, MultError, MultErrorTuple};
 use mult_lib::proc::{get_readable_runtime, read_usage_stats, PID};
 use mult_lib::table::{MainHeaders, ProcessHeaders, TableManager};
@@ -77,6 +77,7 @@ pub fn setup_table(
             Err(err) => return Err(err),
         };
         let mut command_path = Path::new(&command.dir).iter().rev();
+        // Getting the location
         let mut last_dirs = String::new();
         for _ in 0..2 {
             if let Some(p) = command_path.next() {
@@ -87,6 +88,7 @@ pub fn setup_table(
             id: task.id,
             command: command.command.clone(),
             dir: last_dirs,
+            status: get_proc_status(&command, task),
         };
         // Get memory stats
         let process_headers_opt = get_process_headers(command.pid, command.starttime, &task, true);
@@ -125,7 +127,7 @@ pub fn setup_table(
                         process_headers
                             .runtime
                             .push_str(&format!("\n{}", child_process_headers.runtime));
-                        process_headers
+                        main_headers
                             .status
                             .push_str(&format!("\n{}", color_string(OK_GREEN, "Running")));
                     }
@@ -166,7 +168,7 @@ fn win_get_process_headers(
     is_main_process: bool,
 ) -> Option<ProcessHeaders> {
     use mult_lib::windows::proc::{
-        win_get_memory_usage, win_get_process_runtime, win_get_process_stats,
+        win_get_memory_usage, win_get_process_runtime, win_get_process_stats, win_proc_exists,
     };
     use std::{ffi::OsString, os::windows::ffi::OsStrExt};
     use windows_sys::Win32::{
@@ -190,8 +192,8 @@ fn win_get_process_headers(
             lp_name.as_ptr(),
         )
     };
-    let process = unsafe { OpenProcess(PROCESS_QUERY_INFORMATION, 1, pid as u32) };
-    if process.is_null() || (is_main_process && job.is_null()) {
+    let process = unsafe { OpenProcess(PROCESS_QUERY_INFORMATION, 1, pid as PID) };
+    if process.is_null() || (is_main_process && job.is_null()) || !win_proc_exists(pid) {
         return None;
     }
     let mut is_process_in_job: i32 = 0;
@@ -223,7 +225,6 @@ fn win_get_process_headers(
         memory: win_get_memory_usage(&pid),
         cpu: format!("{}%", cpu_usage),
         runtime: get_readable_runtime(win_get_process_runtime(proc_stats[2].parse().unwrap())),
-        status: color_string(OK_GREEN, "Running").to_string(),
     })
 }
 
@@ -257,7 +258,6 @@ fn linux_get_process_headers(
         runtime: get_readable_runtime(
             linux_get_process_runtime(proc_stats[21].parse().unwrap()) as u64
         ),
-        status: color_string(OK_GREEN, "Running").to_string(),
     })
 }
 
@@ -293,7 +293,6 @@ fn macos_get_process_headers(
         memory: get_readable_memory(proc_stats.ptinfo.pti_resident_size as f64),
         cpu: format!("{}%", cpu_usage),
         runtime: get_readable_runtime(macos_get_runtime(proc_stats.pbsd.pbi_start_tvsec) as u64),
-        status: color_string(OK_GREEN, "Running").to_string(),
     })
 }
 
@@ -304,9 +303,9 @@ fn bsd_get_process_headers(
     task: &Task,
     is_main_process: bool,
 ) -> Option<ProcessHeaders> {
+    use mult_lib::bsd::proc::bsd_get_process_memory;
     use mult_lib::bsd::proc::bsd_get_process_stats;
     use mult_lib::bsd::proc::bsd_get_runtime;
-    use mult_lib::bsd::proc::bsd_get_process_memory;
     let proc_stats_opt = bsd_get_process_stats(pid);
     if is_main_process
         && (proc_stats_opt.is_none()
@@ -330,7 +329,6 @@ fn bsd_get_process_headers(
         memory: bsd_get_process_memory(proc_stats),
         cpu: format!("{}%", cpu_usage),
         runtime: get_readable_runtime(bsd_get_runtime(proc_stats.ki_start.tv_sec as u64)),
-        status: color_string(OK_GREEN, "Running").to_string(),
     })
 }
 
@@ -372,4 +370,14 @@ fn get_all_processes(pid: PID, _task: Task) -> TreeNode {
         );
     }
     return process_tree;
+}
+
+fn get_proc_status(command: &CommandData, task: &Task) -> String {
+    if proc_exists(command.pid) {
+        return color_string(OK_GREEN, "Running");
+    }
+    if task.options.3 && proc_exists(command.ppid) {
+        return color_string(WARNING_ORANGE, "Rebooting");
+    }
+    return color_string(ERR_RED, "Stopped");
 }

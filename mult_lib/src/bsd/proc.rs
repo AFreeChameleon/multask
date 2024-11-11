@@ -1,17 +1,17 @@
 #![cfg(target_os = "freebsd")]
 
+use crate::bsd::cpu::bsd_get_cpu_usage;
+use crate::error::MultErrorTuple;
+use crate::proc::ForkFlagTuple;
+use crate::proc::{get_readable_memory, save_task_processes, save_usage_stats, UsageStats, PID};
+use crate::task::Files;
+use crate::tree::{compress_tree, search_tree, TreeNode};
+use crate::unix::proc::unix_kill_process;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{ffi::CString, ptr};
-use crate::bsd::cpu::bsd_get_cpu_usage;
-use crate::error::MultErrorTuple;
-use crate::proc::{get_readable_memory, save_task_processes, save_usage_stats, UsageStats, PID};
-use crate::task::Files;
-use crate::proc::ForkFlagTuple;
-use crate::tree::{compress_tree, search_tree, TreeNode};
-use crate::unix::proc::unix_kill_process;
 
 pub fn bsd_get_process_stats(pid: PID) -> Option<libc::kinfo_proc> {
     let mut errbuf: [i8; 1024] = [0; 1024];
@@ -68,9 +68,7 @@ fn bsd_get_child_processes(ppid: PID) -> Option<Vec<libc::kinfo_proc>> {
 }
 
 pub fn bsd_get_process_memory(stats: libc::kinfo_proc) -> String {
-    let page_size = unsafe {
-        libc::sysconf(libc::_SC_PAGE_SIZE)
-    };
+    let page_size = unsafe { libc::sysconf(libc::_SC_PAGE_SIZE) };
     get_readable_memory((stats.ki_rssize * page_size as isize) as f64)
 }
 
@@ -134,8 +132,8 @@ pub fn bsd_kill_all_processes(pid: PID) -> Result<(), MultErrorTuple> {
     Ok(())
 }
 
-pub fn bsd_monitor_stats(pid: PID, files: Files, stats: ForkFlagTuple) {
-    let (memory_limit, _, _) = stats;
+pub fn bsd_monitor_stats(pid: PID, files: &mut Files, stats: ForkFlagTuple) {
+    let (memory_limit, _, _, _) = stats;
     loop {
         // Get usage metrics
         let process_tree = bsd_get_all_processes(pid);
@@ -150,13 +148,10 @@ pub fn bsd_monitor_stats(pid: PID, files: Files, stats: ForkFlagTuple) {
         search_tree(&process_tree, &|node: &TreeNode| {
             if bsd_proc_exists(node.pid) {
                 if let Some(stats) = bsd_get_process_stats(node.pid) {
-                    let page_size = unsafe {
-                        libc::sysconf(libc::_SC_PAGE_SIZE)
-                    };
+                    let page_size = unsafe { libc::sysconf(libc::_SC_PAGE_SIZE) };
                     let memory_usage = stats.ki_rssize * page_size as isize;
-                    *keep_running.lock().unwrap() = !(
-                        memory_limit != -1 && memory_usage as i64 > memory_limit
-                    );
+                    *keep_running.lock().unwrap() =
+                        !(memory_limit != -1 && memory_usage as i64 > memory_limit);
                     // Set cpu usage down here
                     let cpu_usage = bsd_get_cpu_usage(stats);
                     usage_stats
@@ -177,14 +172,7 @@ pub fn bsd_monitor_stats(pid: PID, files: Files, stats: ForkFlagTuple) {
 
 pub fn bsd_get_proc_name(proc_stats_opt: Option<libc::kinfo_proc>) -> String {
     if let Some(proc_stats) = proc_stats_opt {
-        return String::from_utf8(
-            proc_stats
-                .ki_comm
-                .iter()
-                .map(|&c| c as u8)
-                .collect(),
-        )
-        .unwrap();
+        return String::from_utf8(proc_stats.ki_comm.iter().map(|&c| c as u8).collect()).unwrap();
     }
     return String::new();
 }
