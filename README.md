@@ -48,7 +48,7 @@ options:
         -m [num]    Set maximum memory limit e.g 4GB
         -c [num]    Set limit cpu usage by percentage e.g 20
         -i          Interactive mode (can use aliased commands on your environment)
-        -p          Persist mode, the command will restart if finished after 2 seconds
+        -p          Persist mode, the command will restart when finished with a wait of 2 seconds
 
     stop    Stops a process. [value] must be a task id e.g 0
 
@@ -56,13 +56,13 @@ options:
         -m [num]    Set maximum memory limit e.g 4GB
         -c [num]    Set maximum cpu percentage limit e.g 20
         -i          Interactive mode (can use aliased commands on your environment)
-        -p          Persist mode, the command will restart if finished after 2 seconds
+        -p          Persist mode, the command will restart when finished with a wait of 2 seconds
 
     restart Restarts a process. [value] must be a task id e.g 0
         -m [num]    Set maximum memory limit e.g 4GB
         -c [num]    Set maximum cpu percentage limit e.g 20
         -i          Interactive mode (can use aliased commands on your environment)
-        -p          Persist mode, the command will restart if finished after 2 seconds
+        -p          Persist mode, the command will restart when finished with a wait of 2 seconds
 
     ls      Shows all processes.
         -w          Provides updating tables every 2 seconds.
