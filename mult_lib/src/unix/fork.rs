@@ -9,7 +9,6 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use crate::{proc::{write_shutdown_timestamp, PERSIST_TIMEOUT}, task::Files};
 use crate::{
     command::{CommandData, CommandManager},
     proc::ForkFlagTuple,
@@ -18,6 +17,10 @@ use crate::{
 use crate::{
     error::{print_info, MultError, MultErrorTuple},
     proc::PID,
+};
+use crate::{
+    proc::{write_shutdown_timestamp, PERSIST_TIMEOUT},
+    task::Files,
 };
 
 macro_rules! spawn_logger {
@@ -121,7 +124,9 @@ pub fn run_daemon(
         }
         write_shutdown_timestamp(&mut files.stdout)?;
         // Killing process if this wrapper fails
-        unsafe { libc::kill(child.id() as _, libc::SIGINT); }
+        unsafe {
+            libc::kill(child.id() as _, libc::SIGINT);
+        }
         if !persist {
             unsafe { libc::exit(0) };
         } else {
@@ -185,11 +190,13 @@ fn run_command(
     let stderr = child.stderr.take().unwrap();
 
     let mut stdout_file = OpenOptions::new()
-        .create(true).append(true)
+        .create(true)
+        .append(true)
         .open(process_dir.join("stdout.out"))
         .unwrap();
-    let mut stderr_file  = OpenOptions::new()
-        .create(true).append(true)
+    let mut stderr_file = OpenOptions::new()
+        .create(true)
+        .append(true)
         .open(process_dir.join("stderr.err"))
         .unwrap();
 

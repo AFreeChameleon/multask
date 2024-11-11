@@ -1,5 +1,5 @@
 use mult_lib::args::{parse_args, ParsedArgs};
-use mult_lib::colors::{color_string, OK_GREEN, WARNING_ORANGE, ERR_RED};
+use mult_lib::colors::{color_string, ERR_RED, OK_GREEN, WARNING_ORANGE};
 use mult_lib::proc::{get_proc_comm, proc_exists};
 use mult_lib::tree::{compress_tree, TreeNode};
 use prettytable::Table;
@@ -88,7 +88,7 @@ pub fn setup_table(
             id: task.id,
             command: command.command.clone(),
             dir: last_dirs,
-            status: get_proc_status(&command, task)
+            status: get_proc_status(&command, task),
         };
         // Get memory stats
         let process_headers_opt = get_process_headers(command.pid, command.starttime, &task, true);
@@ -168,7 +168,7 @@ fn win_get_process_headers(
     is_main_process: bool,
 ) -> Option<ProcessHeaders> {
     use mult_lib::windows::proc::{
-        win_get_memory_usage, win_get_process_runtime, win_get_process_stats, win_proc_exists
+        win_get_memory_usage, win_get_process_runtime, win_get_process_stats, win_proc_exists,
     };
     use std::{ffi::OsString, os::windows::ffi::OsStrExt};
     use windows_sys::Win32::{
@@ -257,7 +257,7 @@ fn linux_get_process_headers(
         cpu: format!("{}%", cpu_usage),
         runtime: get_readable_runtime(
             linux_get_process_runtime(proc_stats[21].parse().unwrap()) as u64
-        )
+        ),
     })
 }
 
@@ -303,9 +303,9 @@ fn bsd_get_process_headers(
     task: &Task,
     is_main_process: bool,
 ) -> Option<ProcessHeaders> {
+    use mult_lib::bsd::proc::bsd_get_process_memory;
     use mult_lib::bsd::proc::bsd_get_process_stats;
     use mult_lib::bsd::proc::bsd_get_runtime;
-    use mult_lib::bsd::proc::bsd_get_process_memory;
     let proc_stats_opt = bsd_get_process_stats(pid);
     if is_main_process
         && (proc_stats_opt.is_none()
@@ -377,7 +377,7 @@ fn get_proc_status(command: &CommandData, task: &Task) -> String {
         return color_string(OK_GREEN, "Running");
     }
     if task.options.3 && proc_exists(command.ppid) {
-        return color_string(WARNING_ORANGE, "Rebooting")
+        return color_string(WARNING_ORANGE, "Rebooting");
     }
-    return color_string(ERR_RED, "Stopped")
+    return color_string(ERR_RED, "Stopped");
 }

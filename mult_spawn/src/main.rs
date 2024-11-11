@@ -26,7 +26,11 @@ use std::{
 };
 use windows_sys::Win32::Foundation::GetLastError;
 use windows_sys::Win32::System::JobObjects::{
-    AssignProcessToJobObject, CreateJobObjectW, JobObjectCpuRateControlInformation, JobObjectExtendedLimitInformation, SetInformationJobObject, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_CPU_RATE_CONTROL_ENABLE, JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP, JOB_OBJECT_LIMIT_PROCESS_MEMORY
+    AssignProcessToJobObject, CreateJobObjectW, JobObjectCpuRateControlInformation,
+    JobObjectExtendedLimitInformation, SetInformationJobObject,
+    JOBOBJECT_CPU_RATE_CONTROL_INFORMATION, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0,
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_CPU_RATE_CONTROL_ENABLE,
+    JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP, JOB_OBJECT_LIMIT_PROCESS_MEMORY,
 };
 use windows_sys::Win32::System::ProcessStatus::GetProcessImageFileNameW;
 
@@ -60,11 +64,7 @@ fn main() -> Result<(), MultErrorTuple> {
         .encode_wide()
         .chain(Some(0))
         .collect();
-    let job_handle = create_job(
-        job_name.as_ptr() as *mut u16,
-        memory_limit,
-        cpu_limit,
-    )?;
+    let job_handle = create_job(job_name.as_ptr() as *mut u16, memory_limit, cpu_limit)?;
 
     let thread_handle = unsafe { GetCurrentThread() };
     let process_handle = unsafe { GetCurrentProcess() };
@@ -114,7 +114,8 @@ fn main() -> Result<(), MultErrorTuple> {
                     .duration_since(UNIX_EPOCH)
                     .unwrap()
                     .as_millis();
-                let formatted_line = format!("{:}|{}\n", now, line.expect("Problem reading stdout."));
+                let formatted_line =
+                    format!("{:}|{}\n", now, line.expect("Problem reading stdout."));
                 stdout_file
                     .write_all(formatted_line.as_bytes())
                     .expect("Problem writing to stdout.");
@@ -129,7 +130,8 @@ fn main() -> Result<(), MultErrorTuple> {
                     .duration_since(UNIX_EPOCH)
                     .unwrap()
                     .as_millis();
-                let formatted_line = format!("{:}|{}\n", now, line.expect("Problem reading stderr."));
+                let formatted_line =
+                    format!("{:}|{}\n", now, line.expect("Problem reading stderr."));
                 stderr_file
                     .write_all(formatted_line.as_bytes())
                     .expect("Problem writing to stderr.");
@@ -158,10 +160,10 @@ fn main() -> Result<(), MultErrorTuple> {
                         node.pid,
                         UsageStats {
                             cpu_usage: win_get_cpu_usage(
-                               node.pid,
-                               combine_filetime(&cpu_time_total),
-                               node.clone(),
-                           ) as f32,
+                                node.pid,
+                                combine_filetime(&cpu_time_total),
+                                node.clone(),
+                            ) as f32,
                         },
                     );
                 });

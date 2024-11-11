@@ -1,7 +1,8 @@
 use std::env;
 
 use mult_lib::args::{
-    get_fork_flag_values, parse_args, CPU_LIMIT_FLAG, INTERACTIVE_FLAG, MEMORY_LIMIT_FLAG, PERSIST_FLAG,
+    get_fork_flag_values, parse_args, CPU_LIMIT_FLAG, INTERACTIVE_FLAG, MEMORY_LIMIT_FLAG,
+    PERSIST_FLAG,
 };
 use mult_lib::error::{print_info, print_success, MultErrorTuple};
 use mult_lib::task::{Task, TaskManager};
@@ -23,7 +24,10 @@ pub fn run() -> Result<(), MultErrorTuple> {
     if let Some(last_task) = tasks.last() {
         new_task_id = last_task.id + 1;
     }
-    tasks.push(Task { id: new_task_id, options: flags });
+    tasks.push(Task {
+        id: new_task_id,
+        options: flags,
+    });
     print_info("Running command...");
     #[cfg(target_family = "unix")]
     {

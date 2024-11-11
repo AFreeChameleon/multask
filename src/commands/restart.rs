@@ -1,7 +1,8 @@
 use std::env;
 
 use mult_lib::args::{
-    get_fork_flag_values, parse_args, CPU_LIMIT_FLAG, INTERACTIVE_FLAG, MEMORY_LIMIT_FLAG, PERSIST_FLAG,
+    get_fork_flag_values, parse_args, CPU_LIMIT_FLAG, INTERACTIVE_FLAG, MEMORY_LIMIT_FLAG,
+    PERSIST_FLAG,
 };
 use mult_lib::command::CommandManager;
 use mult_lib::error::{print_info, print_success, MultErrorTuple};
@@ -60,12 +61,14 @@ pub fn run() -> Result<(), MultErrorTuple> {
         tasks[task_idx].options = flags;
         print_info("Restarting process...");
 
-        #[cfg(target_family = "unix")] {
+        #[cfg(target_family = "unix")]
+        {
             use mult_lib::unix::fork;
             let mut files = TaskManager::generate_task_files(task.id, &tasks);
             fork::run_daemon(&mut files, command_data, flags.clone())?;
         }
-        #[cfg(target_family = "windows")] {
+        #[cfg(target_family = "windows")]
+        {
             use mult_lib::windows::fork;
             let files = TaskManager::generate_task_files(task.id, &tasks);
             fork::run_daemon(files, command_data.command, &flags, task_id)?;

@@ -1,13 +1,13 @@
 extern crate core;
 extern crate std;
 
-use std::io::Write;
-use std::time::{SystemTime, UNIX_EPOCH};
-use std::{collections::HashMap, fs::File};
-use std::fs;
-use std::path::Path;
-use std::u32;
 use crate::date::{seconds_to_datetime, DateTime};
+use std::fs;
+use std::io::Write;
+use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
+use std::u32;
+use std::{collections::HashMap, fs::File};
 
 #[cfg(target_family = "unix")]
 use crate::unix::proc::unix_proc_exists;
@@ -116,8 +116,7 @@ pub fn read_usage_stats(task_id: u32) -> Result<HashMap<PID, UsageStats>, MultEr
 }
 
 pub fn write_shutdown_timestamp(stdout: &mut File) -> Result<(), MultErrorTuple> {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH).unwrap();
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
 
     let mut dt = DateTime::new();
     seconds_to_datetime(now.as_secs() as i64, &mut dt);
@@ -129,7 +128,7 @@ pub fn write_shutdown_timestamp(stdout: &mut File) -> Result<(), MultErrorTuple>
     );
     match stdout.write_all(shutdown_message.as_bytes()) {
         Ok(()) => 0,
-        Err(_) => return Err((MultError::TaskFileNotExist, None))
+        Err(_) => return Err((MultError::TaskFileNotExist, None)),
     };
     Ok(())
 }

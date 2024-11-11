@@ -8,10 +8,13 @@ use std::{
 use bincode;
 use home;
 
-use crate::{command::{CommandData, CommandManager}, proc::ForkFlagTuple};
 use crate::{
     colors::{color_string, ERR_RED},
     error::{MultError, MultErrorTuple},
+};
+use crate::{
+    command::{CommandData, CommandManager},
+    proc::ForkFlagTuple,
 };
 
 const PROCESS_FILES: [&str; 3] = ["stdout.out", "stderr.err", "data.bin"];
@@ -25,7 +28,7 @@ pub struct Files {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Task {
     pub id: u32,
-    pub options: ForkFlagTuple
+    pub options: ForkFlagTuple,
 }
 
 pub struct TaskManager {}
@@ -42,7 +45,7 @@ impl TaskManager {
             if tasks_dir.join(file).exists() {
                 return Err((
                     MultError::CustomError,
-                    Some(format!("Could not get {}", color_string(ERR_RED, file)))
+                    Some(format!("Could not get {}", color_string(ERR_RED, file))),
                 ));
             }
         }
@@ -124,11 +127,13 @@ impl TaskManager {
         fs::create_dir_all(&process_dir).unwrap();
 
         let stdout = OpenOptions::new()
-            .create(true).append(true)
+            .create(true)
+            .append(true)
             .open(process_dir.join("stdout.out"))
             .unwrap();
         let stderr = OpenOptions::new()
-            .create(true).append(true)
+            .create(true)
+            .append(true)
             .open(process_dir.join("stdout.out"))
             .unwrap();
 

@@ -69,9 +69,7 @@ impl TableManager {
         } else {
             row.extend(vec![
                 Cell::new("N/A"),
-                Cell::new(
-                    &headers.status
-                ),
+                Cell::new(&headers.status),
                 Cell::new("N/A"),
                 Cell::new("N/A"),
                 Cell::new("N/A"),

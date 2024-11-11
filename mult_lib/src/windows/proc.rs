@@ -10,17 +10,26 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use windows_sys::{Wdk::System::Threading::{NtQueryInformationProcess, ProcessBasicInformation}, Win32::{
-    Foundation::{GetLastError, FILETIME, STILL_ACTIVE},
-    Storage::FileSystem::SYNCHRONIZE,
-    System::{
-        JobObjects::{OpenJobObjectW, QueryInformationJobObject, JOBOBJECT_BASIC_PROCESS_ID_LIST},
-        ProcessStatus::{GetProcessImageFileNameW, GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS},
-        Threading::{
-            GetExitCodeProcess, GetProcessTimes, OpenProcess, TerminateProcess, PROCESS_ALL_ACCESS, PROCESS_BASIC_INFORMATION, PROCESS_QUERY_INFORMATION, PROCESS_TERMINATE
+use windows_sys::{
+    Wdk::System::Threading::{NtQueryInformationProcess, ProcessBasicInformation},
+    Win32::{
+        Foundation::{GetLastError, FILETIME, STILL_ACTIVE},
+        Storage::FileSystem::SYNCHRONIZE,
+        System::{
+            JobObjects::{
+                OpenJobObjectW, QueryInformationJobObject, JOBOBJECT_BASIC_PROCESS_ID_LIST,
+            },
+            ProcessStatus::{
+                GetProcessImageFileNameW, GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS,
+            },
+            Threading::{
+                GetExitCodeProcess, GetProcessTimes, OpenProcess, TerminateProcess,
+                PROCESS_ALL_ACCESS, PROCESS_BASIC_INFORMATION, PROCESS_QUERY_INFORMATION,
+                PROCESS_TERMINATE,
+            },
         },
     },
-}};
+};
 
 use crate::{
     error::{print_error, print_warning, MultError, MultErrorTuple},
@@ -252,7 +261,7 @@ pub fn win_getppid(p_handle: *mut c_void) -> usize {
             ProcessBasicInformation,
             cast_to_c_void(&mut basic_info),
             mem::size_of::<PROCESS_BASIC_INFORMATION>() as u32,
-            ptr::null_mut()
+            ptr::null_mut(),
         );
     }
     basic_info.InheritedFromUniqueProcessId
