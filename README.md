@@ -9,6 +9,9 @@
     A process manager for Linux, Mac, Windows & FreeBSD written in rust to simplify your developer environment.
   </p>
   <p align="center">
+    <a href="https://afreechameleon.github.io/multask-docs/">Docs</a>
+  </p>
+  <p align="center">
     Designed to organise projects which need processes running at the same time with flexible resource limits for scaling.
   </p>
 </div>
@@ -17,12 +20,22 @@
 
 For Linux, Mac & FreeBSD:
 ```
-curl -s "https://github.com/AFreeChameleon/multask-docs/blob/develop/install/scripts/linux.sh?raw=true" | bash
+curl -s "https://raw.githubusercontent.com/AFreeChameleon/multask-docs/refs/heads/master/install/scripts/linux.sh" | bash
+```
+
+For Mac:
+```
+curl -s "https://raw.githubusercontent.com/AFreeChameleon/multask-docs/refs/heads/master/install/scripts/osx.sh" | bash
+```
+
+For FreeBSD:
+```
+curl -s "https://raw.githubusercontent.com/AFreeChameleon/multask-docs/refs/heads/master/install/scripts/freebsd.sh" | bash
 ```
 
 For Windows:
 ```
-powershell -c "irm https://github.com/AFreeChameleon/multask-docs/blob/develop/install/scripts/win.ps1?raw=true|iex"
+powershell -c "irm https://raw.githubusercontent.com/AFreeChameleon/multask-docs/refs/heads/master/install/scripts/win.ps1|iex"
 ```
 
 ## Getting Started
