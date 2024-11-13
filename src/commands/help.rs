@@ -1,6 +1,9 @@
 use mult_lib::error::MultErrorTuple;
 
-const HELP_TEXT: &str = "usage: mlt [options] [value]
+const HELP_TEXT: &str = "
+Multask version: 0.21.0
+
+usage: mlt [options] [value]
 options:
     create  Create a process and run it. [value] must be a command e.g \"ping google.com\"
 

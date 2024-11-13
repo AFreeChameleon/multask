@@ -1,5 +1,6 @@
 pub mod create;
 pub mod uninstall;
+pub mod update;
 pub mod delete;
 pub mod health;
 pub mod help;
