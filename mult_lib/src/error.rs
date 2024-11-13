@@ -38,7 +38,7 @@ pub enum MultError {
     UnixError,
 }
 
-const RUN_FIX_TEXT: &str = "Try running `mlt health --fix-all` to fix this.";
+const RUN_FIX_TEXT: &str = "Try running `mlt health -f` to fix this.";
 pub fn print_error(error: MultError, descriptor: Option<String>) {
     let message = match error {
         MultError::MainDirNotExist => {

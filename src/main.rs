@@ -1,4 +1,4 @@
-use commands::{create, delete, health, help, logs, ls, restart, start, stop};
+use commands::{create, delete, health, help, logs, ls, restart, start, stop, uninstall};
 use mult_lib::error::{print_error, MultError};
 use std::env::args;
 
@@ -23,6 +23,7 @@ fn main() {
             "help" => help::run(),
             "ls" => ls::run(),
             "health" => health::run(),
+            "uninstall" => uninstall::run(),
             _ => Err((MultError::MissingCommand, None)),
         } {
             print_error(message, descriptor);
