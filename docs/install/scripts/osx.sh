@@ -1,11 +1,11 @@
 #!/bin/bash
 
 mkdir -p $HOME/.multi-tasker/bin
-curl https://github.com/AFreeChameleon/multask/releases/latest/download/multask_osx.tar.gz -s -o $PWD/mlt.tar.gz
-tar xvfz $PWD/mlt.tar.gz
-mv $PWD/mult-app/mlt $HOME/.multi-tasker/bin
-rm $PWD/mlt.tar.gz
-rm -r $PWD/mult-app
+curl https://github.com/AFreeChameleon/multask/releases/latest/download/multask_osx.tar.gz -s -o $PWD/multask.tar.gz
+tar xvfz $PWD/multask.tar.gz > /dev/null
+mv $PWD/multask/mlt $HOME/.multi-tasker/bin
+rm $PWD/multask.tar.gz
+rm -r $PWD/multask
 if [[ $SHELL == *"zsh"* ]]; then
     rc_content=(cat $HOME/.zshrc)
     if [[ $rc_content == *"export PATH=\"\$PATH:$HOME/.multi-tasker/bin\""* ]]; then
