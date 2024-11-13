@@ -1,21 +1,29 @@
-use std::{fs, io::stdin, path::Path};
+use std::{env, fs, io::stdin, path::Path, process::Command};
 
 use mult_lib::error::{print_error, print_success, print_warning, MultError, MultErrorTuple};
 
 pub fn run() -> Result<(), MultErrorTuple> {
-    let main_dir = Path::new(&home::home_dir().unwrap())
-        .join(".multi-tasker");
-    print_warning("Are you sure you want to uninstall? [y/n]");
-    let mut response = String::new();
-    stdin().read_line(&mut response).unwrap();
-    if response.to_lowercase().trim() == "y" {
-        match fs::remove_dir_all(main_dir) {
-            Ok(val) => val,
-            Err(_) => return Err((MultError::MainDirNotExist, None))
-        };
-        print_success("Multask has been uninstalled. Thanks for using it!");
-    } else {
-        print_error(MultError::CustomError, Some("Uninstall aborted.".to_string()));
-    }
+
+    #[cfg(target_os = "linux")]
+    Command::new(env::var("SHELL").unwrap())
+        .args(["-c", "curl -s \"https://raw.githubusercontent.com/AFreeChameleon/multask/refs/heads/master/docs/install/scripts/linux.sh\" | bash"])
+        .spawn()
+        .expect("Command has failed.");
+    #[cfg(target_os = "freebsd")]
+    Command::new(env::var("SHELL").unwrap())
+        .args(["-c", "curl -s \"https://raw.githubusercontent.com/AFreeChameleon/multask/refs/heads/master/docs/install/scripts/freebsd.sh\" | bash"])
+        .spawn()
+        .expect("Command has failed.");
+    #[cfg(target_os = "macos")]
+    Command::new(env::var("SHELL").unwrap())
+        .args(["-c", "curl -s \"https://raw.githubusercontent.com/AFreeChameleon/multask/refs/heads/master/docs/install/scripts/osx.sh\" | bash"])
+        .spawn()
+        .expect("Command has failed.");
+    #[cfg(target_os = "windows")]
+    Command::new(env::var("SHELL").unwrap())
+        .args(["-c", "powershell -c \"irm https://raw.githubusercontent.com/AFreeChameleon/multask-docs/refs/heads/master/docs/install/scripts/win.ps1|iex\""])
+        .spawn()
+        .expect("Command has failed.");
+
     Ok(())
 }
