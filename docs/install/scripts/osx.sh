@@ -1,7 +1,7 @@
 #!/bin/bash
 
 mkdir -p $HOME/.multi-tasker/bin
-curl https://github.com/AFreeChameleon/multask/releases/download/0.20.0/multask_osx-0.20.0.tar.gz -s -o $PWD/mlt.tar.gz
+curl https://github.com/AFreeChameleon/multask/releases/latest/download/multask_osx.tar.gz -s -o $PWD/mlt.tar.gz
 tar xvfz $PWD/mlt.tar.gz
 mv $PWD/mult-app/mlt $HOME/.multi-tasker/bin
 rm $PWD/mlt.tar.gz
