@@ -1,0 +1,223 @@
+<!doctype html>
+
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Multask | Documentation</title>
+    <meta name="description" content="Mult daemoniser documentation">
+    <meta name="author" content="AFreeChameleon">
+
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" type="image/x-icon" href="images/gecko.png">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif:wght@400;700&family=Open+Sans:ital,wght@0,400;0,700;1,600&display=swap" rel="stylesheet">
+    
+    <script src="https://kit.fontawesome.com/f55330514c.js" crossorigin="anonymous"></script>
+</head>
+
+<body>
+
+    <div class="navbar darker nav-top">
+        <div class="row content">
+            <div class="logo-container">
+                <img class="logo" src="images/gecko.png" />
+                Multask
+            </div>
+            <div class="flex-grow"></div>
+            <a class="right" style="text-decoration: underline;" target="_blank" href="https://github.com/AFreeChameleon/mult">
+                <i class="fa-brands fa-github"></i>&nbsp; Github
+            </a>
+        </div>
+    </div>
+
+    <div class="container dark">
+        <div class="row wrapper">
+
+            <div class="sidepanel">
+
+                <a class="title" href="#">Introduction</a>
+                
+                <div class="divider left"></div>
+
+                <a class="title" href="#installation">Installation</a>
+                <a class="section" href="#installation">Linux</a>
+                <a class="section" href="#mac">Mac</a>
+                <a class="section" href="#freebsd">FreeBSD</a>
+                <a class="section" href="#windows">Windows</a>
+
+                <div class="divider left"></div>
+
+                <a class="title" href="#getting-started">Getting Started</a>
+
+                <a class="section" href="#creating-a-process">Creating a process</a>
+                <a class="section" href="#view-process-logs">View process logs</a>
+                <a class="section" href="#list-all-processes">List all processes</a>
+                <a class="section" href="#process-operations">Process operations</a>
+                
+                <div class="divider left"></div>
+                
+                <a class="title" href="#bugs">Bugs</a>
+                <a class="section" href="#bugs">How to report</a>
+            </div>
+
+            <div class="right-col">
+                <h1>Introduction</h1>
+
+                <p id="supported-versions">Multask is a daemoniser built to simplify & organise your developer environment.</p>
+                <p>
+                    Designed to organise projects which need processes running at the same time with flexible resource limits for scaling.
+                </p>
+
+                <img class="table-img" id="installation" src="images/table.png" />
+            
+                <div class="divider" style="width:24%; margin:30px 0;"></div>
+
+                <h1  id="mac">Installation</h2>
+
+                <h2>Linux</h2>
+
+                <code id="freebsd" class="code-section no-scroll">curl -s "https://raw.githubusercontent.com/AFreeChameleon/multask-docs/refs/heads/master/install/scripts/linux.sh" | bash</code> 
+
+                <h2>Mac</h2>
+
+                <code class="code-section no-scroll">curl -s "https://raw.githubusercontent.com/AFreeChameleon/multask-docs/refs/heads/master/install/scripts/osx.sh" | bash</code> 
+
+                <h2>FreeBSD</h2>
+
+                <code id="windows" class="code-section no-scroll">curl -s "https://raw.githubusercontent.com/AFreeChameleon/multask-docs/refs/heads/master/install/scripts/freebsd.sh" | bash</code> 
+
+                <p>Bash & ZSH officially supported.</p>
+
+                <h2 id="getting-started">Windows</h2>
+
+                <code id="creating-a-process" class="code-section no-scroll">powershell -c "irm https://raw.githubusercontent.com/AFreeChameleon/multask-docs/refs/heads/master/install/scripts/win.ps1|iex"</code> 
+                 
+                <div class="divider" style="width:24%; margin:30px 0;"></div>
+
+                <h1>Getting Started</h1>
+
+                <h2>Creating your first process</h2>
+                
+                <p>
+                    After installing the program run:
+                </p>
+                <code class="code-section">> mlt create "ping 8.8.8.8"</code> 
+
+                <p id="view-process-logs">
+                    The command's output won't be shown in the console, but instead the message:
+                </p>
+                <code class="code-section">Success Process 0 created.</code>
+                <p>0 is the ID assigned to the process and will be used when you want to stop or restart the process.</p>
+                
+                <h2>View the process's output</h2>
+                
+                <p id="list-all-processes">
+                    Nothing will be shown in the console because the process has been daemonized, and all output from the process will be stored in a logs file.
+                </p>
+                <p>
+                    To view that log file run:
+                </p>
+                <code class="code-section">> mlt logs 0</code>
+
+                <h2>List all processes</h2>
+
+                <p>
+                    To see all processes you've created, run:
+                </p>
+                <code class="code-section">
+                    > mlt ls
+                </code>
+                <p>
+                    It will output a table like this:
+                    <!-- <img /> IMAGE OF TABLE -->
+                </p>
+                <code class="code-section pre-whitespace">┌────┬─────────────────┬───────┬─────────┬─────────┬─────┬─────────┐
+│ id │ command         │ pid   │ status  │ memory  │ cpu │ runtime │
+├────┼─────────────────┼───────┼─────────┼─────────┼─────┼─────────┤
+│ 0  │ ping google.com │ 12502 │ Running │ 9.9 MiB │ 0   │ 16      │
+└────┴─────────────────┴───────┴─────────┴─────────┴─────┴─────────┘</code>
+                
+                <ul>
+                    <li>
+                        <code>id</code> - how you'll be referencing this process in other commands.
+                    </li>
+                    <li>
+                        <code>command</code> - what command was run.
+                    </li>
+                    <li>
+                        <code>pid</code> - process id in the OS.
+                    </li>
+                    <li>
+                        <code>status</code> - status of the command, either 'Running' or 'Stopped'.
+                    </li>
+                    <li id="process-operations">
+                        <code>memory</code> - amount of memory the process is using.
+                    </li>
+                    <li>
+                        <code>cpu</code> - percentage of CPU the process is using.
+                    </li>
+                    <li>
+                        <code>runtime</code> - how long this command has been running for.
+                    </li>
+                </ul>
+
+                <h2>Process operations</h2>
+
+                <p>
+                    To stop the process, run:
+                </p>
+                <code class="code-section">
+                    > mlt stop 0
+                </code>
+
+                <p>
+                    To start the process, run:
+                </p>
+                <code class="code-section">
+                    > mlt start 0
+                </code>
+
+                <p>
+                    To restart the process, run:
+                </p>
+                <code class="code-section">
+                    > mlt restart 0
+                </code>
+
+                <p>
+                    To delete the process and all logs, run:
+                </p>
+                <code class="code-section">
+                    > mlt delete 0
+                </code>
+
+                <p>
+                    If multask isn't working, you can run:
+                </p>
+                <code class="code-section">
+                    > mlt health
+                </code>
+                <p id="bugs">
+                    To see what's wrong with it. This is mainly for debugging purposes.
+                </p>
+
+                <div class="divider" style="width:24%; margin:30px 0;"></div>
+
+                <h1>Bugs</h1>
+
+                <h2>How to report</h2>
+
+                <p>
+                    This is a very early alpha and while this has been tested on a few environments, issues on other environments (especially using shells other than bash and zsh)
+                    are untested and may have some breaking issues.
+                </p>
+                <p>
+                    So please report any problems you run into (or feature requests) <a target="_blank" href="https://github.com/AFreeChameleon/multask/issues">here</a>.
+                </p>
+        </div>
+    </div>
+</body>
+
+</html>

@@ -1,7 +1,7 @@
 workspace = { members = [ "mult_lib", "mult_spawn"] }
 [package]
 name = "multask"
-version = "0.2.0"
+version = "0.20.0"
 edition = "2021"
 
 [[bin]]
