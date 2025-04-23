@@ -1,6 +1,9 @@
-/target
-logs.log
-libmult.so
-libmult.a
-mult.o
-*.swp
+### zig ###
+# Zig programming language
+
+zig-cache/
+.zig-cache/
+zig-out/
+build/
+build-*/
+docgen_tmp/
