@@ -336,16 +336,8 @@ fn run_command(command: []const u8) e.Errors!libc.PROCESS_INFORMATION {
     si.StartupInfo.hStdOutput = out_handle_w;
     si.StartupInfo.dwFlags |= libc.STARTF_USESTDHANDLES;
 
-    var build_args = std.ArrayList([]const u8).init(util.gpa);
-    defer build_args.deinit();
     const shell_path = try util.get_shell_path();
-    const shell_args: []const u8 = "/c";
-    build_args.appendSlice(&[_][]const u8{
-        shell_path,
-        shell_args,
-        command,
-    }) catch |err| return e.verbose_error(err, error.CommandFailed);
-    const proc_string = std.mem.join(util.gpa, " ", build_args.items)
+    const proc_string = std.fmt.allocPrintZ(util.gpa, "{s} /c {s}", .{shell_path, command})
         catch |err| return e.verbose_error(err, error.CommandFailed);
     defer util.gpa.free(proc_string);
 
