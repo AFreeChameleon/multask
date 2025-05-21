@@ -7,67 +7,107 @@ const Lengths = util.Lengths;
 const e = @import("../error.zig");
 const Errors = e.Errors;
 
+const JSON_CpuResource = struct {
+    pid: util.Pid,
+    percentage: f64
+};
+pub const JSON_Resources = struct {
+    cpu: []JSON_CpuResource,
+
+    pub fn deinit(self: *const JSON_Resources) void {
+        util.gpa.free(self.cpu);
+    }
+
+    pub fn to_struct(self: *const JSON_Resources) Errors!Resources {
+        var resources = Resources.init();
+
+        for (self.cpu) |res| {
+            resources.cpu.put(res.pid, res.percentage)
+                catch |err| return e.verbose_error(err, error.FailedToGetCpuUsage);
+        }
+
+        return resources;
+    }
+
+    pub fn clone(self: *const JSON_Resources) Errors!JSON_Resources {
+        return JSON_Resources {
+            .cpu = util.gpa.dupe(JSON_CpuResource, self.cpu)
+                catch |err| return e.verbose_error(err, error.FailedToGetCpuUsage)
+        };
+    }
+};
+
 pub const Resources = struct {
     cpu: std.AutoHashMap(util.Pid, f64) = undefined,
 
+    pub fn init() Resources {
+        return Resources {
+            .cpu = std.AutoHashMap(util.Pid, f64).init(util.gpa)
+        };
+    }
+
     pub fn deinit(self: *Resources) void {
+        self.cpu.clearAndFree();
         self.cpu.deinit();
     }
 
-    pub fn set_cpu_usage(self: *Resources) Errors!void {
-        const task: *Task = @fieldParentPtr("resources", self);
-        self.cpu = try get_cpu_usage(task);
+    pub fn clone(self: *const Resources) Resources {
+        return Resources {
+            .cpu = self.cpu.clone()
+                catch |err| return e.verbose_error(err, error.FailedToGetCpuUsage)
+        };
     }
 
-    fn get_cpu_usage(task: *Task) Errors!std.AutoHashMap(util.Pid, f64) {
-        var cpu_usage_map: std.AutoHashMap(util.Pid, f64) =
-            std.AutoHashMap(util.Pid, f64).init(util.gpa);
-        defer cpu_usage_map.deinit();
-
-        const usage_file = try task.files.get_file("usage");
-        defer usage_file.close();
-        usage_file.seekTo(0)
-            catch |err| return e.verbose_error(err, error.FailedToGetCpuUsage);
-        var buf_reader = std.io.bufferedReader(usage_file.reader());
-        var reader = buf_reader.reader();
-        var buf: [Lengths.MEDIUM]u8 = std.mem.zeroes([Lengths.MEDIUM]u8);
-        var buf_fbs = std.io.fixedBufferStream(&buf);
-        while (
-            true
-        ) {
-            reader.streamUntilDelimiter(buf_fbs.writer(), '|', buf_fbs.buffer.len)
-                catch |err| switch (err) {
-                    error.NoSpaceLeft => break,
-                    error.EndOfStream => break,
-                    else => |inner_err| return e.verbose_error(
-                        inner_err, error.FailedToGetCpuUsage
-                    )
-                };
-            const it = buf_fbs.getWritten();
-            defer buf_fbs.reset();
-            if (it.len == 0) {
-                break;
+    pub fn to_json(self: *const Resources) Errors!JSON_Resources {
+        var json = std.ArrayList(JSON_CpuResource).init(util.gpa);
+        defer json.deinit();
+        var key_itr = self.cpu.keyIterator();
+        while (key_itr.next()) |key| {
+            const percentage = self.cpu.get(key.*);
+            if (percentage != null) {
+                json.append(JSON_CpuResource {
+                    .pid = key.*,
+                    .percentage = percentage.?
+                }) catch |err| return e.verbose_error(err, error.FailedToSetCpuUsage);
             }
-            var split_line = std.mem.splitSequence(u8, it, ":");
-            const str_pid = split_line.next();
-            if (str_pid == null) {
-                break;
-            }
-
-            const pid = std.fmt.parseInt(util.Pid, str_pid.?, 10)
-                catch |err| return e.verbose_error(err, error.FailedToGetCpuUsage);
-
-            const str_cpu_usage = split_line.next();
-            if (str_cpu_usage == null) {
-                break;
-            }
-            const cpu_usage = std.fmt.parseFloat(f64, str_cpu_usage.?)
-                catch |err| return e.verbose_error(err, error.FailedToGetCpuUsage);
-
-            cpu_usage_map.put(pid, cpu_usage)
-                catch |err| return e.verbose_error(err, error.FailedToGetCpuUsage);
         }
-        return cpu_usage_map.clone()
-            catch |err| return e.verbose_error(err, error.FailedToGetCpuUsage);
+        return JSON_Resources {
+            .cpu = json.toOwnedSlice()
+                catch |err| return e.verbose_error(err, error.FailedToSetCpuUsage)
+        };
+    }
+
+    pub fn set_cpu_usage(self: *Resources, task: *Task) Errors!void {
+        try self.clear_cpu();
+
+        var res = try get_resources(task);
+        defer res.deinit();
+        var key_itr = res.cpu.keyIterator();
+        while (key_itr.next()) |key| {
+            const val = res.cpu.get(key.*);
+            if (val == null) {
+                return error.FailedToSetCpuUsage;
+            }
+            self.cpu.put(key.*, val.?)
+                catch |err| return e.verbose_error(err, error.FailedToSetCpuUsage);
+        }
+    }
+
+    fn clear_cpu(self: *Resources) Errors!void {
+        var key_itr = self.cpu.keyIterator();
+        while (key_itr.next()) |key| {
+            _ = self.cpu.remove(key.*);
+        }
+    }
+
+    fn get_resources(task: *Task) Errors!Resources {
+        const json_res = try task.files.read_file(JSON_Resources);
+        if (json_res == null) {
+            return Resources.init();
+        }
+        defer json_res.?.deinit();
+        const res = try json_res.?.to_struct();
+
+        return res;
     }
 };
