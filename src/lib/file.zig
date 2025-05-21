@@ -4,6 +4,10 @@ const log = @import("./log.zig");
 const task = @import("./task/index.zig");
 const TaskId = task.TaskId;
 
+const m = @import("./task/manager.zig");
+const Tasks = m.Tasks;
+const TaskManager = m.TaskManager;
+
 const util = @import("./util.zig");
 const Lengths = util.Lengths;
 const Pid = util.Pid;
@@ -11,7 +15,7 @@ const Pid = util.Pid;
 const e = @import("./error.zig");
 const Errors = e.Errors;
 
-pub const MAIN_DIR: []const u8 = ".multi-tasker";
+pub const MAIN_DIR: []const u8 = if (builtin.is_test) ".multi-tasker-test" else ".multi-tasker";
 
 pub const MainFiles = struct {
     /// CLOSE THIS
@@ -35,35 +39,17 @@ pub const MainFiles = struct {
         return dir;
     }
 
-    /// CLOSE THIS
-    pub fn get_or_create_taskids_file() Errors!std.fs.File {
+    // CLOSE THIS
+    pub fn get_or_create_tasks_file() Errors!std.fs.File {
         var tasks_dir = try get_or_create_tasks_dir();
         defer tasks_dir.close();
-        const file = tasks_dir.openFile("ids", .{ .mode = .read_write })
-            catch return try create_taskids_file();
+        const file = tasks_dir.openFile("tasks.json", .{ .mode = .read_write })
+            catch return try create_tasks_file();
         return file;
     }
 
-    /// CLOSE THIS
-    pub fn get_or_create_namespaces_file() Errors!std.fs.File {
-        var tasks_dir = try get_or_create_tasks_dir();
-        defer tasks_dir.close();
-        const file = tasks_dir.openFile("namespaces", .{ .mode = .read_write })
-            catch return try create_namespaces_file();
-        return file;
-    }
-
-    pub fn clear_namespaces_file() Errors!void {
-        var file = try get_or_create_namespaces_file();
-        defer file.close();
-        file.setEndPos(0)
-            catch |err| return e.verbose_error(err, error.TasksIdsFileFailedWrite);
-        file.seekTo(0)
-            catch |err| return e.verbose_error(err, error.TasksIdsFileFailedWrite);
-    }
-
-    pub fn clear_taskids_file() Errors!void {
-        var file = try get_or_create_taskids_file();
+    pub fn clear_main_file() Errors!void {
+        var file = try get_or_create_tasks_file();
         defer file.close();
         file.setEndPos(0)
             catch |err| return e.verbose_error(err, error.TasksIdsFileFailedWrite);
@@ -91,25 +77,18 @@ pub const MainFiles = struct {
     }
 
     /// CLOSE THIS
-    pub fn create_taskids_file() Errors!std.fs.File {
+    pub fn create_tasks_file() Errors!std.fs.File {
         var tasks_dir = try get_or_create_tasks_dir();
         defer tasks_dir.close();
-        try log.printinfo("Creating task ids file...", .{});
+        try log.printinfo("Creating tasks file...", .{});
 
-        const tasks_file = tasks_dir.createFile("ids", .{})
+        const tasks_file = tasks_dir.createFile("tasks.json", .{.read = true})
             catch return error.TasksIdsFileFailedCreate;
+        const placeholder = try Tasks.json_empty();
+        defer util.gpa.free(placeholder.task_ids);
+        std.json.stringify(placeholder, .{}, tasks_file.writer())
+            catch |err| return e.verbose_error(err, error.MainFileFailedWrite);
         return tasks_file;
-    }
-
-    /// CLOSE THIS
-    pub fn create_namespaces_file() Errors!std.fs.File {
-        var tasks_dir = try get_or_create_tasks_dir();
-        defer tasks_dir.close();
-        try log.printinfo("Creating namespaces file...", .{});
-
-        const ns_file = tasks_dir.createFile("namespaces", .{})
-            catch return error.TasksNamespacesFileFailedCreate;
-        return ns_file;
     }
 
     pub fn create_task_files(task_id: task.TaskId) Errors!void {
@@ -131,18 +110,15 @@ pub const MainFiles = struct {
         const stderr = task_dir.createFile("stderr", .{})
             catch |err| return e.verbose_error(err, error.TaskFileFailedCreate);
         defer stderr.close();
-        const processes = task_dir.createFile("processes", .{})
+        const processes = task_dir.createFile("processes.json", .{})
             catch |err| return e.verbose_error(err, error.TaskFileFailedCreate);
         defer processes.close();
-        const stats = task_dir.createFile("stats", .{})
+        const stats = task_dir.createFile("stats.json", .{})
             catch |err| return e.verbose_error(err, error.TaskFileFailedCreate);
         defer stats.close();
-        const usage = task_dir.createFile("usage", .{})
+        const resources = task_dir.createFile("resources.json", .{})
             catch |err| return e.verbose_error(err, error.TaskFileFailedCreate);
-        defer usage.close();
-        const task_pid = task_dir.createFile("task_pid", .{})
-            catch |err| return e.verbose_error(err, error.TaskFileFailedCreate);
-        defer task_pid.close();
+        defer resources.close();
     }
     
     /// FREE THIS
@@ -174,8 +150,7 @@ pub const CheckFiles = struct {
     pub fn check_all() Errors!void {
         try check_main_dir();
         try check_tasks_dir();
-        try check_task_ids_file();
-        try check_namespaces_file();
+        try check_main_file();
         try check_tasks();
     }
 
@@ -201,10 +176,10 @@ pub const CheckFiles = struct {
         }
     }
 
-    fn check_task_ids_file() Errors!void {
+    fn check_main_file() Errors!void {
         const tasks_dir_str = try MainFiles.build_tasks_dir_str();
         defer util.gpa.free(tasks_dir_str);
-        const file_str = std.fmt.allocPrint(util.gpa, "{s}/ids", .{tasks_dir_str})
+        const file_str = std.fmt.allocPrint(util.gpa, "{s}/tasks.json", .{tasks_dir_str})
             catch |err| return e.verbose_error(err, error.TasksIdsFileNotExists);
         defer util.gpa.free(file_str);
         const file = std.fs.openFileAbsolute(file_str, .{.mode = .read_only})
@@ -212,20 +187,6 @@ pub const CheckFiles = struct {
         defer file.close();
         if (!util.file_exists(file)) {
             return error.TasksIdsFileNotExists;
-        }
-    }
-
-    fn check_namespaces_file() Errors!void {
-        const tasks_dir_str = try MainFiles.build_tasks_dir_str();
-        defer util.gpa.free(tasks_dir_str);
-        const file_str = std.fmt.allocPrint(util.gpa, "{s}/namespaces", .{tasks_dir_str})
-            catch |err| return e.verbose_error(err, error.TasksNamespacesFileNotExists);
-        defer util.gpa.free(file_str);
-        const file = std.fs.openFileAbsolute(file_str, .{.mode = .read_only})
-            catch |err| return e.verbose_error(err, error.TasksNamespacesFileNotExists);
-        defer file.close();
-        if (!util.file_exists(file)) {
-            return error.TasksNamespacesFileNotExists;
         }
     }
 
@@ -243,8 +204,7 @@ pub const CheckFiles = struct {
                 catch |err| return e.verbose_error(err, error.TasksDirNotFound)
         ) |entry| {
             if (
-                std.mem.eql(u8, entry.name, "ids") or
-                std.mem.eql(u8, entry.name, "namespaces")
+                std.mem.eql(u8, entry.name, "tasks.json")
             ) {
                 continue;
             }
@@ -272,8 +232,8 @@ pub const CheckFiles = struct {
         var dir_itr = subdir.iterate();
         var files = std.StringHashMap(bool).init(util.gpa);
         defer files.deinit();
-        const subdir_filenames: [6][]const u8 = .{
-            "processes", "stats", "stdout", "stderr", "task_pid", "usage"
+        const subdir_filenames: [5][]const u8 = .{
+            "processes.json", "stats.json", "stdout", "stderr", "resources.json"
         };
 
         while (
@@ -323,9 +283,7 @@ pub const CheckFiles = struct {
             try log.printerr(error.TaskLogsFailedToRead);
         } else if (std.mem.eql(u8, name, "stderr")) {
             try log.printerr(error.TaskLogsFailedToRead);
-        } else if (std.mem.eql(u8, name, "task_pid")) {
-            try log.printerr(error.FailedToReadTaskPid);
-        } else if (std.mem.eql(u8, name, "usage")) {
+        } else if (std.mem.eql(u8, name, "resources")) {
             try log.printerr(error.FailedToGetCpuUsage);
         } else {
             try log.printerr(error.UnkownItemInTaskDir);

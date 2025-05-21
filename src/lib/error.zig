@@ -30,6 +30,8 @@ pub const Errors = error {
     ParsingCommandArgsFailed,
     InvalidOption,
     MissingArgument,
+    MissingArgumentValue,
+    InvalidArgument,
     CorruptedTask,
     TaskLogsFailedToRead,
     FailedToSetWindowCols,
@@ -54,6 +56,7 @@ pub const Errors = error {
     FailedToGetProcessMemory,
     FailedToGetProcessRuntime,
     FailedToGetCpuUsage,
+    FailedToSetCpuUsage,
     FailedToGetProcessComm,
     FailedToGetProcessName,
     FailedToGetProcessStarttime,
@@ -88,7 +91,15 @@ pub const Errors = error {
     FileFailedValidation,
     FailedToCloseFiles,
     InvalidFile,
-    InternalUtilError
+    InternalUtilError,
+
+    MainFileFailedWrite,
+    MainFileFailedRead,
+
+    TaskFileFailedRead,
+    MissingTaskId,
+    OnlyOneTaskId,
+    CommandNotExists,
 };
 
 pub fn verbose_error(og_err: anytype, mult_err: Errors) Errors {
@@ -102,6 +113,24 @@ pub fn verbose_error(og_err: anytype, mult_err: Errors) Errors {
 pub fn get_error_msg(e_type: Errors) Errors![]const u8 {
     var result: []const u8 = undefined;
     switch (e_type) {
+        error.CommandNotExists => {
+            result = "Command is missing.";
+        },
+        error.MissingTaskId => {
+            result = "Missing task id.";
+        },
+        error.OnlyOneTaskId => {
+            result = "Only one task id allowed.";
+        },
+        error.TaskFileFailedRead => {
+            result = "Failed to read task file.";
+        },
+        error.MainFileFailedRead => {
+            result = "Failed to read main file.";
+        },
+        error.MainFileFailedWrite => {
+            result = "Failed to save main file.";
+        },
         error.InternalUtilError => {
             result = "Internal utility function failed.";
         },
@@ -164,6 +193,9 @@ pub fn get_error_msg(e_type: Errors) Errors![]const u8 {
         },
         error.FailedToGetProcessComm => {
             result = "Failed to get process executable.";
+        },
+        error.FailedToSetCpuUsage => {
+            result = "Failed to set process cpu usage.";
         },
         error.FailedToGetCpuUsage => {
             result = "Failed to get process cpu usage.";
@@ -299,6 +331,12 @@ pub fn get_error_msg(e_type: Errors) Errors![]const u8 {
         },
         error.TaskNotRunning => {
             result = "Task is not running.";
+        },
+        error.MissingArgumentValue => {
+            result = "One or more arguments are missing its value. Run mlt help for more info.";
+        },
+        error.InvalidArgument => {
+            result = "One or more arguments are invalid. Run mlt help for more info.";
         },
         error.InvalidOption => {
             result = "One or more options are invalid. Run mlt help for more info.";

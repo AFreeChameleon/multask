@@ -13,11 +13,15 @@ const t = @import("../task/index.zig");
 const TaskFiles = t.Files;
 const Task = t.Task;
 
+const taskproc = @import("../task/process.zig");
+const CpuStatus = taskproc.CpuStatus;
+
 const MainFiles = @import("../file.zig").MainFiles;
 
 const log = @import("../log.zig");
 
 const WindowsCpu = @import("./cpu.zig").WindowsCpu;
+
 
 const Jobs = struct {
     header: libc.JOBOBJECT_BASIC_PROCESS_ID_LIST,
@@ -26,36 +30,39 @@ const Jobs = struct {
 
 pub const WindowsProcess = struct {
     const Self = @This();
-    
-    keep_running: bool = false,
+
     pid: Pid,
-    cpu: WindowsCpu,
-    children: []Self,
+    children: ?[]Self = null,
     task: *Task,
-    file_strings: FileStrings,
     start_time: u64,
     job_handle: ?*anyopaque = null,
+    memory_limit: util.MemLimit = 0,
 
     pub fn init(
-        pid: Pid,
         task: *Task,
+        pid: Pid,
+        starttime: ?u64
     ) Errors!Self {
-        const file_strings = FileStrings{
-            .processes = std.mem.zeroes([1024]u8),
-            .usage = std.mem.zeroes([1024]u8),
-        };
-
-        return Self {
+        var proc = Self {
             .pid = pid,
-            .children = &.{},
             .task = task,
-            .file_strings = file_strings,
-            .start_time = 0,
-            .cpu = WindowsCpu.init()
+            .start_time = 0
         };
+        if (starttime != null) {
+            proc.start_time = starttime.?;
+        } else if (proc.proc_exists()) {
+            proc.start_time = try proc.get_starttime();
+        }
+        return proc;
     }
 
-    pub fn proc_exists(self: *Self) bool {
+    pub fn deinit(self: Self) void {
+        if (self.children != null) {
+            util.gpa.free(self.children.?);
+        }
+    }
+
+    pub fn proc_exists(self: *const Self) bool {
         const proc_handle = libc.OpenProcess(libc.PROCESS_QUERY_INFORMATION, 1, self.pid);
         if (proc_handle == null) {
             return false;
@@ -73,18 +80,53 @@ pub const WindowsProcess = struct {
     pub fn monitor_stats(
         self: *Self,
     ) Errors!void {
-        try self.task.files.clear_file("usage");
-        try self.task.files.clear_file("processes");
-        self.keep_running = false;
-        const tree = try self.get_all_processes();
+        var keep_running = false;
 
-        try tree.build_file_strings(self);
-        try self.save_files();
+        var children = std.ArrayList(Self).init(util.gpa);
+        defer children.deinit();
 
-        if (!self.keep_running) {
-            try self.kill_all();
+        if (!self.proc_exists()) {
+            // If main proc doesnt exist, read the saved child processes
+            // if any of those exist, set the main process to the first one that's running?
+            // should I do that? what if there are multiple child processes running alongside each other?
+            // don't do it because I can just check saved processes and add it
+            // to the children array and save them
+            const saved_procs = try taskproc.get_running_saved_procs(self);
+            defer util.gpa.free(saved_procs);
+            if (saved_procs.len != 0) {
+                keep_running = true;
+            }
+            for (saved_procs) |sproc| {
+                var exists = false;
+                for (children.items) |proc| {
+                    if (
+                        sproc.pid == proc.pid and
+                        sproc.start_time == proc.start_time
+                    ) {
+                        exists = true;
+                        break;
+                    }
+                }
+                if (!exists) {
+                    children.append(
+                        try Self.init(sproc.task, sproc.pid, sproc.start_time)
+                    ) catch |err| return e.verbose_error(err, error.FailedToGetProcessChildren);
+                    try self.get_children(&children, sproc.pid);
+                }
+            }
+        } else {
+            keep_running = true;
+            try self.get_children(&children, self.pid);
         }
 
+        self.children = children.items;
+        defer self.children = null;
+        try taskproc.check_memory_limit_within_limit(self);
+        try taskproc.save_files(self);
+        WindowsCpu.update_time_total();
+        if (!keep_running) {
+            try taskproc.kill_all(self);
+        }
     }
 
     pub fn kill_all(self: *Self) Errors!void {
@@ -95,7 +137,7 @@ pub const WindowsProcess = struct {
         }
     }
 
-    fn kill(self: *Self) Errors!void {
+    pub fn kill(self: *Self) Errors!void {
         if (!self.proc_exists()) {
             return error.ProcessNotExists;
         }
@@ -124,22 +166,7 @@ pub const WindowsProcess = struct {
         }
     }
 
-    fn save_files(self: *Self) Errors!void {
-        const usage = try self.task.files.get_file("usage");
-        defer usage.close();
-        const processes = try self.task.files.get_file("processes");
-        defer processes.close();
-        usage.writeAll(
-            std.mem.trimRight(u8, &self.file_strings.usage, &[1]u8{0})
-        ) catch |err| return e.verbose_error(err, error.FailedToGetProcesses);
-        processes.writeAll(
-            std.mem.trimRight(u8, &self.file_strings.processes, &[1]u8{0})
-        ) catch |err| return e.verbose_error(err, error.FailedToGetProcesses);
-        self.file_strings.processes = std.mem.zeroes([Lengths.LARGE]u8);
-        self.file_strings.usage = std.mem.zeroes([Lengths.LARGE]u8);
-    }
-
-    fn get_stats(self: *const Self) Errors![3]u64 {
+    pub fn get_stats(self: *const Self) Errors![3]u64 {
         const proc_handle = libc.OpenProcess(libc.PROCESS_ALL_ACCESS, 1, self.pid);
         defer _ = libc.CloseHandle(proc_handle);
         var lp_creation_time = std.mem.zeroes(libc.FILETIME);
@@ -166,7 +193,7 @@ pub const WindowsProcess = struct {
         return .{ start_time, kernel_time, user_time };
     }
 
-    fn get_job_handle(self: *Self) Errors!?*anyopaque {
+    fn get_job_handle(self: *const Self) Errors!?*anyopaque {
         var job_name = std.fmt.allocPrintZ(util.gpa, "Global\\mult-{d}", .{self.task.id})
         catch |err| return e.verbose_error(err, error.FailedToGetProcessChildren);
         job_name[job_name.len] = 0;
@@ -181,9 +208,11 @@ pub const WindowsProcess = struct {
         return job_handle;
     }
 
-    pub fn get_child_pids(self: *Self) Errors![]util.Pid {
+    pub fn get_children(
+        self: *const Self, children: *std.ArrayList(Self), ppid: Pid
+    ) Errors!void {
         if (!self.proc_exists()) {
-            return .{};
+            return;
         }
         var jobs = std.mem.zeroes(Jobs); 
         const job_handle = try self.get_job_handle();
@@ -200,8 +229,13 @@ pub const WindowsProcess = struct {
             try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
             return error.FailedToGetProcessChildren;
         }
-
-        return std.mem.trimRight(u8, jobs.list, &[1]u8{0});
+        const pids = std.mem.trimRight(util.Pid, &jobs.list, &[1]util.Pid{0});
+        for (pids) |pid| {
+            if (ppid != pid and pid != 0) {
+                children.append(try Self.init(self.task, pid, null))
+                    catch |err| return e.verbose_error(err, error.FailedToGetProcessChildren);
+            }
+        }
     }
 
     pub fn get_all_processes(self: *Self) Errors!*Self {
@@ -280,74 +314,6 @@ pub const WindowsProcess = struct {
         return self;
     }
 
-    fn build_file_strings(
-        self: *Self,
-        original: *Self,
-    ) Errors!void {
-        var proc_string = std.ArrayList(u8).init(util.gpa);
-        defer proc_string.deinit();
-        if (original.file_strings.processes[0] != 0) {
-            proc_string.appendSlice(std.mem.sliceTo(&original.file_strings.processes, 0))
-                catch |err| return e.verbose_error(err, error.FailedToGetProcesses);
-        }
-
-        if (self.proc_exists()) {
-            // Saving processes file
-            var pmap_buf: [Lengths.TINY]u8 = undefined;
-            const pid_str: []u8 = std.fmt.bufPrint(&pmap_buf, "{d}:{d},", .{
-                self.pid, self.start_time
-            }) catch |err| return e.verbose_error(err, error.FailedToSaveProcesses);
-            proc_string.appendSlice(try util.strdup(pid_str, error.FailedToSaveProcesses))
-                catch |err| return e.verbose_error(err, error.FailedToSaveProcesses);
-
-            original.keep_running = true;
-
-            // Saving cpu usage
-            const cpu_usage = try self.cpu.get_cpu_usage();
-            self.cpu.set_cpu_time_total();
-
-            var precise_cpu_buf: [Lengths.SMALL]u8 = undefined;
-            const precise_cpu_usage = std.fmt.formatFloat(
-                &precise_cpu_buf,
-                cpu_usage,
-                .{ .precision = 2, .mode = .decimal }
-            ) catch |err| return e.verbose_error(err, error.FailedToSaveProcesses);
-
-            var usage_buf: [Lengths.LARGE]u8 = undefined;
-            const usage = std.fmt.bufPrint(
-                &usage_buf,
-                "{s}{d}:{s}|",
-                .{
-                    std.mem.sliceTo(&original.file_strings.usage, 0),
-                    self.pid,
-                    precise_cpu_usage
-                }
-            ) catch |err| return e.verbose_error(err, error.FailedToSaveProcesses);
-            std.mem.copyForwards(u8, &original.file_strings.usage, usage);
-            if (self.children.len == 0) {
-                std.mem.copyForwards(u8, &original.file_strings.processes, proc_string.items);
-            }
-        }
-        if (self.children.len == 0) {
-            return;
-        }
-
-        proc_string.appendSlice("(")
-            catch |err| return e.verbose_error(err, error.FailedToSaveProcesses);
-        std.mem.copyForwards(u8, &original.file_strings.processes, proc_string.items);
-
-        for (self.children) |*child| {
-            try child.build_file_strings(original);
-        }
-
-        const processes = std.fmt.allocPrint(util.gpa, "{s})", .{
-            std.mem.sliceTo(&original.file_strings.processes, 0),
-        }) catch |err| return e.verbose_error(err, error.FailedToSaveProcesses);
-        util.gpa.free(processes);
-
-        std.mem.copyForwards(u8, &original.file_strings.processes, processes);
-    }
-
     pub fn get_runtime(self: *Self) Errors!u64 {
         if (self.start_time == 0) {
             const stats = try self.get_stats();
@@ -397,14 +363,8 @@ pub const WindowsProcess = struct {
         return "";
     }
 
-    pub fn check_mem_overflowing_procs(self: *Self) Errors!void {
-        for (self.children) |*child| {
-            if (try child.get_memory() > child.task.stats.memory_limit) {
-                try child.kill();
-            }
-        }
-        if (try self.get_memory() > self.task.stats.memory_limit) {
-            try self.kill();
-        }
+    pub fn get_starttime(self: *Self) Errors!u64 {
+        const stats = try self.get_stats();
+        return stats[0];
     }
 };
