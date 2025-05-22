@@ -29,21 +29,25 @@ pub fn printsucc(comptime text: []const u8, args: anytype) e.Errors!void {
     const success_str = try util.colour_string(
         "[SUCCESS]", 0, 204, 102
     );
-    stdout.print("{s}", .{success_str})
-        catch return error.InternalLoggingFailed;
-    stdout.print(" " ++ text ++ "\n", args)
-        catch return error.InternalLoggingFailed;
+    defer util.gpa.free(success_str);
+    if (!builtin.is_test) {
+        stdout.print("{s}", .{success_str})
+            catch return error.InternalLoggingFailed;
+        stdout.print(" " ++ text ++ "\n", args)
+            catch return error.InternalLoggingFailed;
+    }
 }
 
 pub fn enable_debug() void {
     debug = true;
 }
 pub fn printdebug(comptime text: []const u8, args: anytype) e.Errors!void {
-    if (debug and !is_forked) {
+    if (debug and !is_forked and !builtin.is_test) {
         const stdout = stdout_file.writer();
         const colour_str = try util.colour_string(
             "[DEBUG]", 243, 0, 255
         );
+        defer util.gpa.free(colour_str);
         stdout.print("{s}", .{colour_str})
             catch return error.InternalLoggingFailed;
 
@@ -57,10 +61,13 @@ pub fn printinfo(comptime text: []const u8, args: anytype) e.Errors!void {
     const colour_str = try util.colour_string(
         "[INFO]", 0, 51, 255
     );
-    stdout.print("{s}", .{colour_str})
-        catch return error.InternalLoggingFailed;
-    stdout.print(" " ++ text ++ "\n", args)
-        catch return error.InternalLoggingFailed;
+    defer util.gpa.free(colour_str);
+    if (!builtin.is_test) {
+        stdout.print("{s}", .{colour_str})
+            catch return error.InternalLoggingFailed;
+        stdout.print(" " ++ text ++ "\n", args)
+            catch return error.InternalLoggingFailed;
+    }
 }
 
 pub fn printwarn(comptime text: []const u8, args: anytype) e.Errors!void {
@@ -79,6 +86,7 @@ pub fn print_custom_err(comptime text: []const u8, args: anytype) e.Errors!void 
     const colour_str = try util.colour_string(
         "[ERROR]", 204, 0, 0
     );
+    defer util.gpa.free(colour_str);
     stderr.print("{s}", .{colour_str})
         catch return error.InternalLoggingFailed;
     stderr.print(text ++ "\n", args)
@@ -91,6 +99,7 @@ pub fn printstdout(comptime text: []const u8, args: anytype) e.Errors!void {
     const colour_str = try util.colour_string(
         "[STDOUT]", 0, 255, 255
     );
+    defer util.gpa.free(colour_str);
     stdout.print("{s}", .{colour_str})
         catch return error.InternalLoggingFailed;
     stdout.print(" " ++ text, args)
