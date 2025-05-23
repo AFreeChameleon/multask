@@ -6,7 +6,7 @@ pub fn build(b: *std.Build) void {
         .name = "mlt",
         .root_source_file = b.path("src/main.zig"),
         .target = b.graph.host,
-        .optimize = .ReleaseSmall,
+        .optimize = .ReleaseFast,
     });
 
     b.installArtifact(exe);
@@ -24,7 +24,7 @@ pub fn build(b: *std.Build) void {
             .name = "spawn",
             .root_source_file = b.path("src/win_spawn.zig"),
             .target = b.graph.host,
-            .optimize = .ReleaseSmall,
+            .optimize = .ReleaseFast,
         });
         b.installArtifact(win_spawn_exe);
         win_spawn_exe.linkLibC();
