@@ -231,12 +231,10 @@ pub const TaskManager = struct {
                 .cpu_limit = cpu_limit,
                 .persist = persist
             },
-            .files = undefined,
-            .resources = undefined,
-            .process = undefined
+            .files = try Files.init(new_id),
+            .resources = Resources.init(),
+            .process = null
         };
-        task.files = try Files.init(task.id);
-
         try task.files.write_file(Stats, task.stats);
         
         if (namespace != null) {
