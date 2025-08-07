@@ -17,18 +17,23 @@ const Files = t.Files;
 
 
 const Stats = @import("../task/stats.zig").Stats;
+const taskenv = @import("../task/env.zig");
 
 const TaskLogger = @import("../task/logger.zig");
 const taskproc = @import("../task/process.zig");
 const Process = taskproc.Process;
 const Cpu = taskproc.Cpu;
 const ExistingLimits = taskproc.ExistingLimits;
+const Monitoring = taskproc.Monitoring;
 
 const ChildProcess = std.process.Child;
 
 
 pub fn run_daemon(task: *Task, flags: ForkFlags) e.Errors!void {
     try util.save_stats(task, &flags);
+    var envs = try taskproc.get_envs(task, flags.update_envs);
+    defer envs.deinit();
+    try taskenv.add_multask_taskid_to_map(&envs, task.id);
 
     // Set this to false for dev purposes
     if (true) {
@@ -45,11 +50,6 @@ pub fn run_daemon(task: *Task, flags: ForkFlags) e.Errors!void {
             return;
         }
 
-        // Creates grandchild process to orphan it so no zombie processes are made
-        if (libc.fork() > 0) {
-            libc.exit(0);
-        }
-
         // Child logic is here vvv
         log.is_forked = true;
         try close_std_handles();
@@ -59,11 +59,16 @@ pub fn run_daemon(task: *Task, flags: ForkFlags) e.Errors!void {
         if (sid < 0) {
             return error.SetSidFailed;
         }
+
+        // Creates grandchild process to orphan it so no zombie processes are made
+        if (libc.fork() > 0) {
+            libc.exit(0);
+        }
     }
 
     task.daemon = try Process.init(task, util.get_pid(), null);
     while (true) {
-        var child = try run_command(task.stats.command, flags.interactive);
+        var child = try run_command(task.stats.command, flags.interactive, envs);
         errdefer _ = child.kill() catch {
             std.process.exit(1);
         };
@@ -239,9 +244,10 @@ fn monitor_process(
             timeout = (monitor_time + time) - current_time;
         }
     }
+    try log.printdebug("No more saved processes are alive.", .{});
 }
 
-fn run_command(command: []const u8, interactive: bool) e.Errors!ChildProcess {
+fn run_command(command: []const u8, interactive: bool, envs: std.process.EnvMap) e.Errors!ChildProcess {
     var build_args = std.ArrayList([]const u8).init(util.gpa);
     defer build_args.deinit();
     const shell_path = try util.get_shell_path();
@@ -260,6 +266,7 @@ fn run_command(command: []const u8, interactive: bool) e.Errors!ChildProcess {
         build_args.items,
         util.gpa
     );
+    child_process.env_map = &envs;
     child_process.stdout_behavior = .Pipe;
     child_process.stderr_behavior = .Pipe;
     child_process.stdin_behavior = .Pipe;

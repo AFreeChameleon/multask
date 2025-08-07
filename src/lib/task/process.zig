@@ -2,29 +2,24 @@ const std = @import("std");
 const builtin = @import("builtin");
 const log = @import("../log.zig");
 
-const Task = @import("./index.zig").Task;
+const t = @import("./index.zig");
+const Task = t.Task;
+const TaskId = t.TaskId;
 const util = @import("../util.zig");
 const Pid = util.Pid;
 const e = @import("../error.zig");
 const Errors = e.Errors;
 
 const f = @import("./file.zig");
-const ProcessSection = f.ProcessSection;
 const ReadProcess = f.ReadProcess;
+const TaskReadProcess = f.TaskReadProcess;
 
 const r = @import("./resources.zig");
 const Resources = r.Resources;
 const JSON_Resources = r.JSON_Resources;
 
-pub const ExistingLimits = struct {
-    mem: util.MemLimit,
-    cpu: util.CpuLimit
-};
-
-pub const CpuStatus = enum {
-    Sleep,
-    Active
-};
+const taskenv = @import("./env.zig");
+const JSON_Env = taskenv.JSON_Env;
 
 pub const Process = switch (builtin.target.os.tag) {
     .linux => @import("../linux/process.zig").LinuxProcess,
@@ -40,56 +35,75 @@ pub const Cpu = switch (builtin.target.os.tag) {
     else => error.InvalidOS
 };
 
+pub const ExistingLimits = struct {
+    mem: util.MemLimit,
+    cpu: util.CpuLimit
+};
+
+pub const CpuStatus = enum {
+    Sleep,
+    Active
+};
+
+pub const Monitoring = enum {
+    Deep,
+    Shallow
+};
+
 pub fn save_files(proc: *Process) Errors!void {
-    try save_processes(proc);
-    try save_resources(proc);
+    save_processes(proc)
+        catch |err| switch (err) {
+            error.TaskFileNotFound => {},
+            else => return err
+        };
+    save_resources(proc)
+        catch |err| switch (err) {
+            error.TaskFileNotFound => {},
+            else => return err
+        };
 }
 
 fn save_processes(proc: *Process) Errors!void {
+    try log.printdebug("Saving processes", .{});
     try proc.task.files.clear_file(ReadProcess);
     var children_procs = util.gpa.alloc(
-        ProcessSection,
+        ReadProcess,
         if (proc.children == null) 0 else proc.children.?.len
     ) catch |err| return e.verbose_error(err, error.FailedToGetProcesses);
 
+    const task_proc = TaskReadProcess.init(&proc.task.daemon.?);
     if (proc.children != null) {
         for (proc.children.?, 0..) |child, i| {
-            children_procs[i] = ProcessSection {
-                .pid = child.pid,
-                .starttime = child.start_time
-            };
+            children_procs[i] = ReadProcess.init(&child, task_proc, null);
         }
     }
 
     if (proc.task.daemon == null) return error.TaskNotRunning;
 
-    var read_proc = ReadProcess {
-        .task = .{
-            .pid = proc.task.daemon.?.pid,
-            .starttime = proc.task.daemon.?.start_time
-        },
-        .pid = proc.pid,
-        .starttime = proc.start_time,
-        .children = children_procs
-    }; 
+    var read_proc = ReadProcess.init(proc, task_proc, children_procs);
     defer read_proc.deinit();
 
     try proc.task.files.write_file(ReadProcess, read_proc);
 }
 
 fn save_resources(proc: *Process) Errors!void {
+    try log.printdebug("Saving resources", .{});
     try proc.task.files.clear_file(JSON_Resources);
     var resources = Resources.init();
     defer resources.deinit();
-    const self_usage = try Cpu.get_cpu_usage(proc);
-    resources.cpu.put(proc.pid, self_usage)
-        catch |err| return e.verbose_error(err, error.FailedToGetProcesses);
+    if (proc.proc_exists()) {
+        const self_usage = try Cpu.get_cpu_usage(proc);
+        resources.cpu.put(proc.pid, self_usage)
+            catch |err| return e.verbose_error(err, error.FailedToGetProcesses);
+    }
 
     if (proc.children != null) {
         for (proc.children.?) |*child| {
-            const usage = try Cpu.get_cpu_usage(child);
-            resources.cpu.put(child.pid, usage)
-                catch |err| return e.verbose_error(err, error.FailedToGetProcesses);
+            if (child.proc_exists()) {
+                const usage = try Cpu.get_cpu_usage(child);
+                resources.cpu.put(child.pid, usage)
+                    catch |err| return e.verbose_error(err, error.FailedToGetProcesses);
+            }
         }
     }
 
@@ -104,17 +118,26 @@ fn save_resources(proc: *Process) Errors!void {
 ///
 /// Returns array of child processes that still exist
 pub fn get_running_saved_procs(proc: *Process) Errors![]Process {
+    try log.printdebug("Get running saved processes", .{});
     var children = std.ArrayList(Process).init(util.gpa);
     defer children.deinit();
-    var saved_procs = try proc.task.files.read_file(ReadProcess);
+    // This may sometimes fail due to a read happening while a daemon is trying to save to it
+    var saved_procs = proc.task.files.read_file(ReadProcess)
+        catch |err| switch (err) {
+            error.TaskFileFailedRead => return &[0]Process{},
+            else => return err
+        };
     if (saved_procs == null) {
         return children.toOwnedSlice()
             catch |err| return e.verbose_error(err, error.FailedToGetProcessChildren);
     }
     defer saved_procs.?.deinit();
-    for (saved_procs.?.children) |child_readproc| {
-        var cproc = Process.init(proc.task, child_readproc.pid, null)
-            catch continue;
+    if (saved_procs.?.children == null) {
+        return error.FailedToGetProcessChildren;
+    }
+    for (saved_procs.?.children.?) |child_readproc| {
+        const args = Process.get_init_args_from_readproc(ReadProcess, child_readproc);
+        var cproc = Process.init(proc.task, child_readproc.pid, args) catch continue;
         if (cproc.proc_exists()) {
             children.append(cproc)
                 catch |err| return e.verbose_error(err, error.FailedToGetProcessChildren);
@@ -125,17 +148,22 @@ pub fn get_running_saved_procs(proc: *Process) Errors![]Process {
 }
 
 pub fn parse_readprocess(task: *Task, readproc: *ReadProcess) Errors!Process {
-    var mainproc = try Process.init(task, readproc.pid, readproc.starttime);
+    const args = Process.get_init_args_from_readproc(ReadProcess, readproc.*);
+    var mainproc = try Process.init(task, readproc.pid, args);
     var childprocs = std.ArrayList(Process).init(util.gpa);
     defer childprocs.deinit();
-    for (readproc.children) |rchild| {
-        var child = try Process.init(task, rchild.pid, rchild.starttime);
+    if (readproc.children == null) {
+        return error.FailedToGetProcessChildren;
+    }
+    for (readproc.children.?) |rchild| {
+        const child_args = Process.get_init_args_from_readproc(ReadProcess, rchild);
+        var child = try Process.init(task, rchild.pid, child_args);
         if (child.proc_exists()) {
             childprocs.append(child)
                 catch |err| return e.verbose_error(err, error.FailedToGetProcesses);
         }
     }
-    if (readproc.children.len > 0) {
+    if (readproc.children.?.len > 0) {
         mainproc.children = childprocs.toOwnedSlice()
             catch |err| return e.verbose_error(err, error.FailedToGetProcesses);
     }
@@ -162,6 +190,7 @@ pub fn check_memory_limit_within_limit(self: *Process) Errors!void {
 }
 
 pub fn kill_all(proc: *Process) Errors!void {
+    try log.printdebug("Killing all processes.", .{});
     if (builtin.target.os.tag == .windows) {
         try proc.kill_all();
     } else {
@@ -202,4 +231,58 @@ pub fn any_procs_exist(proc: *Process) Errors!bool {
         }
     }
     return false;
+}
+
+pub fn filter_dupe_and_self_procs(self_proc: *Process, procs: []Process) Errors![]Process {
+    var unique_procs = std.ArrayList(Process).init(util.gpa);
+    defer unique_procs.deinit();
+
+    for (procs) |proc| {
+        var do_not_add = false;
+        for (unique_procs.items) |u_proc| {
+            if (proc.pid == u_proc.pid) {
+                do_not_add = true;
+                break;
+            }
+        }
+        if (
+            proc.pid == self_proc.pid or
+            (self_proc.task.daemon != null and proc.pid == self_proc.task.daemon.?.pid)
+        ) {
+            do_not_add = true;
+        }
+        if (do_not_add) continue;
+
+        unique_procs.append(proc)
+            catch |err| return e.verbose_error(err, error.FailedToFilterDupeProcesses);
+    }
+    return unique_procs.toOwnedSlice()
+        catch |err| return e.verbose_error(err, error.FailedToFilterDupeProcesses);
+}
+
+pub fn get_envs(task: *Task, update_envs: bool) Errors!std.process.EnvMap {
+    try log.printdebug("Getting envs. Updating: {any}", .{update_envs});
+    if (update_envs) {
+        return try save_current_envs(task);
+    }
+    const content = task.files.read_file(JSON_Env)
+        catch |err| return switch (err) {
+            error.TaskFileNotFound => try save_current_envs(task),
+            else => err
+        };
+    if (content == null) {
+        try log.printdebug("Env file missing/invalid, saving current envs.", .{});
+        return try save_current_envs(task);
+    }
+    defer content.?.deinit();
+    const map = try content.?.to_map();
+    return map;
+}
+
+pub fn save_current_envs(task: *Task) Errors!std.process.EnvMap {
+    const env = std.process.getEnvMap(util.gpa)
+        catch |err| return e.verbose_error(err, error.FailedToGetEnvs);
+    const json = try taskenv.serialise(env);
+    try task.files.write_file(JSON_Env, json);
+    return env;
 }

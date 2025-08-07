@@ -13,6 +13,7 @@ const MainFiles = @import("../file.zig").MainFiles;
 const LinuxProcess = @import("./process.zig").LinuxProcess;
 const e = @import("../error.zig");
 const Errors = e.Errors;
+const ProcFs = @import("./file.zig").ProcFs;
 
 pub const LinuxCpu = struct {
     const Self = @This();
@@ -68,19 +69,14 @@ pub const LinuxCpu = struct {
     pub fn get_cpu_usage(
         process: *LinuxProcess,
     ) Errors!f64 {
-        const stats = try process.get_process_stats();
-        defer {
-            for (stats) |stat| {
-                util.gpa.free(stat);
-            }
-            util.gpa.free(stats);
-        }
+        const stats = try ProcFs.get_process_stats(process.pid);
+        defer stats.deinit();
         var utime: u64 = 0;
         var stime: u64 = 0;
-        if (stats.len > 0) {
-            utime = std.fmt.parseInt(u64, stats[13], 10)
+        if (stats.val.len > 0) {
+            utime = std.fmt.parseInt(u64, stats.val[13], 10)
                 catch |err| return e.verbose_error(err, error.FailedToGetProcesses);
-            stime = std.fmt.parseInt(u64, stats[14], 10)
+            stime = std.fmt.parseInt(u64, stats.val[14], 10)
                 catch |err| return e.verbose_error(err, error.FailedToGetProcesses);
         }
 
@@ -102,7 +98,7 @@ pub const LinuxCpu = struct {
             util.gpa.free(cpu_stats);
         }
         const new_time_total = get_cpu_time_total(cpu_stats);
-        const cpu_usage: f64 = @as(f64, @floatFromInt(libc.sysconf(libc._SC_NPROCESSORS_ONLN)))
+        var cpu_usage: f64 = @as(f64, @floatFromInt(libc.sysconf(libc._SC_NPROCESSORS_ONLN)))
             * 100.0
             * (
                 (@as(f64, @floatFromInt(proc_times)) - @as(f64, @floatFromInt(old_proc_times))) /
@@ -117,6 +113,9 @@ pub const LinuxCpu = struct {
 
         if (cpu_usage == std.math.inf(@TypeOf(cpu_usage))) {
             return error.FailedToGetCpuUsage;
+        }
+        if (cpu_usage > 100.0) {
+            cpu_usage = 100.0;
         }
         return cpu_usage;
     }

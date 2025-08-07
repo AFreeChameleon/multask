@@ -8,6 +8,7 @@ const Lengths = util.Lengths;
 
 const taskproc = @import("./process.zig");
 const Process = taskproc.Process;
+const Monitoring = taskproc.Monitoring;
 
 const Stats = @import("./stats.zig").Stats;
 const Resources = @import("./resources.zig").Resources;
@@ -15,6 +16,7 @@ const Resources = @import("./resources.zig").Resources;
 const f = @import("./file.zig");
 const Files = f.Files;
 const ReadProcess = f.ReadProcess;
+const TaskReadProcess = f.TaskReadProcess;
 
 const MainFiles  = @import("../file.zig").MainFiles;
 
@@ -187,18 +189,30 @@ pub const TaskManager = struct {
             catch |err| return e.verbose_error(err, error.NamespaceValueMissing);
     }
 
+    fn find_new_task_id(task_ids: []TaskId) TaskId {
+        if (task_ids.len == 0) {
+            return 1;
+        }
+        for (task_ids, 1..) |tid, i| {
+            if (tid != i and i < std.math.maxInt(TaskId)) {
+                return @intCast(i);
+            }
+        }
+        return task_ids[task_ids.len - 1] + 1;
+    }
+
     pub fn add_task(
         command: []const u8,
         cpu_limit: util.CpuLimit,
         memory_limit: util.MemLimit,
         namespace: ?[]const u8,
-        persist: bool
+        persist: bool,
+        monitoring: Monitoring
     ) Errors!Task {
         var tasks = try get_tasks();
         defer tasks.deinit();
         var path_exists = true;
-        var new_id: TaskId = if (tasks.task_ids.len > 0)
-            tasks.task_ids[tasks.task_ids.len - 1] + 1 else 1;
+        var new_id = find_new_task_id(tasks.task_ids);
         // Gets task with incrementing id until 1 is free
         while (path_exists) {
             if (!try Files.task_dir_exists(new_id)) {
@@ -229,7 +243,8 @@ pub const TaskManager = struct {
                 .command = command,
                 .memory_limit = memory_limit,
                 .cpu_limit = cpu_limit,
-                .persist = persist
+                .persist = persist,
+                .monitoring = monitoring
             },
             .files = try Files.init(new_id),
             .resources = Resources.init(),
@@ -297,8 +312,9 @@ pub const TaskManager = struct {
         if (procs != null) {
             defer procs.?.deinit();
             try log.printdebug("Initialising main process from id", .{});
+            const task_args = Process.get_init_args_from_readproc(TaskReadProcess, procs.?.task);
             task.process = try taskproc.parse_readprocess(task, &procs.?);
-            task.daemon = try Process.init(task, procs.?.task.pid, procs.?.task.starttime);
+            task.daemon = try Process.init(task, procs.?.task.pid, task_args);
         }
         task.resources = Resources.init();
     }
@@ -337,7 +353,8 @@ test "Creating task with namespace" {
         20,
         20_000,
         ns,
-        false
+        false,
+        .Shallow
     );
     try expect(new_task.id == 1);
     try expect(std.mem.eql(u8, new_task.namespace.?, "ns"));
@@ -359,7 +376,8 @@ test "Reading saved task with namespace" {
         20,
         20_000,
         ns,
-        false
+        false,
+        .Shallow
     );
     new_task.deinit();
     var task = Task.init(1);
@@ -384,7 +402,8 @@ test "Creating task with no namespace" {
         20,
         20_000,
         null,
-        false
+        false,
+        .Shallow
     );
     defer new_task.deinit();
 
@@ -392,7 +411,7 @@ test "Creating task with no namespace" {
 }
 
 test "Reading saved task with no namespace" {
-    std.debug.print("Reading saved task with namespace\n", .{});
+    std.debug.print("Reading saved task with no namespace\n", .{});
 
     const command = try std.fmt.allocPrint(util.gpa, "echo hi", .{});
     var new_task = try TaskManager.add_task(
@@ -400,7 +419,8 @@ test "Reading saved task with no namespace" {
         20,
         20_000,
         null,
-        false
+        false,
+        .Shallow
     );
     new_task.deinit();
     var task = Task.init(1);

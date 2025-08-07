@@ -1,5 +1,6 @@
 const util = @import("../util.zig");
 const Errors = @import("../error.zig").Errors;
+const Monitoring = @import("./process.zig").Monitoring;
 
 pub const Stats = struct {
     const Self = @This();
@@ -9,6 +10,7 @@ pub const Stats = struct {
     memory_limit: util.MemLimit,
     cpu_limit: util.CpuLimit,
     persist: bool,
+    monitoring: Monitoring,
 
     pub fn deinit(self: *Self) void {
         util.gpa.free(self.command);
@@ -21,7 +23,8 @@ pub const Stats = struct {
             .cwd = try util.strdup(self.cwd, error.FailedToGetTaskStats),
             .memory_limit = self.memory_limit,
             .cpu_limit = self.cpu_limit,
-            .persist = self.persist
+            .persist = self.persist,
+            .monitoring = self.monitoring
         };
         return stats;
     }

@@ -4,6 +4,7 @@ const builtin = @import("builtin");
 const t = @import("../lib/task/index.zig");
 
 const TaskManager = @import("../lib/task/manager.zig").TaskManager;
+const Monitoring = @import("../lib/task/process.zig").Monitoring;
 
 const file = @import("../lib/file.zig");
 
@@ -23,7 +24,8 @@ pub const Flags = struct {
     persist: bool,
     namespace: ?[]const u8,
     help: bool,
-    command: []const u8
+    command: []const u8,
+    monitoring: Monitoring
 };
 
 pub fn run(argv: [][]u8) Errors!void {
@@ -40,7 +42,8 @@ pub fn run(argv: [][]u8) Errors!void {
         flags.cpu_limit,
         flags.memory_limit,
         flags.namespace,
-        flags.persist
+        flags.persist,
+        flags.monitoring
     );
     defer new_task.deinit();
 
@@ -51,6 +54,7 @@ pub fn run(argv: [][]u8) Errors!void {
             .cpu_limit = flags.cpu_limit,
             .interactive = flags.interactive,
             .persist = flags.persist,
+            .update_envs = true,
         });
     } else {
         const windows_fork = @import("../lib/windows/fork.zig");
@@ -59,6 +63,7 @@ pub fn run(argv: [][]u8) Errors!void {
             .cpu_limit = flags.cpu_limit,
             .interactive = flags.interactive,
             .persist = flags.persist,
+            .update_envs = true,
         });
     }
 
@@ -72,10 +77,11 @@ fn parse_cmd_args(argv: [][]u8) Errors!Flags {
         .interactive = false,
         .persist = false,
         .help = false,
+        .monitoring = Monitoring.Shallow,
         .namespace = null,
         .command = undefined
     };
-    var pflags = util.gpa.alloc(parse.Flag, 7)
+    var pflags = util.gpa.alloc(parse.Flag, 8)
         catch |err| return e.verbose_error(err, error.ParsingCommandArgsFailed);
     defer util.gpa.free(pflags);
     pflags[0] = parse.Flag {
@@ -104,6 +110,11 @@ fn parse_cmd_args(argv: [][]u8) Errors!Flags {
     };
     pflags[6] = parse.Flag {
         .name = 'n',
+        .type = .value
+    };
+    pflags[7] = parse.Flag {
+        .name = 'M',
+        .long_name = "monitor",
         .type = .value
     };
 
@@ -145,10 +156,11 @@ fn parse_cmd_args(argv: [][]u8) Errors!Flags {
             'h' => flags.help = true,
             'p' => flags.persist = true,
             'd' => log.enable_debug(),
+            'M' => flags.monitoring = try util.read_monitoring_from_string(flag.value.?),
             else => return error.InvalidOption
         }
     }
-    if (vals.len == 0) {
+    if (vals.len == 0 and !flags.help) {
         return error.CommandNotExists;
     }
     flags.command = std.mem.join(util.gpa, " ", vals)
@@ -159,12 +171,13 @@ fn parse_cmd_args(argv: [][]u8) Errors!Flags {
 const help_rows = .{
     .{"Creates and starts a task by entering a command."},
     .{"Usage: mlt create -m 20M -c 50 -n ns_one -i -p \"ping google.com\""},
-    .{"flags:"},
+    .{"Flags:"},
     .{"", "-m [num]", "Set maximum memory limit e.g 4GB"},
     .{"", "-c [num]", "Set limit cpu usage by percentage e.g 20"},
     .{"", "-n [text]", "Set namespace for the process"},
     .{"", "-i", "", "Interactive mode (can use aliased commands on your environment)"},
     .{"", "-p", "", "Persist mode (will restart if the program exits)"},
+    .{"", "-M, --monitor", "How thorough looking for child processes will be, use \"deep\" for complex applications like GUIs although it can be a little more CPU intensive, \"shallow\" is the default."},
     .{""},
     .{"For more, run `mlt help`"},
 };

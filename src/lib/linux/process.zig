@@ -3,11 +3,15 @@ const libc = @import("../c.zig").libc;
 const log = @import("../log.zig");
 const util = @import("../util.zig");
 const Pid = util.Pid;
+const Sid = util.Sid;
+const Pgrp = util.Pgrp;
 const Lengths = util.Lengths;
 const FileStrings = util.FileStrings;
 const e = @import("../error.zig");
 const Errors = e.Errors;
 const Find = @import("../file.zig").Find;
+
+const ProcFs = @import("./file.zig").ProcFs;
 
 const t = @import("../task/index.zig");
 const TaskFiles = t.Files;
@@ -19,6 +23,7 @@ const LinuxCpu = Cpu.LinuxCpu;
 
 const taskproc = @import("../task/process.zig");
 const CpuStatus = taskproc.CpuStatus;
+const Monitoring = taskproc.Monitoring;
 
 const r = @import("../task/resources.zig");
 const Resources = r.Resources;
@@ -26,14 +31,34 @@ const JSON_Resources = r.JSON_Resources;
 
 const f = @import("../task/file.zig");
 const ReadProcess = f.ReadProcess;
-const ProcessSection = f.ProcessSection;
+
 
 pub const LinuxProcess = struct {
     const Self = @This();
 
+    // When these are set to null, it means to fetch them because they're not saved yet
+    pub const InitArgs = struct {
+        sid: Sid,
+        pgrp: Pgrp,
+        starttime: u64
+    };
+
+    /// Can either be ReadProcess or TaskReadProcess
+    pub fn get_init_args_from_readproc(comptime T: type, proc: T) InitArgs {
+        return InitArgs {
+            .sid = proc.sid,
+            .pgrp = proc.pgrp,
+            .starttime = proc.starttime,
+        };
+    }
+
+    var LoadAvgPid: Pid = 0;
+
     pid: Pid,
+    sid: Sid,
+    pgrp: Pgrp,
+    starttime: u64,
     task: *Task,
-    start_time: u64,
     children: ?[]Self = null,
     memory_limit: util.MemLimit = 0,
 
@@ -41,17 +66,35 @@ pub const LinuxProcess = struct {
     pub fn init(
         task: *Task,
         pid: Pid,
-        starttime: ?u64
+        data: ?InitArgs,
     ) Errors!Self {
         var proc = Self {
             .pid = pid,
             .task = task,
-            .start_time = 0
+            .starttime = 0,
+            .sid = 0,
+            .pgrp = 0,
         };
-        if (starttime != null) {
-            proc.start_time = starttime.?;
-        } else if (proc.proc_exists()) {
-            proc.start_time = try proc.get_starttime();
+        const procExists = proc.proc_exists();
+        if (procExists) {
+            const stats = try ProcFs.get_process_stats(proc.pid);
+            defer stats.deinit();
+
+            if (data != null) {
+                proc.starttime = data.?.starttime;
+                proc.pgrp = data.?.pgrp;
+                proc.sid = data.?.sid;
+            } else {
+                proc.starttime = try get_starttime(stats);
+                proc.pgrp = try get_pgrp(stats);
+                proc.sid = try get_sid(stats);
+            }
+        } else {
+            if (data != null) {
+                proc.starttime = data.?.starttime;
+                proc.pgrp = data.?.pgrp;
+                proc.sid = data.?.sid;
+            }
         }
         return proc;
     }
@@ -63,49 +106,29 @@ pub const LinuxProcess = struct {
     }
 
     pub fn monitor_stats(
-        self: *Self,
+        self: *Self
     ) Errors!void {
         var keep_running = false;
 
-        var children = std.ArrayList(Self).init(util.gpa);
-        defer children.deinit();
+        const loadavg_pid: Pid = try get_most_recent_pid();
+        if (loadavg_pid != LoadAvgPid) {
+            LoadAvgPid = loadavg_pid;
+            const related_procs = try self.get_related_procs();
 
-        if (!self.proc_exists()) {
-            // If main proc doesnt exist, read the saved child processes
-            // if any of those exist, set the main process to the first one that's running?
-            // should I do that? what if there are multiple child processes running alongside each other?
-            // don't do it because I can just check saved processes and add it
-            // to the children array and save them
-            const saved_procs = try taskproc.get_running_saved_procs(self);
-            defer util.gpa.free(saved_procs);
-            if (saved_procs.len != 0) {
+            // If a new process has been created, do this search
+            if (self.proc_exists() or related_procs.len > 0) {
                 keep_running = true;
-            }
-            for (saved_procs) |sproc| {
-                var exists = false;
-                for (children.items) |proc| {
-                    if (
-                        sproc.pid == proc.pid and
-                        sproc.start_time == proc.start_time
-                    ) {
-                        exists = true;
-                        break;
-                    }
+                if (self.children != null and self.children.?.len > 0) {
+                    util.gpa.free(self.children.?);
                 }
-                if (!exists) {
-                    children.append(
-                        try Self.init(sproc.task, sproc.pid, sproc.start_time)
-                    ) catch |err| return e.verbose_error(err, error.FailedToGetProcessChildren);
-                    try self.get_children(&children, sproc.pid);
-                }
+                self.children = related_procs;
+            } else {
+                util.gpa.free(related_procs);
             }
-        } else {
+        } else if (self.proc_exists() or self.proc_children_exists()) {
             keep_running = true;
-            try self.get_children(&children, self.pid);
         }
 
-        self.children = children.items;
-        defer self.children = null;
         try taskproc.check_memory_limit_within_limit(self);
 
         try taskproc.save_files(self);
@@ -113,6 +136,65 @@ pub const LinuxProcess = struct {
         if (!keep_running) {
             try taskproc.kill_all(self);
         }
+    }
+
+    pub fn get_related_procs(
+        self: *Self
+    ) Errors![]LinuxProcess {
+        // If main proc doesnt exist, read the saved child processes
+        // if any of those exist, set the main process to the first one that's running?
+        // should I do that? what if there are multiple child processes running alongside each other?
+        // don't do it because I can just check saved processes and add it
+        // to the children array and save them
+        var related_procs = std.ArrayList(Self).init(util.gpa);
+        defer related_procs.deinit();
+        if (self.proc_exists()) {
+            try self.get_children(&related_procs, self.pid);
+        } else {
+            const saved_procs = try taskproc.get_running_saved_procs(self);
+            defer util.gpa.free(saved_procs);
+            for (saved_procs) |sproc| {
+                var exists = false;
+                for (related_procs.items) |proc| {
+                    if (
+                        sproc.pid == proc.pid and
+                        sproc.starttime == proc.starttime
+                    ) {
+                        exists = true;
+                        break;
+                    }
+                }
+                if (!exists) {
+                    const args = InitArgs {
+                        .sid = sproc.sid,
+                        .pgrp = sproc.pgrp,
+                        .starttime = sproc.starttime
+                    };
+                    related_procs.append(
+                        try Self.init(sproc.task, sproc.pid, args)
+                    ) catch |err| return e.verbose_error(err, error.FailedToGetProcessChildren);
+                    try self.get_children(&related_procs, sproc.pid);
+                }
+            }
+        }
+
+        if (self.task.daemon == null) {
+            return error.FailedToGetRelatedProcs;
+        }
+
+        if (self.task.stats.monitoring == Monitoring.Deep) {
+            related_procs.append(self.*)
+                catch |err| return e.verbose_error(err, error.FailedToGetRelatedProcs);
+            related_procs.append(self.task.daemon.?)
+                catch |err| return e.verbose_error(err, error.FailedToGetRelatedProcs);
+            const procs = try self.search_related_procs(related_procs.items);
+            related_procs.appendSlice(procs)
+                catch |err| return e.verbose_error(err, error.FailedToGetRelatedProcs);
+        }
+
+        const unique_procs = try taskproc.filter_dupe_and_self_procs(self, related_procs.items);
+
+        return unique_procs;
     }
 
     pub fn any_proc_child_exists(self: *Self) bool {
@@ -133,100 +215,21 @@ pub const LinuxProcess = struct {
     /// Gets command name associated with process.
     /// More info, use `man proc` and go to /proc/pid/comm
     pub fn get_exe(self: *Self) Errors![]const u8 {
-        // Max size should be 255
-        const comm_path = std.fmt.allocPrint(util.gpa, "/proc/{d}/comm", .{self.pid})
-            catch |err| return e.verbose_error(err, error.FailedToGetProcessComm);
-        defer util.gpa.free(comm_path);
-        const comm_file = std.fs.openFileAbsolute(comm_path , .{ .mode = .read_only })
-            catch |err| return e.verbose_error(err, error.FailedToGetProcessComm);
-        defer comm_file.close();
-
-        var buf = std.mem.zeroes([libc.NAME_MAX]u8);
-        var comm_file_reader = std.io.bufferedReader(comm_file.reader());
-        var in_stream = comm_file_reader.reader();
-        _ = in_stream.readAll(&buf)
-            catch |err| return e.verbose_error(err, error.FailedToGetProcessComm);
-        return util.strdup(
-            std.mem.trimRight(u8, &buf, &[2]u8{0, '\n'}), // File has a \n ending it
-            error.FailedToGetProcessComm
-        );
+        const content = try ProcFs.read_file(self.pid, ProcFs.FileType.Comm);
+        return std.mem.trimRight(u8, content, &[2]u8{0, '\n'});
     }
 
-    /// Gets all stats from the /proc/pid/stat file.
-    /// More info, use `man proc` and go to /proc/pid/stat
-    pub fn get_process_stats(
-        self: *Self,
-    ) Errors![][]u8 {
-        var stats = std.ArrayList([]u8).init(util.gpa);
-        defer stats.deinit();
-        var stat_line = std.ArrayList(u8).init(util.gpa);
-        defer stat_line.deinit();
 
-        const stat_path = std.fmt.allocPrint(util.gpa, "/proc/{d}/stat", .{self.pid})
-            catch |err| return e.verbose_error(err, error.FailedToGetProcessStats);
-        defer util.gpa.free(stat_path);
-        const stat_file = std.fs.openFileAbsolute(stat_path , .{ .mode = .read_only })
-            catch |err| return e.verbose_error(err, error.FailedToGetProcessStats);
-        defer stat_file.close();
-
-        var bracket_count: i32 = 0;
-        var buf_reader = std.io.bufferedReader(stat_file.reader());
-        var reader = buf_reader.reader();
-        var buf: [Lengths.MEDIUM]u8 = std.mem.zeroes([Lengths.MEDIUM]u8);
-        var buf_fbs = std.io.fixedBufferStream(&buf);
-        while (
-            true
-        ) {
-            reader.streamUntilDelimiter(buf_fbs.writer(), ' ', buf_fbs.buffer.len)
-                catch |err| switch (err) {
-                    error.NoSpaceLeft => break,
-                    error.EndOfStream => break,
-                    else => |inner_err| return e.verbose_error(
-                        inner_err, error.FailedToGetProcessStats
-                    )
-                };
-            const it = buf_fbs.getWritten();
-            defer buf_fbs.reset();
-            if (it.len == 0) {
-                break;
-            }
-
-            const stat = util.gpa.dupe(u8, it)
-                catch |err| return e.verbose_error(err, error.FailedToGetProcessChildren);
-            if (stat[0] == '(') {
-                bracket_count += 1;
-            }
-            if (stat[stat.len - 1] == ')') {
-                bracket_count -= 1;
-                if (bracket_count == 0) {
-                    stat_line.appendSlice(stat)
-                        catch |err| return e.verbose_error(err, error.FailedToGetProcessStats);
-                    util.gpa.free(stat);
-                }
-            }
-            if (bracket_count > 0) {
-                stat_line.appendSlice(stat)
-                    catch |err| return e.verbose_error(err, error.FailedToGetProcessStats);
-            }
-
-            if (bracket_count == 0) {
-                if (stat_line.capacity == 0) {
-                    stats.append(stat)
-                        catch |err| return e.verbose_error(err, error.FailedToGetProcessStats);
-                } else {
-                    stats.append(
-                        stat_line.toOwnedSlice()
-                            catch |err| return e.verbose_error(err, error.FailedToGetProcessStats))
-                        catch |err| return e.verbose_error(err, error.FailedToGetProcessStats
-                    );
-                }
-
-                stat_line.clearAndFree();
+    pub fn proc_children_exists(self: *Self) bool {
+        if (self.children == null or self.children.?.len == 0) {
+            return false;
+        }
+        for (self.children.?) |*proc| {
+            if (proc.proc_exists()) {
+                return true;
             }
         }
-
-        return stats.toOwnedSlice()
-            catch |err| return e.verbose_error(err, error.FailedToGetProcessStats);
+        return false;
     }
 
     /// Checks if process exists by checking the pid exists, and if it's a zombie process
@@ -237,10 +240,13 @@ pub const LinuxProcess = struct {
             return false;
         }
         // Can't check start time because it hasn't been set
-        if (self.start_time != 0) {
-            const starttime = self.get_starttime()
+        if (self.starttime != 0) {
+            const stats = ProcFs.get_process_stats(self.pid)
                 catch return false;
-            if (starttime != self.start_time) {
+            defer stats.deinit();
+            const starttime = get_starttime(stats)
+                catch return false;
+            if (starttime != self.starttime) {
                 return false;
             }
         }
@@ -253,49 +259,18 @@ pub const LinuxProcess = struct {
     }
 
     fn get_process_state(self: *Self) Errors!?u8 {
-        const pid_path = std.fmt.allocPrint(util.gpa, "/proc/{d}/status", .{self.pid})
-            catch |err| return e.verbose_error(err, error.FailedToGetProcessState);
-        defer util.gpa.free(pid_path);
-        const status_file = std.fs.openFileAbsolute(pid_path , .{ .mode = .read_only })
-            catch |err| return e.verbose_error(err, error.FailedToGetProcessState);
-        defer status_file.close();
+        const stats = try ProcFs.get_process_stats(self.pid);
+        defer stats.deinit();
 
-        var buf = std.mem.zeroes([Lengths.LARGE]u8);
-        var pid_file_reader = std.io.bufferedReader(status_file.reader());
-        var in_stream = pid_file_reader.reader();
-
-        while (in_stream.readUntilDelimiterOrEof(&buf, '\n')
-            catch return null) |line| {
-            if (!std.mem.eql(u8, line[0..5], "State")) {
-                continue;
-            }
-            var state_itr = std.mem.splitAny(u8, line, "\t ");
-            _ = state_itr.next();
-            const state_keyword = state_itr.next();
-            if (state_keyword == null) {
-                return error.FailedToGetProcessState;
-            }
-            return state_keyword.?[0];
-        }
-        return null;
+        const state = stats.val[2][0]; // State is only one character
+        return state;
     }
 
     pub fn get_memory(self: *Self) Errors!u64 {
-        var buf: [Lengths.LARGE]u8 = undefined;
-        const pid_path = std.fmt.bufPrint(&buf, "/proc/{d}/statm", .{self.pid})
-            catch |err| return e.verbose_error(err, error.FailedToGetProcessMemory);
-        const statm_file = std.fs.openFileAbsolute(pid_path , .{ .mode = .read_only })
-            catch |err| return e.verbose_error(err, error.FailedToGetProcessChildren);
-        defer statm_file.close();
+        const statm = try ProcFs.read_file(self.pid, ProcFs.FileType.Statm);
+        defer util.gpa.free(statm);
 
-        var pid_file_reader = std.io.bufferedReader(statm_file.reader());
-        var in_stream = pid_file_reader.reader();
-
-        // Whole line is very small
-        var line: [Lengths.MEDIUM]u8 = undefined;
-        _ = in_stream.readAll(&line)
-            catch |err| return e.verbose_error(err, error.FailedToGetProcessMemory);
-        var itr = std.mem.splitAny(u8, &line, " ");
+        var itr = std.mem.splitAny(u8, statm, " ");
         _ = itr.next();
         const resident = itr.next();
         if (resident == null) {
@@ -310,24 +285,15 @@ pub const LinuxProcess = struct {
     pub fn get_runtime(self: *Self) Errors!u64 {
         const secs_since_epoch: u64 = @intCast(std.time.timestamp());
 
-        const stats = try self.get_process_stats();
-        defer {
-            for (stats) |s| {
-                defer util.gpa.free(s);
-            }
-            defer util.gpa.free(stats);
-        }
-        const start_time = std.fmt.parseInt(u64, stats[21], 10)
-            catch |err| return e.verbose_error(err, error.FailedToGetProcessRuntime);
-        const uptime_file = std.fs.openFileAbsolute("/proc/uptime", .{ .mode = .read_only })
-            catch |err| return e.verbose_error(err, error.FailedToGetProcessRuntime);
-        defer uptime_file.close();
-
-        var buf: [Lengths.MEDIUM]u8 = undefined;
-        _ = uptime_file.readAll(&buf)
+        const stats = try ProcFs.get_process_stats(self.pid);
+        defer stats.deinit();
+        const starttime = std.fmt.parseInt(u64, stats.val[21], 10)
             catch |err| return e.verbose_error(err, error.FailedToGetProcessRuntime);
 
-        var split_str = std.mem.splitSequence(u8, &buf, " ");
+        const uptime = try ProcFs.read_file(null, ProcFs.FileType.RootUptime);
+        defer util.gpa.free(uptime);
+
+        var split_str = std.mem.splitSequence(u8, uptime, " ");
         const secs_since_boot_str = split_str.next();
         if (secs_since_boot_str == null) {
             return error.FailedToGetProcessRuntime;
@@ -340,71 +306,55 @@ pub const LinuxProcess = struct {
         const ticks_per_sec: u64 = @intCast(libc.sysconf(libc._SC_CLK_TCK));
 
         if (secs_since_epoch -
-            (secs_since_boot - @divTrunc(start_time, ticks_per_sec)) < 0
+            (secs_since_boot - @divTrunc(starttime, ticks_per_sec)) < 0
         ) {
             return error.FailedToGetProcessRuntime;
         }
         const runtime: u64 = secs_since_epoch -
-            (secs_since_boot - @divTrunc(start_time, ticks_per_sec));
+            (secs_since_boot - @divTrunc(starttime, ticks_per_sec));
 
         return secs_since_epoch - runtime;
     }
 
-    pub fn get_starttime(self: *Self) Errors!u64 {
-        const stats = try self.get_process_stats();
-        defer {
-            for (stats) |stat| {
-                util.gpa.free(stat);
-            }
-            util.gpa.free(stats);
-        }
-        const starttime_str = stats[21];
+    pub fn get_starttime(stats: ProcFs.Stats) Errors!u64 {
+        const starttime_str = stats.val[21];
         const starttime: u64 = std.fmt.parseInt(u64, starttime_str, 10)
             catch return error.FailedToGetProcessStarttime;
         return starttime;
     }
 
+    pub fn get_sid(stats: ProcFs.Stats) Errors!Pid {
+        const sid_str = stats.val[5];
+        const sid: Pid = std.fmt.parseInt(Pid, sid_str, 10)
+            catch return error.FailedToGetProcessStarttime;
+        return sid;
+    }
+
+    pub fn get_pgrp(stats: ProcFs.Stats) Errors!Pid {
+        const pgrp_str = stats.val[4];
+        const pgrp: Pid = std.fmt.parseInt(Pid, pgrp_str, 10)
+            catch return error.FailedToGetProcessStarttime;
+        return pgrp;
+    }
+
+    pub fn get_most_recent_pid() Errors!Pid {
+        const loadavg = try ProcFs.get_loadavg();
+        defer loadavg.deinit();
+        const pid = std.fmt.parseInt(Pid, loadavg.val[4], 10)
+            catch return error.FailedToGetLoadavg;
+        try log.printdebug("Most recent pid: {d}", .{pid});
+        return pid;
+    }
+
     pub fn get_children(
         self: *const Self, children: *std.ArrayList(Self), pid: Pid
     ) Errors!void {
-        const children_path = std.fmt.allocPrint(
-            util.gpa, "/proc/{d}/task/{d}/children", .{ pid, pid }
-        ) catch |err| return e.verbose_error(err, error.FailedToGetProcessChildren);
-        defer util.gpa.free(children_path);
-        const children_file = std.fs.openFileAbsolute(children_path, .{ .mode = .read_only })
-            catch |err| return e.verbose_error(err, error.FailedToGetProcessChildren);
-        defer children_file.close();
- 
-        var buf_reader = std.io.bufferedReader(children_file.reader());
-        var reader = buf_reader.reader();
-        var buf: [Lengths.SMALL]u8 = std.mem.zeroes([Lengths.SMALL]u8);
-        var buf_fbs = std.io.fixedBufferStream(&buf);
-        while (
-            true
-        ) {
-            reader.streamUntilDelimiter(buf_fbs.writer(), ' ', buf_fbs.buffer.len)
-                catch |err| switch (err) {
-                    error.NoSpaceLeft => break,
-                    error.EndOfStream => break,
-                    else => |inner_err| return e.verbose_error(
-                        inner_err, error.FailedToGetProcessChildren
-                    )
-                };
-            const it = buf_fbs.getWritten();
-            defer buf_fbs.reset();
-            if (it.len == 0) {
-                break;
-            }
-
-            const section = util.gpa.dupe(u8, it)
-                catch |err| return e.verbose_error(err, error.FailedToGetProcessChildren);
-            defer util.gpa.free(section);
-            const child_pid = std.fmt.parseInt(Pid, section, 10)
-                catch return error.FailedToGetProcessChildren;
-
+        const child_pids = try ProcFs.get_proc_children(pid);
+        defer util.gpa.free(child_pids);
+        for (child_pids) |cpid| {
             var already_has_pid = false;
             for (children.items) |child| {
-                if (child_pid == child.pid) {
+                if (cpid == child.pid) {
                     already_has_pid = true;
                 }
             }
@@ -412,9 +362,9 @@ pub const LinuxProcess = struct {
                 continue;
             }
 
-            children.append(try Self.init(self.task, child_pid, null))
+            children.append(try Self.init(self.task, cpid, null))
                 catch |err| return e.verbose_error(err, error.FailedToGetProcessChildren);
-            try self.get_children(children, child_pid);
+            try self.get_children(children, cpid);
         }
     }
 
@@ -465,6 +415,88 @@ pub const LinuxProcess = struct {
                 &null_ptr
             );
         }
+    }
+
+    /// Get all processes in the same pgrp or sid or is a child of ppid
+    pub fn search_related_procs(
+        self: *Self,
+        procs: []LinuxProcess
+    ) Errors![]LinuxProcess {
+        var proc_dir = try ProcFs.get_procs_dir();
+        defer proc_dir.close();
+        var proc_dir_itr = proc_dir.iterate();
+
+        var related_procs = std.ArrayList(Self).init(util.gpa);
+        defer related_procs.deinit();
+
+        while (
+            proc_dir_itr.next()
+            catch |err| return e.verbose_error(err, error.FailedToGetProcessChildren)
+        ) |entry| {
+            if (entry.kind != .directory) {
+                continue;
+            }
+
+            const pid = std.fmt.parseInt(util.Pid, entry.name, 10)
+                catch continue;
+
+            // Stops any parent shell process or the daemon itself
+            if (pid < self.task.daemon.?.pid or pid == self.task.daemon.?.pid) {
+                continue;
+            }
+
+            var exists = false;
+            for (procs) |p| {
+                if (p.pid == pid) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (exists) continue;
+
+            const stats = ProcFs.get_process_stats(pid)
+                catch continue;
+            defer stats.deinit();
+
+            const proc_ppid = std.fmt.parseInt(Pid, stats.val[3], 10)
+                catch return error.FailedToGetProcessStats;
+            const proc_pgrp = std.fmt.parseInt(Pid, stats.val[4], 10)
+                catch return error.FailedToGetProcessStats;
+            const proc_sid = std.fmt.parseInt(Pid, stats.val[5], 10)
+                catch return error.FailedToGetProcessStats;
+
+            if (ProcFs.proc_has_taskid_in_env(pid, self.task.id)) {
+                const new_proc = try Self.init(self.task, pid, .{
+                    .sid = proc_sid,
+                    .pgrp = proc_pgrp,
+                    .starttime = try get_starttime(stats)
+                });
+                related_procs.append(new_proc)
+                    catch |err| return e.verbose_error(err, error.FailedToGetProcessStats);
+
+                continue;
+            }
+
+            for (procs) |proc| {
+                if (
+                    proc_ppid == proc.pid or
+                    proc_sid == proc.sid or
+                    proc_pgrp == proc.pgrp
+                ) {
+                    const new_proc = try Self.init(self.task, pid, .{
+                        .sid = proc_sid,
+                        .pgrp = proc_pgrp,
+                        .starttime = try get_starttime(stats)
+                    });
+                    related_procs.append(new_proc)
+                        catch |err| return e.verbose_error(err, error.FailedToGetProcessStats);
+                    break;
+                }
+            }
+        }
+
+        return related_procs.toOwnedSlice()
+            catch |err| return e.verbose_error(err, error.FailedToGetRelatedProcs);
     }
 
 };

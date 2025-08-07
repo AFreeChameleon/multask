@@ -3,6 +3,7 @@ const log = @import("./log.zig");
 const util = @import("./util.zig");
 
 pub const Errors = error {
+    InvalidOs,
     ForkFailed,
     StdHandleCloseFailed,
     SetSidFailed,
@@ -48,6 +49,8 @@ pub const Errors = error {
     FailedToGetCpuStats,
     FailedToSaveProcesses,
     FailedToReadTaskPid,
+    FailedToGetProcessSid,
+    FailedToGetProcessPpid,
     CommandTooLarge,
 
     FailedToSaveStats,
@@ -71,6 +74,7 @@ pub const Errors = error {
     FailedToKillProcess,
 
     ProcessFileFailedCreate,
+    ProcessFileNotFound,
 
     CpuLimitValueInvalid,
     CpuLimitValueMissing,
@@ -100,6 +104,26 @@ pub const Errors = error {
     MissingTaskId,
     OnlyOneTaskId,
     CommandNotExists,
+
+    FailedToGetAllProcesses,
+    FailedToGetProcDir,
+    FailedToGetRelatedProcs,
+
+    DebugLogFileFailedWrite,
+    DebugLogFileFailedOpen,
+
+    TaskFileNotFound,
+    FailedToFilterDupeProcesses,
+
+    FailedToGetRootStats,
+
+    InvalidFileType,
+    FailedToGetSystemUptime,
+
+    FailedToGetEnvs,
+    FailedToGetLoadavg,
+    CorruptTaskIdEnvVariable,
+    FailedToGetJob,
 };
 
 pub fn verbose_error(og_err: anytype, mult_err: Errors) Errors {
@@ -113,6 +137,60 @@ pub fn verbose_error(og_err: anytype, mult_err: Errors) Errors {
 pub fn get_error_msg(e_type: Errors) Errors![]const u8 {
     var result: []const u8 = undefined;
     switch (e_type) {
+        error.FailedToGetJob => {
+            result = "Failed to get group of processes.";
+        },
+        error.CorruptTaskIdEnvVariable => {
+            result = "MULTASK_TASK_ID env variable's value is corrupted.";
+        },
+        error.FailedToGetLoadavg => {
+            result = "Failed to get the most recent process from /proc/loadavg.";
+        },
+        error.FailedToGetEnvs => {
+            result = "Failed to get OS envs.";
+        },
+        error.InvalidOs => {
+            result = "Invalid OS. Only Macos, Linux and Windows supported right now.";
+        },
+        error.FailedToGetProcessPpid => {
+            result = "Failed to get process parent id.";
+        },
+        error.FailedToGetProcessSid => {
+            result = "Failed to get process sid.";
+        },
+        error.FailedToGetSystemUptime => {
+            result = "Failed to get system uptime.";
+        },
+        error.InvalidFileType => {
+            result = "Invalid file type.";
+        },
+        error.FailedToGetRootStats => {
+            result = "Failed to get the computer's stats.";
+        },
+        error.FailedToFilterDupeProcesses => {
+            result = "Could not get unique processes.";
+        },
+        error.ProcessFileNotFound => {
+            result = "Process file not found.";
+        },
+        error.TaskFileNotFound => {
+            result = "Task file not found.";
+        },
+        error.DebugLogFileFailedOpen => {
+            result = "Failed to open debug log file.";
+        },
+        error.DebugLogFileFailedWrite => {
+            result = "Failed to write to debug log file.";
+        },
+        error.FailedToGetRelatedProcs => {
+            result = "Failed to get /proc dir.";
+        },
+        error.FailedToGetProcDir => {
+            result = "Failed to get /proc dir.";
+        },
+        error.FailedToGetAllProcesses => {
+            result = "Failed to get all processes.";
+        },
         error.CommandNotExists => {
             result = "Command is missing.";
         },
@@ -342,7 +420,7 @@ pub fn get_error_msg(e_type: Errors) Errors![]const u8 {
             result = "One or more options are invalid. Run mlt help for more info.";
         },
         error.MissingArgument => {
-            result = "Missing option value. Run mlt help for more info.";
+            result = "Missing option. Run mlt help for more info.";
         },
         error.CorruptedTask => {
             result = "One or more tasks are corrupted. Run `mlt health` to troubleshoot";

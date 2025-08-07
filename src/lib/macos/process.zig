@@ -3,6 +3,8 @@ const libc = @import("../c.zig").libc;
 const util = @import("../util.zig");
 const Lengths = util.Lengths;
 const Pid = util.Pid;
+const Sid = util.Sid;
+const Pgrp = util.Pgrp;
 const FileStrings = util.FileStrings;
 const e = @import("../error.zig");
 const Errors = e.Errors;
@@ -22,29 +24,70 @@ const MacosCpu = Cpu.MacosCpu;
 const taskproc = @import("../task/process.zig");
 const CpuStatus = taskproc.CpuStatus;
 
+const f = @import("../task/file.zig");
+const ReadProcess = f.ReadProcess;
+
+const procstats = @import("./stats.zig");
+const procenv = @import("./env.zig");
+
 pub const MacosProcess = struct {
     const Self = @This();
 
+    // When these are set to null, it means to fetch them because they're not saved yet
+    pub const InitArgs = struct {
+        sid: Sid,
+        pgrp: Pgrp,
+        starttime: u64
+    };
+
+    /// Can either be ReadProcess or TaskReadProcess
+    pub fn get_init_args_from_readproc(comptime T: type, proc: T) InitArgs {
+        return InitArgs {
+            .sid = proc.sid,
+            .pgrp = proc.pgrp,
+            .starttime = proc.starttime,
+        };
+    }
+
     pid: Pid,
+    sid: Sid,
+    pgrp: Pgrp,
     task: *Task,
-    start_time: u64,
+    starttime: u64,
     children: ?[]Self = null,
     memory_limit: util.MemLimit = 0,
 
     pub fn init(
         task: *Task,
         pid: Pid,
-        starttime: ?u64
+        data: ?InitArgs,
     ) Errors!Self {
         var proc = Self {
             .pid = pid,
             .task = task,
-            .start_time = 0
+            .starttime = 0,
+            .sid = 0,
+            .pgrp = 0,
         };
-        if (starttime != null) {
-            proc.start_time = starttime.?;
-        } else if (proc.proc_exists()) {
-            proc.start_time = try proc.get_starttime();
+        const procExists = proc.proc_exists();
+        if (procExists) {
+            const bsdstats = try procstats.get_process_stats(pid);
+
+            if (data != null) {
+                proc.starttime = data.?.starttime;
+                proc.pgrp = data.?.pgrp;
+                proc.sid = data.?.sid;
+            } else {
+                proc.starttime = procstats.get_starttime(&bsdstats);
+                proc.pgrp = procstats.get_pgrp(&bsdstats);
+                proc.sid = try procstats.get_sid(pid);
+            }
+        } else {
+            if (data != null) {
+                proc.starttime = data.?.starttime;
+                proc.pgrp = data.?.pgrp;
+                proc.sid = data.?.sid;
+            }
         }
         return proc;
     }
@@ -60,57 +103,157 @@ pub const MacosProcess = struct {
     ) Errors!void {
         var keep_running = false;
 
-        var children = std.ArrayList(Self).init(util.gpa);
-        defer children.deinit();
+        const related_procs = try self.get_related_procs();
+        defer util.gpa.free(related_procs);
+        defer self.children = null;
+        if (self.proc_exists() or related_procs.len > 0) {
+            keep_running = true;
+            self.children = related_procs;
+        }
 
-        if (!self.proc_exists()) {
-            // If main proc doesnt exist, read the saved child processes
-            // if any of those exist, set the main process to the first one that's running?
-            // should I do that? what if there are multiple child processes running alongside each other?
-            // don't do it because I can just check saved processes and add it
-            // to the children array and save them
+        try taskproc.check_memory_limit_within_limit(self);
+
+        try taskproc.save_files(self);
+        if (self.task.daemon == null) {
+            return error.ForkFailed;
+        }
+        try MacosCpu.update_time_total(&self.task.daemon.?);
+        if (!keep_running) {
+            try taskproc.kill_all(self);
+        }
+    }
+
+    pub fn get_related_procs(self: *Self) Errors![]Self {
+        // If main proc doesnt exist, read the saved child processes
+        // if any of those exist, set the main process to the first one that's running?
+        // should I do that? what if there are multiple child processes running alongside each other?
+        // don't do it because I can just check saved processes and add it
+        // to the children array and save them
+        var related_procs = std.ArrayList(Self).init(util.gpa);
+        defer related_procs.deinit();
+        if (self.proc_exists()) {
+            try self.get_children(&related_procs, self.pid);
+        } else {
             const saved_procs = try taskproc.get_running_saved_procs(self);
             defer util.gpa.free(saved_procs);
-            if (saved_procs.len != 0) {
-                keep_running = true;
-            }
             for (saved_procs) |sproc| {
                 var exists = false;
-                for (children.items) |proc| {
+                for (related_procs.items) |proc| {
                     if (
                         sproc.pid == proc.pid and
-                        sproc.start_time == proc.start_time
+                        sproc.starttime == proc.starttime
                     ) {
                         exists = true;
                         break;
                     }
                 }
                 if (!exists) {
-                    children.append(
-                        try Self.init(sproc.task, sproc.pid, sproc.start_time)
+                    const args = InitArgs {
+                        .sid = sproc.sid,
+                        .pgrp = sproc.pgrp,
+                        .starttime = sproc.starttime
+                    };
+                    related_procs.append(
+                        try Self.init(sproc.task, sproc.pid, args)
                     ) catch |err| return e.verbose_error(err, error.FailedToGetProcessChildren);
-                    try self.get_children(&children, sproc.pid);
+                    try self.get_children(&related_procs, sproc.pid);
                 }
             }
-        } else {
-            keep_running = true;
-            try self.get_children(&children, self.pid);
         }
 
-        self.children = children.items;
-        defer self.children = null;
-        try taskproc.check_memory_limit_within_limit(self);
-        try taskproc.save_files(self);
-
-        try MacosCpu.update_time_total(self);
-        if (!keep_running) {
-            try taskproc.kill_all(self);
+        if (self.task.daemon == null) {
+            return error.FailedToGetRelatedProcs;
         }
+
+        if (self.task.stats.monitoring == .Deep) {
+            related_procs.append(self.*)
+                catch |err| return e.verbose_error(err, error.FailedToGetRelatedProcs);
+            related_procs.append(self.task.daemon.?)
+                catch |err| return e.verbose_error(err, error.FailedToGetRelatedProcs);
+            const procs = try self.search_related_procs(related_procs.items);
+            related_procs.appendSlice(procs)
+                catch |err| return e.verbose_error(err, error.FailedToGetRelatedProcs);
+        }
+
+        const unique_procs = try taskproc.filter_dupe_and_self_procs(self, related_procs.items);
+
+        return unique_procs;
     }
 
-    pub fn get_starttime(self: *Self) Errors!u64 {
-        const bsdinfo = try self.get_process_stats();
-        return bsdinfo.pbi_start_tvsec;
+    /// Get all processes in the same pgrp or sid or is a child of ppid
+    pub fn search_related_procs(
+        self: *Self,
+        procs: []Self
+    ) Errors![]Self {
+        var related_procs = std.ArrayList(Self).init(util.gpa);
+        defer related_procs.deinit();
+
+        const num_procs = libc.proc_listallpids(null, 0);
+        const all_procs = util.gpa.alloc(Pid, @intCast(num_procs))
+            catch |err| return e.verbose_error(err, error.FailedToGetRelatedProcs);
+        defer util.gpa.free(all_procs);
+
+        _ = libc.proc_listallpids(
+            all_procs.ptr,
+            @sizeOf(Pid) * num_procs
+        );
+        
+        for (all_procs) |pid| {
+            if (pid < self.task.daemon.?.pid or pid == self.task.daemon.?.pid) {
+                continue;
+            }
+
+            var exists = false;
+            for (procs) |p| {
+                if (p.pid == pid) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (exists) continue;
+
+            const bsdinfo = procstats.get_process_stats(pid)
+                catch |err| switch (err) {
+                    error.ProcessNotExists => continue,
+                    else => return err
+                };
+            const proc_pgrp = procstats.get_pgrp(&bsdinfo);
+            const proc_ppid = try procstats.get_ppid(&bsdinfo);
+            const proc_sid = try procstats.get_sid(pid);
+
+            if (procenv.proc_has_taskid_in_env(pid, self.task.id) catch continue) {
+                const starttime = procstats.get_starttime(&bsdinfo);
+                const new_proc = try Self.init(self.task, pid, .{
+                    .sid = proc_sid,
+                    .pgrp = proc_pgrp,
+                    .starttime = starttime
+                });
+                related_procs.append(new_proc)
+                    catch |err| return e.verbose_error(err, error.FailedToGetRelatedProcs);
+                continue;
+            }
+
+            for (procs) |proc| {
+                if (
+                    proc_ppid == proc.pid or
+                    proc_sid == proc.sid or
+                    proc_pgrp == proc.pgrp
+                ) {
+                    const starttime = procstats.get_starttime(&bsdinfo);
+                    const new_proc = try Self.init(self.task, pid, .{
+                        .sid = proc_sid,
+                        .pgrp = proc_pgrp,
+                        .starttime = starttime
+                    });
+                    related_procs.append(new_proc)
+                        catch |err| return e.verbose_error(err, error.FailedToGetRelatedProcs);
+                    break;
+                }
+            }
+        }
+
+        return related_procs.toOwnedSlice()
+            catch |err| return e.verbose_error(err, error.FailedToGetRelatedProcs);
     }
 
     var all_pids: ?[]Pid = null;
@@ -121,7 +264,7 @@ pub const MacosProcess = struct {
         // if this is the first process
         if (all_pids == null) {
             parent_pid = ppid;
-            const num_procs: Pid = libc.proc_listallpids(null, 0);
+            const num_procs = libc.proc_listallpids(null, 0);
             all_pids = util.gpa.alloc(Pid, @intCast(num_procs))
                 catch |err| return e.verbose_error(err, error.FailedToGetProcessChildren);
 
@@ -132,19 +275,28 @@ pub const MacosProcess = struct {
         }
         for (all_pids.?) |pid| {
             if (pid == 0) continue;
-            var proc = try MacosProcess.init(self.task, pid, null);
-            const bsdinfo = proc.get_process_stats()
+            const proc = try MacosProcess.init(self.task, pid, null);
+            const bsdinfo = procstats.get_process_stats(proc.pid)
                 catch |err| switch (err) {
                     error.ProcessNotExists => continue,
                     else => return err
                 };
-            if (bsdinfo.pbi_ppid == ppid) {
-                children.append(try Self.init(self.task, pid, bsdinfo.pbi_start_tvsec))
+            const proc_ppid = try procstats.get_ppid(&bsdinfo);
+            if (proc_ppid == ppid) {
+                const sid = try procstats.get_sid(pid);
+                const starttime = procstats.get_starttime(&bsdinfo);
+                const pgrp = procstats.get_pgrp(&bsdinfo);
+                const init_args = InitArgs {
+                    .starttime = starttime,
+                    .sid = sid,
+                    .pgrp = pgrp
+                };
+                children.append(try Self.init(self.task, pid, init_args))
                     catch |err| return e.verbose_error(err, error.FailedToGetProcessChildren);
                 try self.get_children(children, pid);
             }
         }
-        // if this is the first process
+        // if this is the first process which means the nesting has finished
         if (parent_pid == ppid) {
             util.gpa.free(all_pids.?);
             all_pids = null;
@@ -152,63 +304,22 @@ pub const MacosProcess = struct {
         }
     }
 
-    pub fn get_all_process_stats(self: *const Self) Errors!libc.proc_taskallinfo {
-        var info: libc.proc_taskallinfo = std.mem.zeroes(libc.proc_taskallinfo);
-        const res = libc.proc_pidinfo(
-            self.pid, libc.PROC_PIDTASKALLINFO, 0, &info, @sizeOf(libc.proc_taskallinfo)
-        );
-        if (res != @sizeOf(libc.proc_taskallinfo) or info.pbsd.pbi_status == libc.SZOMB) {
-            // These logs are disabled because there's a whole lot of them
-            // try log.printdebug("get_all_process_stats: Macos LIBC error {d}", .{libc.__error().*});
-            return error.ProcessNotExists;
-        } else {
-            return info;
-        }
+    pub fn get_exe(self: *Self) Errors![]const u8 {
+        const stats = try procstats.get_process_stats(self.pid);
+        const comm = procstats.get_exe(&stats);
+        return try util.strdup(comm, error.FailedToGetProcessComm);
     }
 
-    pub fn get_process_stats(self: *const Self) Errors!libc.proc_bsdinfo {
-        var info: libc.proc_bsdinfo = std.mem.zeroes(libc.proc_bsdinfo);
-        const res = libc.proc_pidinfo(
-            self.pid, libc.PROC_PIDTBSDINFO, 0, &info, @sizeOf(libc.proc_bsdinfo)
-        );
-        if (res != @sizeOf(libc.proc_bsdinfo) or info.pbi_status == libc.SZOMB) {
-            // try log.printdebug("get_process_stats: Macos LIBC error {d}", .{libc.__error().*});
-            return error.ProcessNotExists;
-        } else {
-            return info;
-        }
+    pub fn get_memory(self: *Self) Errors!u64 {
+        const stats = try procstats.get_task_stats(self.pid);
+        const mem = procstats.get_memory(&stats);
+        return mem;
     }
 
-    pub fn get_task_stats(self: *const Self) Errors!libc.proc_taskinfo {
-        var info: libc.proc_taskinfo = std.mem.zeroes(libc.proc_taskinfo);
-        const res = libc.proc_pidinfo(
-            self.pid, libc.PROC_PIDTASKINFO, 0, &info, @sizeOf(libc.proc_taskinfo)
-        );
-        if (res != @sizeOf(libc.proc_taskinfo)) {
-            // try log.printdebug("get_task_stats: Macos LIBC error {d}", .{libc.__error().*});
-            return error.ProcessNotExists;
-        } else {
-            return info;
-        }
-    }
-
-    pub fn get_exe(self: *const Self) Errors![]const u8 {
-        const bsdinfo = try self.get_process_stats();
-        return try util.strdup(&bsdinfo.pbi_comm, error.FailedToGetProcessComm);
-    }
-
-    pub fn get_memory(self: *const Self) Errors!u64 {
-        const taskinfo = try self.get_task_stats();
-        return taskinfo.pti_resident_size;
-    }
-
-    pub fn get_runtime(self: *const Self) Errors!u64 {
-        const bsdinfo = try self.get_process_stats();
-        const since_epoch = @as(u64, @intCast(std.time.milliTimestamp())) / std.time.ms_per_s;
-        if (since_epoch < 0) {
-            return error.FailedToGetProcessRuntime;
-        }
-        return since_epoch - bsdinfo.pbi_start_tvsec;
+    pub fn get_runtime(self: *Self) Errors!u64 {
+        const stats = try procstats.get_process_stats(self.pid);
+        const runtime = try procstats.get_runtime(&stats);
+        return runtime;
     }
 
     pub fn proc_exists(self: *const Self) bool {
@@ -223,7 +334,7 @@ pub const MacosProcess = struct {
         ) {
             return false;
         }
-        if (self.start_time != 0 and self.start_time != info.pbi_start_tvsec) {
+        if (self.starttime != 0 and self.starttime != info.pbi_start_tvsec) {
             return false;
         }
         return true;
@@ -250,7 +361,13 @@ pub const MacosProcess = struct {
         var procs = std.ArrayList(Self).init(util.gpa);
         defer procs.deinit();
         try self.get_children(&procs, self.pid);
-        procs.append(try Self.init(self.task, self.pid, self.start_time))
+
+        const init_args = InitArgs {
+            .starttime = self.starttime,
+            .sid = self.sid,
+            .pgrp = self.pgrp
+        };
+        procs.append(try Self.init(self.task, self.pid, init_args))
             catch |err| return e.verbose_error(err, error.FailedToSetProcessStatus);
         const sig = if (status == .Sleep) libc.SIGSTOP else libc.SIGCONT;
         const procs_owned = procs.toOwnedSlice()

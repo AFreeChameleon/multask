@@ -51,12 +51,13 @@ pub fn run(argv: [][]u8) Errors!void {
         }
 
         if (try taskproc.any_procs_exist(&new_task.process.?)) {
-            if (new_task.daemon != null) {
+            if (new_task.daemon != null and new_task.daemon.?.proc_exists()) {
                 try new_task.daemon.?.kill();
             }
             try taskproc.kill_all(&new_task.process.?);
         } else {
-            return error.TaskNotRunning;
+            try log.printinfo("Task {d} is not running.", .{id});
+            continue;
         }
 
         try log.printsucc("Task stopped with id {d}.", .{new_task.id});

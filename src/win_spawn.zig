@@ -23,13 +23,15 @@ const taskproc = @import("./lib/task/process.zig");
 const Process = taskproc.Process;
 const ExistingLimits = taskproc.ExistingLimits;
 
+const taskenv = @import("./lib/task/env.zig");
+const procenv = @import("./lib/windows/env.zig");
+
 var out_handle_r: libc.HANDLE = std.mem.zeroes(libc.HANDLE);
 var out_handle_w: libc.HANDLE = std.mem.zeroes(libc.HANDLE);
 
 var err_handle_r: libc.HANDLE = std.mem.zeroes(libc.HANDLE);
 var err_handle_w: libc.HANDLE = std.mem.zeroes(libc.HANDLE);
 
-/// All i shoud be doing is passing in the task id and building the task here
 pub fn main() !void {
     const args = try std.process.argsAlloc(util.gpa);
     defer std.process.argsFree(util.gpa, args);
@@ -51,6 +53,12 @@ pub fn main() !void {
     defer task.deinit();
     try TaskManager.get_task_from_id(&task);
 
+    var envs = try taskproc.get_envs(&task, false);
+    defer envs.deinit();
+    try taskenv.add_multask_taskid_to_map(&envs, task_id);
+    const env_block = try procenv.map_to_string(&envs);
+    defer util.gpa.free(env_block);
+
     var job_name = std.fmt.allocPrintZ(util.gpa, "Global\\mult-{d}", .{task_id})
         catch |err| return e.verbose_error(err, error.ForkFailed);
     job_name[job_name.len] = 0;
@@ -70,7 +78,7 @@ pub fn main() !void {
             return error.ForkFailed;
         }
 
-        const proc_info = try run_command(task.stats.command);
+        const proc_info = try run_command(task.stats.command, env_block);
         defer {
             _ = libc.CloseHandle(proc_info.hProcess);
             _ = libc.CloseHandle(proc_info.hThread);
@@ -109,8 +117,7 @@ fn enable_kill_on_job_close(job_handle: ?*anyopaque) Errors!void {
     ) {
         return;
     }
-
-    info.BasicLimitInformation.LimitFlags |= libc.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    info.BasicLimitInformation.LimitFlags |= libc.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | libc.JOB_OBJECT_LIMIT_BREAKAWAY_OK;
     if (libc.SetInformationJobObject(
         job_handle,
         libc.JobObjectExtendedLimitInformation,
@@ -310,7 +317,7 @@ fn create_job(
     return job;
 }
 
-fn run_command(command: []const u8) e.Errors!libc.PROCESS_INFORMATION {
+fn run_command(command: []const u8, env_block: [:0]u8) e.Errors!libc.PROCESS_INFORMATION {
     var saAttr = std.mem.zeroes(libc.SECURITY_ATTRIBUTES);
     saAttr.nLength = @sizeOf(libc.SECURITY_ATTRIBUTES);
     saAttr.bInheritHandle = 1;
@@ -350,7 +357,8 @@ fn run_command(command: []const u8) e.Errors!libc.PROCESS_INFORMATION {
         null, proc_string.ptr, null,
         null, 1,
         0,
-        null, null, @as([*c]libc.struct__STARTUPINFOA, @ptrCast(&si.StartupInfo)),
+        env_block.ptr,
+        null, @as([*c]libc.struct__STARTUPINFOA, @ptrCast(&si.StartupInfo)),
         @as([*c]libc.PROCESS_INFORMATION, @ptrCast(&proc_info))
     ) == 0) {
         try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
@@ -441,7 +449,7 @@ fn monitor_process(
         // Making sure every second this is ran
         const current_time = std.time.nanoTimestamp();
         if (current_time > monitor_time + 1_000_000_000) {
-            if (task.process == null or !task.process.?.proc_exists()) {
+            if (task.process == null or (!task.process.?.proc_exists() and !task.process.?.any_proc_child_exists())) {
                 break;
             }
             

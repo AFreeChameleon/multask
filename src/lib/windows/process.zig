@@ -7,7 +7,12 @@ const Lengths = util.Lengths;
 const FileStrings = util.FileStrings;
 const e = @import("../error.zig");
 const Errors = e.Errors;
-const Find = @import("../file.zig").Find;
+
+const f = @import("../file.zig");
+const Find = f.Find;
+const MainFiles = f.MainFiles;
+
+const ReadProcess = @import("../task/file.zig").ReadProcess;
 
 const t = @import("../task/index.zig");
 const TaskFiles = t.Files;
@@ -15,12 +20,12 @@ const Task = t.Task;
 
 const taskproc = @import("../task/process.zig");
 const CpuStatus = taskproc.CpuStatus;
-
-const MainFiles = @import("../file.zig").MainFiles;
+const Monitoring = taskproc.Monitoring;
 
 const log = @import("../log.zig");
 
 const WindowsCpu = @import("./cpu.zig").WindowsCpu;
+const env = @import("./env.zig");
 
 
 const Jobs = struct {
@@ -31,27 +36,37 @@ const Jobs = struct {
 pub const WindowsProcess = struct {
     const Self = @This();
 
+    pub const InitArgs = struct {
+        starttime: u64
+    };
+
+    /// Can either be ReadProcess or TaskReadProcess
+    pub fn get_init_args_from_readproc(comptime T: type, proc: T) InitArgs {
+        return InitArgs {
+            .starttime = proc.starttime,
+        };
+    }
+
     pid: Pid,
     children: ?[]Self = null,
     task: *Task,
-    start_time: u64,
-    job_handle: ?*anyopaque = null,
+    starttime: u64,
     memory_limit: util.MemLimit = 0,
 
     pub fn init(
         task: *Task,
         pid: Pid,
-        starttime: ?u64
+        data: ?InitArgs,
     ) Errors!Self {
         var proc = Self {
             .pid = pid,
             .task = task,
-            .start_time = 0
+            .starttime = 0
         };
-        if (starttime != null) {
-            proc.start_time = starttime.?;
+        if (data != null) {
+            proc.starttime = data.?.starttime;
         } else if (proc.proc_exists()) {
-            proc.start_time = try proc.get_starttime();
+            proc.starttime = try proc.get_starttime();
         }
         return proc;
     }
@@ -81,9 +96,89 @@ pub const WindowsProcess = struct {
         self: *Self,
     ) Errors!void {
         var keep_running = false;
+        
+        const related_procs = try self.get_related_procs();
 
-        var children = std.ArrayList(Self).init(util.gpa);
-        defer children.deinit();
+        if (related_procs.len > 0 or self.proc_exists()) {
+            keep_running = true;
+        }
+        self.children = related_procs;
+        
+        try taskproc.check_memory_limit_within_limit(self);
+        try taskproc.save_files(self);
+        WindowsCpu.update_time_total();
+        if (!keep_running) {
+            try taskproc.kill_all(self);
+        }
+
+        util.gpa.free(self.children.?);
+        self.children = null;
+    }
+
+    fn is_proc_valid(self: *Self, procs: []Self, pe32: *libc.PROCESSENTRY32) Errors!bool {
+        const pid = pe32.th32ProcessID;
+        if (pid == 0) {
+            return false;
+        }
+        for (procs) |rproc| {
+            if (pe32.th32ParentProcessID != rproc.pid) {
+                continue;
+            }
+            return true;
+        }
+        // Checking if the process has the task id in its environment variables
+        const in_task = env.proc_has_taskid_in_env(pid, self.task.id)
+            catch return false;
+        if (in_task) {
+            return true;
+        }
+
+        return false;
+    }
+
+    fn search_related_procs(self: *Self, procs: []Self) Errors![]Self {
+        var related_procs = std.ArrayList(Self).init(util.gpa);
+        defer related_procs.deinit();
+
+        var pe32: libc.PROCESSENTRY32 = std.mem.zeroes(libc.PROCESSENTRY32);
+        pe32.dwSize = @sizeOf(libc.PROCESSENTRY32);
+
+        const snapshot = libc.CreateToolhelp32Snapshot(libc.TH32CS_SNAPPROCESS, 0);
+
+        if (snapshot == libc.INVALID_HANDLE_VALUE) {
+            return error.FailedToGetAllProcesses;
+        }
+
+        if (libc.Process32First(snapshot, &pe32) == std.os.windows.FALSE) {
+            _ = libc.CloseHandle(snapshot);
+            try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
+            return error.FailedToGetAllProcesses;
+        }
+
+        if (try self.is_proc_valid(procs, &pe32)) {
+            const proc = try Self.init(self.task, pe32.th32ProcessID, null);
+            related_procs.append(proc)
+                catch |err| return e.verbose_error(err, error.FailedToGetAllProcesses);
+        }
+
+        while (true) {
+            const next = libc.Process32Next(snapshot, &pe32) == std.os.windows.TRUE;
+            if (!next) {
+                break;
+            }
+            if (try self.is_proc_valid(procs, &pe32)) {
+                const proc = try Self.init(self.task, pe32.th32ProcessID, null);
+                related_procs.append(proc)
+                    catch |err| return e.verbose_error(err, error.FailedToGetAllProcesses);
+            }
+        }
+        return related_procs.toOwnedSlice()
+            catch |err| return e.verbose_error(err, error.FailedToGetAllProcesses);
+    }
+
+    fn get_related_procs(self: *Self) Errors![]Self {
+        var related_procs = std.ArrayList(Self).init(util.gpa);
+        defer related_procs.deinit();
 
         if (!self.proc_exists()) {
             // If main proc doesnt exist, read the saved child processes
@@ -93,44 +188,48 @@ pub const WindowsProcess = struct {
             // to the children array and save them
             const saved_procs = try taskproc.get_running_saved_procs(self);
             defer util.gpa.free(saved_procs);
-            if (saved_procs.len != 0) {
-                keep_running = true;
-            }
             for (saved_procs) |sproc| {
                 var exists = false;
-                for (children.items) |proc| {
+                for (related_procs.items) |proc| {
                     if (
                         sproc.pid == proc.pid and
-                        sproc.start_time == proc.start_time
+                        sproc.starttime == proc.starttime
                     ) {
                         exists = true;
                         break;
                     }
                 }
                 if (!exists) {
-                    children.append(
-                        try Self.init(sproc.task, sproc.pid, sproc.start_time)
+                    const args = InitArgs {
+                        .starttime = sproc.starttime
+                    };
+                    related_procs.append(
+                        try Self.init(sproc.task, sproc.pid, args)
                     ) catch |err| return e.verbose_error(err, error.FailedToGetProcessChildren);
-                    try self.get_children(&children, sproc.pid);
+                    try self.get_children(&related_procs, sproc.pid);
                 }
             }
         } else {
-            keep_running = true;
-            try self.get_children(&children, self.pid);
+            try self.get_children(&related_procs, self.pid);
         }
-
-        self.children = children.items;
-        defer self.children = null;
-        try taskproc.check_memory_limit_within_limit(self);
-        try taskproc.save_files(self);
-        WindowsCpu.update_time_total();
-        if (!keep_running) {
-            try taskproc.kill_all(self);
+        if (self.task.stats.monitoring == Monitoring.Deep) {
+            const procs = try self.search_related_procs(related_procs.items);
+            related_procs.appendSlice(procs)
+                catch |err| return e.verbose_error(err, error.FailedToGetRelatedProcs);
         }
+        return related_procs.toOwnedSlice()
+            catch |err| return e.verbose_error(err, error.FailedToGetProcessChildren);
     }
 
     pub fn kill_all(self: *Self) Errors!void {
-        const job_handle = try self.get_job_handle();
+        const saved_procs = try taskproc.get_running_saved_procs(self);
+        for (saved_procs) |*p| {
+            p.kill() catch continue;
+        }
+        const job_handle = self.get_job_handle() catch |err| switch (err) {
+            error.FailedToGetJob => return, // Doesn't exist
+            else => return err
+        };
         if (libc.TerminateJobObject(job_handle, 1) == 0) {
             try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
             return error.FailedToKillAllProcesses;
@@ -186,16 +285,16 @@ pub const WindowsProcess = struct {
         }
 
         const creation_time = winutil.combine_filetime(&lp_creation_time);
-        const start_time = winutil.convert_filetime64_to_unix_epoch(creation_time);
+        const starttime = winutil.convert_filetime64_to_unix_epoch(creation_time);
         const kernel_time = winutil.combine_filetime(&lp_kernel_time);
         const user_time = winutil.combine_filetime(&lp_user_time);
 
-        return .{ start_time, kernel_time, user_time };
+        return .{ starttime, kernel_time, user_time };
     }
 
     fn get_job_handle(self: *const Self) Errors!?*anyopaque {
         var job_name = std.fmt.allocPrintZ(util.gpa, "Global\\mult-{d}", .{self.task.id})
-        catch |err| return e.verbose_error(err, error.FailedToGetProcessChildren);
+            catch |err| return e.verbose_error(err, error.FailedToGetProcessChildren);
         job_name[job_name.len] = 0;
         defer util.gpa.free(job_name);
         const job_handle = libc.OpenJobObjectA(
@@ -203,7 +302,7 @@ pub const WindowsProcess = struct {
         );
         if (job_handle == null) {
             try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
-            return error.FailedToGetProcess;
+            return error.FailedToGetJob;
         }
         return job_handle;
     }
@@ -238,6 +337,33 @@ pub const WindowsProcess = struct {
         }
     }
 
+    pub fn any_proc_child_exists(self: *Self) bool {
+        var jobs = std.mem.zeroes(Jobs); 
+        const job_handle = self.get_job_handle()
+            catch return false;
+        defer {
+            _ = libc.CloseHandle(job_handle);
+        }
+        if (libc.QueryInformationJobObject(
+            job_handle,
+            libc.JobObjectBasicProcessIdList,
+            &jobs,
+            @sizeOf(Jobs),
+            null
+        ) == 0) {
+            log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()})
+                catch return false;
+            return false;
+        }
+        const pids = std.mem.trimRight(util.Pid, &jobs.list, &[1]util.Pid{0});
+        for (pids) |pid| {
+            if (self.pid != pid and pid != 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     pub fn get_all_processes(self: *Self) Errors!*Self {
         if (!self.proc_exists()) {
             return self;
@@ -245,7 +371,7 @@ pub const WindowsProcess = struct {
 
         // Set this process' stats
         const self_stats = try self.get_stats();
-        self.start_time = self_stats[0];
+        self.starttime = self_stats[0];
         self.cpu.old_stime = self.cpu.stime;
         self.cpu.old_utime = self.cpu.utime;
         self.cpu.stime = self_stats[1];
@@ -290,7 +416,7 @@ pub const WindowsProcess = struct {
                         proc.cpu.old_stime = child.cpu.stime;
                         proc.cpu.old_utime = child.cpu.utime;
                         const new_stats = try child.get_stats();
-                        proc.start_time = new_stats[0];
+                        proc.starttime = new_stats[0];
                         proc.cpu.stime = new_stats[1];
                         proc.cpu.utime = new_stats[2];
                         new_proc_list.append(proc)
@@ -301,7 +427,7 @@ pub const WindowsProcess = struct {
                 if (!exists) {
                     var proc = try Self.init(pid, self.task);
                     const stats = try proc.get_stats();
-                    proc.start_time = stats[0];
+                    proc.starttime = stats[0];
                     proc.cpu.stime = stats[1];
                     proc.cpu.utime = stats[2];
                     new_proc_list.append(proc)
@@ -315,12 +441,12 @@ pub const WindowsProcess = struct {
     }
 
     pub fn get_runtime(self: *Self) Errors!u64 {
-        if (self.start_time == 0) {
+        if (self.starttime == 0) {
             const stats = try self.get_stats();
-            self.start_time = stats[0];
+            self.starttime = stats[0];
         }
         const secs_since_epoch: u64 = @intCast(std.time.timestamp());
-        return secs_since_epoch - self.start_time;
+        return secs_since_epoch - self.starttime;
     }
 
     pub fn get_memory(self: *Self) Errors!u64 {

@@ -1,11 +1,20 @@
 pub const std = @import("std");
+pub const builtin = @import("builtin");
 pub const expect = @import("std").testing.expect;
 pub const Errors = @import("lib/error.zig").Errors;
 
 test "Main" {
     _ = @import("lib/util.zig");
     _ = @import("lib/args/parse.zig");
+    _ = @import("lib/table/index.zig");
     _ = @import("lib/task/manager.zig");
+    _ = @import("lib/task/env.zig");
+    if (comptime builtin.target.os.tag == .linux) {
+        _ = @import("lib/linux/file.zig");
+    }
+    if (comptime builtin.target.os.tag == .windows) {
+        _ = @import("lib/windows/env.zig");
+    }
 
     _ = @import("commands/create.zig");
     _ = @import("commands/delete.zig");

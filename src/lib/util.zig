@@ -2,6 +2,8 @@ const libc = @import("./c.zig").libc;
 const builtin = @import("builtin");
 const std = @import("std");
 const util = @import("./util.zig");
+const taskproc = @import("./task/process.zig");
+const Monitoring = taskproc.Monitoring;
 
 const log = @import("./log.zig");
 
@@ -16,8 +18,20 @@ const Errors = e.Errors;
 
 pub const gpa = if (builtin.is_test) std.testing.allocator else std.heap.c_allocator;
 
-// pub const Pid = if (builtin.os.tag == .windows) std.os.windows.HANDLE else c_int;
-pub const Pid = if (builtin.target.os.tag == .windows) u32 else i32;
+pub const Pid = switch (builtin.target.os.tag) {
+    .linux => i32,
+    .macos => i32,
+    .windows => u32,
+    else => e.Errors.InvalidOs
+};
+
+// Linux
+pub const Pgrp = switch (builtin.target.os.tag) {
+    .linux, .windows => i32,
+    .macos => u32,
+    else => e.Errors.InvalidOs
+};
+pub const Sid = i32;
 
 // 4096 is the max line length for the terminal
 pub const MAX_TERM_LINE_LENGTH = 4096;
@@ -34,6 +48,7 @@ pub const Lengths = struct {
     pub const MEDIUM: usize = 128;
     pub const LARGE: usize = 1024;
     pub const HUGE: usize = 4096;
+    pub const HUGER: usize = 10240;
 
     pub const TASK_LIMIT: usize = 256;
 };
@@ -44,6 +59,7 @@ pub const ForkFlags = struct {
     cpu_limit: CpuLimit,
     interactive: bool,
     persist: bool,
+    update_envs: bool,
 };
 
 /// Strings to be put into process' files
@@ -86,13 +102,12 @@ pub fn get_readable_runtime(secs: u64) Errors![]const u8 {
     const seconds: u64 = @mod(secs, 60);
     const minutes: u64 = @mod(@divTrunc(secs, 60), 60);
     const hours: u64 = @divTrunc(@divTrunc(secs, 60), 60);
-    var buf: [128]u8 = std.mem.zeroes([128]u8);
-    const runtime = std.fmt.bufPrint(
-        &buf, "{d}h {d}m {d}s", .{
+    const runtime = std.fmt.allocPrint(
+        util.gpa, "{d}h {d}m {d}s", .{
             hours, minutes, seconds
         }
     ) catch |err| return e.verbose_error(err, error.FailedToGetProcessRuntime);
-    return try util.strdup(runtime, error.FailedToGetProcessRuntime);
+    return runtime;
 }
 
 // binary memory is 1024
@@ -102,7 +117,8 @@ const UNIT: f64 = 1024.0;
 /// Convert memory in bytes to human readable format
 pub fn get_readable_memory(bytes: u64) Errors![]const u8 {
     if (bytes == 0) {
-        return "0 B";
+        return std.fmt.allocPrint(util.gpa, "0 B", .{})
+            catch |err| return e.verbose_error(err, error.FailedToGetProcessMemory);
     }
 
     const float_bytes = @as(f64,
@@ -455,6 +471,16 @@ pub fn deinit_hashmap(comptime T: type, hash: T) void {
     }
 }
 
+pub fn read_monitoring_from_string(val: []const u8) Errors!Monitoring {
+    if (std.mem.eql(u8, val, "deep")) {
+        return Monitoring.Deep;
+    }
+    if (std.mem.eql(u8, val, "shallow")) {
+        return Monitoring.Shallow;
+    }
+    return error.InvalidArgument;
+}
+
 test "lib/util.zig" {
     std.debug.print("\n--- lib/util.zig ---\n", .{});
 }
@@ -462,9 +488,9 @@ test "lib/util.zig" {
 test "Save stats" {
     std.debug.print("Save stats\n", .{});
     const cmd = try std.fmt.allocPrint(util.gpa, "save stats", .{});
-    var task = try TaskManager.add_task(cmd, 0, 0, null, false);
+    var task = try TaskManager.add_task(cmd, 0, 0, null, false, .Shallow);
     defer task.deinit();
-    try save_stats(&task, &ForkFlags { .cpu_limit = 0, .memory_limit = 0, .interactive = false, .persist = false });
+    try save_stats(&task, &ForkFlags { .cpu_limit = 0, .memory_limit = 0, .interactive = false, .persist = false, .update_envs = false });
     try task.delete();
 }
 

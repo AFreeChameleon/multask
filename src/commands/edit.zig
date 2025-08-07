@@ -11,6 +11,8 @@ const TaskManager = m.TaskManager;
 const TNamespaces = m.TNamespaces;
 const Stats = @import("../lib/task/stats.zig").Stats;
 
+const Monitoring = @import("../lib/task/process.zig").Monitoring;
+
 const file = @import("../lib/file.zig");
 
 const util = @import("../lib/util.zig");
@@ -27,7 +29,8 @@ pub const Flags = struct {
     memory_limit: util.MemLimit,
     cpu_limit: util.CpuLimit,
     help: bool,
-    args: util.TaskArgs
+    args: util.TaskArgs,
+    monitoring: ?Monitoring
 };
 
 pub fn run(argv: [][]u8) Errors!void {
@@ -59,6 +62,9 @@ pub fn run(argv: [][]u8) Errors!void {
         }
         if (flags.cpu_limit != 0) {
             new_task.stats.cpu_limit = flags.cpu_limit;
+        }
+        if (flags.monitoring != null) {
+            new_task.stats.monitoring = flags.monitoring.?;
         }
         try new_task.files.write_file(Stats, new_task.stats);
 
@@ -134,9 +140,10 @@ fn parse_cmd_args(argv: [][]u8) Errors!Flags {
         .cpu_limit = 0,
         .help = false,
         .namespace = null,
+        .monitoring = null,
         .args = undefined
     };
-    var pflags = util.gpa.alloc(parse.Flag, 5)
+    var pflags = util.gpa.alloc(parse.Flag, 6)
         catch |err| return e.verbose_error(err, error.ParsingCommandArgsFailed);
     defer util.gpa.free(pflags);
     pflags[0] = parse.Flag {
@@ -157,6 +164,11 @@ fn parse_cmd_args(argv: [][]u8) Errors!Flags {
     };
     pflags[4] = parse.Flag {
         .name = 'n',
+        .type = .value
+    };
+    pflags[5] = parse.Flag {
+        .name = 'M',
+        .long_name = "monitor",
         .type = .value
     };
 
@@ -192,11 +204,12 @@ fn parse_cmd_args(argv: [][]u8) Errors!Flags {
             },
             'h' => flags.help = true,
             'd' => log.enable_debug(),
+            'M' => flags.monitoring = try util.read_monitoring_from_string(flag.value.?),
             else => return error.InvalidOption
         }
     }
     flags.args = try util.parse_cmd_vals(vals);
-    if (vals.len == 0) {
+    if (vals.len == 0 and !flags.help) {
         flags.args.deinit();
         return error.MissingTaskId;
     }
@@ -205,12 +218,13 @@ fn parse_cmd_args(argv: [][]u8) Errors!Flags {
 
 const help_rows  = .{
     .{"Can change resource limits of tasks by task id or namespace"},
-    .{"Usage: mlt edit -m 40M -c 20 -n ns_two 1 2 ns_one"},
-    .{"flags:"},
+    .{"Usage: mlt edit -m 40M -c 20 -n ns_two 1 2"},
+    .{"Flags:"},
     .{"", "-m [num]", "Set maximum memory limit e.g 4GB"},
     .{"", "-c [num]", "Set limit cpu usage by percentage e.g 20"},
     .{"", "-n [text]", "Set namespace for the process"},
     .{"", "-p", "", "Persist mode (will restart if the program exits)"},
+    .{"", "-M, --monitor", "How thorough looking for child processes will be, use \"deep\" for complex applications like GUIs although it can be a little more CPU intensive, \"shallow\" is the default."},
     .{""},
     .{"For more, run `mlt help`"},
 };

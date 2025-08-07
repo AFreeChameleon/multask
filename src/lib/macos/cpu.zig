@@ -14,6 +14,8 @@ const MacosProcess = @import("./process.zig").MacosProcess;
 const e = @import("../error.zig");
 const Errors = e.Errors;
 
+const procstats = @import("./stats.zig");
+
 pub const MacosCpu = struct {
     const Self = @This();
 
@@ -41,7 +43,7 @@ pub const MacosCpu = struct {
         const total_existing_time_ns =
             macutil.mach_ticks_to_nanoseconds(old_times.?.utime) +
             macutil.mach_ticks_to_nanoseconds(old_times.?.stime);
-        const taskinfo = try process.get_task_stats();
+        const taskinfo = try procstats.get_task_stats(process.pid);
 
         const user_time_ns = macutil.mach_ticks_to_nanoseconds(
             taskinfo.pti_total_user
@@ -68,7 +70,7 @@ pub const MacosCpu = struct {
     }
 
     pub fn update_time_total(process: *MacosProcess) Errors!void {
-        const taskinfo = try process.get_task_stats();
+        const taskinfo = try procstats.get_task_stats(process.pid);
 
         const user_time_ns = macutil.mach_ticks_to_nanoseconds(
             taskinfo.pti_total_user

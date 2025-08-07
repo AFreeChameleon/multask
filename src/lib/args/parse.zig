@@ -117,7 +117,7 @@ fn find_long_arg(arg: []u8, flags: []Flag) Errors!?ArgFound {
             }
         }
     }
-    return error.MissingArgument;
+    return null;
 }
 
 fn find_short_args(arg_string: []u8, flags: []Flag) Errors!?ArgFound {

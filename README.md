@@ -6,7 +6,7 @@
   <h1 align="center">Multask</h1>
 
   <p align="center">
-    A process manager for Linux, Mac, Windows & FreeBSD written in rust to simplify your developer environment.
+    A process manager for Linux, Mac, Windows & FreeBSD to simplify your developer environment.
   </p>
   <p align="center">
     <a href="https://afreechameleon.github.io/multask-docs/">Docs</a>
@@ -18,22 +18,23 @@
 
 ## Installation
 
-For Linux, Mac & FreeBSD:
+**For Linux:**
 ```
 curl -s "https://raw.githubusercontent.com/AFreeChameleon/multask-docs/refs/heads/master/install/scripts/linux.sh" | bash
 ```
 
-For Mac:
+**For Mac:**
 ```
 curl -s "https://raw.githubusercontent.com/AFreeChameleon/multask-docs/refs/heads/master/install/scripts/osx.sh" | bash
 ```
 
-For FreeBSD:
-```
-curl -s "https://raw.githubusercontent.com/AFreeChameleon/multask-docs/refs/heads/master/install/scripts/freebsd.sh" | bash
-```
+**For FreeBSD:**
 
-For Windows:
+Multask's newest version is currently not supporting FreeBSD. So in the meantime the older version can still be used. [here](https://github.com/AFreeChameleon/multask/releases/tag/0.20.0)
+
+Bash & ZSH officially supported.
+
+**For Windows:**
 ```
 powershell -c "irm https://raw.githubusercontent.com/AFreeChameleon/multask-docs/refs/heads/master/install/scripts/win.ps1|iex"
 ```
@@ -42,42 +43,57 @@ powershell -c "irm https://raw.githubusercontent.com/AFreeChameleon/multask-docs
 
 ```
 > mlt help
-usage: mlt [options] [value]
+Usage: mlt [option] [flags] [values]
 options:
-    create  Create a process and run it. [value] must be a command e.g \"ping google.com\"
-        -m [num]    Set maximum memory limit e.g 4GB
-        -c [num]    Set limit cpu usage by percentage e.g 20
-        -i          Interactive mode (can use aliased commands on your environment)
-        -p          Persist mode, the command will restart when finished with a wait of 2 seconds
+        create  Create a task and run it. [value] must be a command e.g "ping google.com"
+                -m [num]        Set maximum memory limit e.g 4GB
+                -c [num]        Set limit cpu usage by percentage e.g 20
+                -n [text]       Set namespace for the task
+                -i              Interactive mode (can use aliased commands on your environment)
+                -p              Persist mode (will restart if the program exits)
+                -M, --monitor   How thorough looking for child processes will be, use "deep" for complex applications like GUIs although it can be a little more CPU intensive, "shallow" is the default.
 
-    stop    Stops a process. [value] must be a task id e.g 0
+        stop    Stops a task. [value] must be task ids or a namespace
 
-    start   Starts a process. [value] must be a task id e.g 0
-        -m [num]    Set maximum memory limit e.g 4GB
-        -c [num]    Set maximum cpu percentage limit e.g 20
-        -i          Interactive mode (can use aliased commands on your environment)
-        -p          Persist mode, the command will restart when finished with a wait of 2 seconds
+        start   Starts a task. [value] must be task ids or a namespace
+                -m [num]        Set maximum memory limit e.g 4GB
+                -c [num]        Set limit cpu usage by percentage e.g 20
+                -i              Interactive mode (can use aliased commands on your environment)
+                -p              Persist mode (will restart if the program exits)
+                -M, --monitor   How thorough looking for child processes will be, use "deep" for complex applications like GUIs although it can be a little more CPU intensive, "shallow" is the default.
 
-    restart Restarts a process. [value] must be a task id e.g 0
-        -m [num]    Set maximum memory limit e.g 4GB
-        -c [num]    Set maximum cpu percentage limit e.g 20
-        -i          Interactive mode (can use aliased commands on your environment)
-        -p          Persist mode, the command will restart when finished with a wait of 2 seconds
+        edit    Edits a task. [value] must be task ids or a namespace
+                -m [num]        Set maximum memory limit e.g 4GB
+                -c [num]        Set limit cpu usage by percentage e.g 20
+                -n [text]       Set namespace for the task
+                -p              Persist mode (will restart if the program exits)
+                -M, --monitor   How thorough looking for child processes will be, use "deep" for complex applications like GUIs although it can be a little more CPU intensive, "shallow" is the default.
 
-    ls      Shows all processes.
-        -w          Provides updating tables every 2 seconds.
-        -a          Show all child processes.
+        restart Restarts a task. [value] must be task ids or a namespace
+                -m [num]        Set maximum memory limit e.g 4GB
+                -c [num]        Set limit cpu usage by percentage e.g 20
+                -i              Interactive mode (can use aliased commands on your environment)
+                -p              Persist mode (will restart if the program exits)
+                -M, --monitor   How thorough looking for child processes will be, use "deep" for complex applications like GUIs although it can be a little more CPU intensive, "shallow" is the default.
 
-    logs    Shows output from process. [value] must be a task id e.g 0
-        -l [num]   See number of previous lines default is 15.
-        -w         Listen to new logs coming in.
+        ls      Shows all taskes
+                -w      Provides updating tables every 2 seconds
+                -a      Show all child taskes
 
-    delete  Deletes process. [value] must be a task id e.g 0
+        logs    Shows output from task. [value] must be a task id e.g 1
+                -l [num]        See number of previous lines default is 20
+                -w              Listen to new logs coming in
 
-    health  Checks state of mult, run this when multask is not working.
-        -f          Tries to fix any errors `mlt health` throws.
+        delete  Deletes tasks. [value] must be a task id or a namespace e.g 1
 
-    help    Shows available options.
+        health  Checks state of multask, run this when multask is not working
+
+        help    Shows available options
+```
+
+To get more detail on a command, run:
+```
+> mlt <command e.g create> -h
 ```
 
 
@@ -93,43 +109,46 @@ To see your running processes, run:
 ```
 > mlt ls
 
-┌────┬─────────────────┬───────┬─────────┬─────────┬─────┬─────────┐
-│ id │ command         │ pid   │ status  │ memory  │ cpu │ runtime │
-├────┼─────────────────┼───────┼─────────┼─────────┼─────┼─────────┤
-│ 0  │ ping google.com │ 12502 │ Running │ 9.9 MiB │ 0   │ 16      │
-└────┴─────────────────┴───────┴─────────┴─────────┴─────┴─────────┘
++----+-----------+--------------+-------------------------+-----+---------+--------+-----+---------+------------+
+| id | namespace | command      | location                | pid | status  | memory | cpu | runtime | monitoring |
++----+-----------+--------------+-------------------------+-----+---------+--------+-----+---------+------------+
+| 1  | N/A       | ping 8.8.8.8 | F:\Dev\Apps\multask-zig | N/A | Stopped | N/A    | N/A | N/A     | shallow    |
++----+-----------+--------------+-------------------------+-----+---------+--------+-----+---------+------------+
 ```
 
 * `id` is how you'll be referencing this process in other commands.
+* `namespace` is a name to organise and address multiple tasks. 
 * `command` what command is run.
+* `location` what directory/folder the command was run from.
 * `pid` the process id in the OS.
-* `status` the status of the command, options are either `Running` or `Stopped`.
-* `memory` percentage of memory being used by this process.
+* `status` the status of the command, options are `Running`, `Stopped`, `Detached` or `Headless`, run `mlt ls -h` for more info.
+* `memory` amount of memory being used by this process.
 * `cpu` percentage of cpu being used by this process.
 * `runtime` how long this command has been running for (in seconds).
+* `monitoring` how thorough the task is looking for potential child processes, `shallow` is the default, `deep` is for thorough searching.
 
 To stop the new process, run:
 
 ```
-> mlt stop 0
+> mlt stop 1
 ```
 
 To start the process again, run:
 
 ```
-> mlt start 0
+> mlt start 1
 ```
 
 To restart the process, run:
 
 ```
-> mlt restart 0
+> mlt restart 1
 ```
 
 To delete the process and all logs, run:
 
 ```
-> mlt delete 0
+> mlt delete 1
 ```
 
 If multask isn't working, you can run:
@@ -142,17 +161,7 @@ To see what's wrong with it. This is mainly for debugging purposes.
 
 ---
 
-# Issues
-
-Any command run will not include colors so in the command or your environment, force the formatting e.g using FORCE_COLOR=1 in nodejs
-
----
-
 Licensed under either of
 
 * Apache License, Version 2.0 (LICENSE-APACHE or http://www.apache.org/licenses/LICENSE-2.0)
 * MIT license (LICENSE-MIT or http://opensource.org/licenses/MIT) at your option.
-
-## Things to do:
-* Add watch support to other OSes
-* Move from threads to async - will change a lot

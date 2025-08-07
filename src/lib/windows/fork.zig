@@ -16,9 +16,9 @@ const Files = t.Files;
 
 const TaskLogger = @import("../task/logger.zig");
 
-const p = @import("../task/process.zig");
-const Process = p.Process;
-const ExistingLimits = p.ExistingLimits;
+const taskproc = @import("../task/process.zig");
+const Process = taskproc.Process;
+const ExistingLimits = taskproc.ExistingLimits;
 
 const ChildProcess = std.process.Child;
 
@@ -29,6 +29,9 @@ pub fn run_daemon(task: *Task, flags: ForkFlags) Errors!void {
         try log.printwarn("Interactive flag is on by default on Windows.", .{});
     }
 
+    var envs = try taskproc.get_envs(task, flags.update_envs);
+    defer envs.deinit();
+
     const exe_path = std.fs.selfExePathAlloc(util.gpa)
         catch |err| return e.verbose_error(err, error.SpawnExeNotFound);
     defer util.gpa.free(exe_path);
@@ -36,7 +39,6 @@ pub fn run_daemon(task: *Task, flags: ForkFlags) Errors!void {
     if (opt_exe_dir == null) {
         return error.SpawnExeNotFound;
     }
-
 
     // Convert to utf16 = https://ziglang.org/documentation/master/std/#std.unicode.utf8ToUtf16LeAlloc
     // In the future, just make the exe read from the file for it's limits, only pass in the task id.

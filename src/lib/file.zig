@@ -57,6 +57,13 @@ pub const MainFiles = struct {
             catch |err| return e.verbose_error(err, error.TasksIdsFileFailedWrite);
     }
 
+    pub fn get_debug_log_file() Errors!std.fs.File {
+        var main_dir = try get_or_create_main_dir();
+        defer main_dir.close();
+        return main_dir.createFile("debug.log", .{.truncate = false})
+            catch return error.DebugLogFileFailedOpen;
+    }
+
     /// CLOSE THIS
     pub fn get_or_create_tasks_dir() Errors!std.fs.Dir {
         var main_dir = try get_or_create_main_dir();
@@ -119,6 +126,9 @@ pub const MainFiles = struct {
         const resources = task_dir.createFile("resources.json", .{})
             catch |err| return e.verbose_error(err, error.TaskFileFailedCreate);
         defer resources.close();
+        const env = task_dir.createFile("env.json", .{})
+            catch |err| return e.verbose_error(err, error.TaskFileFailedCreate);
+        defer env.close();
     }
     
     /// FREE THIS
@@ -232,8 +242,8 @@ pub const CheckFiles = struct {
         var dir_itr = subdir.iterate();
         var files = std.StringHashMap(bool).init(util.gpa);
         defer files.deinit();
-        const subdir_filenames: [5][]const u8 = .{
-            "processes.json", "stats.json", "stdout", "stderr", "resources.json"
+        const subdir_filenames: [6][]const u8 = .{
+            "processes.json", "stats.json", "stdout", "stderr", "resources.json", "env.json"
         };
 
         while (

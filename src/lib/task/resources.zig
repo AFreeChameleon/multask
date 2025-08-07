@@ -101,7 +101,11 @@ pub const Resources = struct {
     }
 
     fn get_resources(task: *Task) Errors!Resources {
-        const json_res = try task.files.read_file(JSON_Resources);
+        const json_res = task.files.read_file(JSON_Resources)
+            catch |err| switch (err) {
+                error.TaskFileFailedRead => return Resources.init(),
+                else => return err
+            };
         if (json_res == null) {
             return Resources.init();
         }

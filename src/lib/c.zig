@@ -7,6 +7,9 @@ pub const libc = @cImport({
         @cInclude("windows.h");
         @cInclude("winbase.h");
         @cInclude("psapi.h");
+        @cInclude("tlhelp32.h");
+        @cInclude("tchar.h");
+        @cInclude("processthreadsapi.h");
     }
 
     if (builtin.target.os.tag != .windows) {
@@ -32,5 +35,6 @@ pub const libc = @cImport({
         @cInclude("libproc.h");
         @cInclude("sys/proc.h");
         @cInclude("mach/mach_time.h");
+        @cInclude("sys/sysctl.h");
     }
 });

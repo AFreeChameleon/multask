@@ -51,17 +51,20 @@ pub fn run(argv: [][]u8) Errors!void {
         var task = Task.init(task_id);
         defer task.deinit();
         TaskManager.get_task_from_id(&task)
-            catch {
+            catch |err| {
+                try log.printdebug("{any}", .{err});
                 try table.add_corrupted_task(task_id);
                 continue;
             };
         task.resources.set_cpu_usage(&task)
-            catch {
+            catch |err| {
+                try log.printdebug("{any}", .{err});
                 try table.add_corrupted_task(task_id);
                 continue;
             };
         table.add_task(&task)
-            catch {
+            catch |err| {
+                try log.printdebug("{any}", .{err});
                 try table.add_corrupted_task(task_id);
                 continue;
             };
@@ -73,9 +76,8 @@ pub fn run(argv: [][]u8) Errors!void {
     while (true) {
         std.Thread.sleep(1_000_000_000);
         // Top & bottom border and separator of header
-        const row_count = table.rows.items.len + 3;
-        table.reset();
-        try table.append_header();
+        var new_table = try Table.init(flags.all);
+        try new_table.append_header();
         const ids = try check_taskids(flags.args);
         defer util.gpa.free(ids);
 
@@ -83,16 +85,19 @@ pub fn run(argv: [][]u8) Errors!void {
             var task = Task.init(task_id);
             defer task.deinit();
             TaskManager.get_task_from_id(&task)
-                catch {
+                catch |err| {
+                    try log.printdebug("{any}", .{err});
                     try table.add_corrupted_task(task_id);
                     continue;
                 };
             try task.resources.set_cpu_usage(&task);
-            try table.add_task(&task);
+            try new_table.add_task(&task);
         }
 
-        try table.clear(row_count);
-        try table.print_table();
+        try table.clear();
+        try new_table.print_table();
+        table.deinit();
+        table = new_table;
     }
 
     if (table.corrupted_rows) {
@@ -183,6 +188,7 @@ fn parse_cmd_args(argv: [][]u8) Errors!Flags {
         defer tasks.deinit();
         flags.args.ids = util.gpa.dupe(TaskId, tasks.task_ids)
             catch |err| return e.verbose_error(err, error.ParsingCommandArgsFailed);
+        std.mem.sort(TaskId, flags.args.ids.?, {}, comptime std.sort.asc(TaskId));
         return flags;
     }
     const parsed_args = try util.parse_cmd_vals(vals);

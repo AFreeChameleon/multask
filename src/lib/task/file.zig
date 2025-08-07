@@ -12,41 +12,31 @@ const r = @import("./resources.zig");
 const Resources = r.Resources;
 const JSON_Resources = r.JSON_Resources;
 
+const env = @import("./env.zig");
+const JSON_Env = env.JSON_Env;
+
 const util = @import("../util.zig");
 const Pid = util.Pid;
+const Sid = util.Sid;
+const Pgrp = util.Pgrp;
 const Lengths = util.Lengths;
 
 const e = @import("../error.zig");
 const Errors = e.Errors;
 
-pub const ReadProcess = struct {
-    task: ProcessSection,
-    pid: Pid,
-    starttime: u64,
-    children: []ProcessSection,
-
-    pub fn deinit(self: *ReadProcess) void {
-        util.gpa.free(self.children);
-    }
-
-    pub fn clone(self: *const ReadProcess) Errors!ReadProcess {
-        const proc = ReadProcess {
-            .task = ProcessSection {
-                .pid = self.task.pid,
-                .starttime = self.task.starttime
-            },
-            .pid = self.pid,
-            .starttime = self.starttime,
-            .children = util.gpa.dupe(ProcessSection, self.children)
-                catch |err| return e.verbose_error(err, error.FailedToSaveProcesses)
-        };
-        return proc;
-    }
+pub const TaskReadProcess = switch (builtin.os.tag) {
+    .linux => @import("../linux/file.zig").TaskReadProcess,
+    .macos => @import("../macos/file.zig").TaskReadProcess,
+    .windows => @import("../windows/file.zig").TaskReadProcess,
+    else => error.InvalidOs
 };
-pub const ProcessSection = struct {
-    pid: Pid,
-    starttime: u64,
+pub const ReadProcess = switch (builtin.os.tag) {
+    .linux => @import("../linux/file.zig").ReadProcess,
+    .macos => @import("../macos/file.zig").ReadProcess,
+    .windows => @import("../windows/file.zig").ReadProcess,
+    else => error.InvalidOs
 };
+
 const LogLineData = struct {
     time: i64,
     message: []const u8,
@@ -71,6 +61,7 @@ pub const Files = struct {
         "processes.json",
         "stats.json",
         "resources.json",
+        "env.json",
     };
 
     pub fn init(task_id: TaskId) Errors!Self {
@@ -92,33 +83,6 @@ pub const Files = struct {
         return true;
     }
 
-    /// Separates process id from starttime in processes file
-    fn separate_process_section(section: []const u8) Errors!ProcessSection {
-        var pid_starttime_iter = std.mem.splitAny(u8, section, ":");
-        const pid_str = pid_starttime_iter.next();
-        if (pid_str == null) {
-            return error.FailedToGetProcesses;
-        }
-        const starttime_str = pid_starttime_iter.next();
-        if (starttime_str  == null) {
-            return error.FailedToGetProcesses;
-        }
-
-        const pid = std.fmt.parseInt(util.Pid, pid_str.?, 10)
-            catch |err| return e.verbose_error(
-                err, error.FailedToGetProcesses
-            );
-        const starttime = std.fmt.parseInt(u32, starttime_str.?, 10)
-            catch |err| return e.verbose_error(
-                err, error.FailedToGetProcesses
-            );
-        return ProcessSection {
-            .pid = pid,
-            .starttime = starttime
-        };
-    }
-
-
     /// Gets task directory path: .mult/tasks/{here}
     pub fn get_task_dir(self: *Self) Errors!std.fs.Dir {
         var tasks_dir = try MainFiles.get_or_create_tasks_dir();
@@ -136,6 +100,8 @@ pub const Files = struct {
         return dir;
     }
 
+    /// Reading a task file may fail because the daemon clears and overwrites what's
+    /// in the file and the read may happen while the write is happening
     pub fn read_file(
         self: *Self, comptime T: type
     ) Errors!?T {
@@ -146,7 +112,7 @@ pub const Files = struct {
 
         try log.printdebug("Parsing file: {s}", .{name});
 
-        const file_content = file.readToEndAlloc(util.gpa, 10240)
+        const file_content = file.readToEndAlloc(util.gpa, 8388608) // 8MB
             catch |err| return e.verbose_error(err, error.TaskFileFailedRead);
         defer util.gpa.free(file_content);
         if (file_content.len == 0) {
@@ -183,7 +149,10 @@ pub const Files = struct {
         var task_dir = try self.get_task_dir();
         defer task_dir.close();
         const file = task_dir.openFile(name, .{.mode = .read_write})
-            catch |err| return e.verbose_error(err, error.FailedToGetProcess);
+            catch |err| switch (err) {
+                error.FileNotFound => return error.TaskFileNotFound,
+                else => return e.verbose_error(err, error.FailedToGetProcess)
+            };
         return file;
     }
 
@@ -205,6 +174,7 @@ pub const Files = struct {
             Stats => "stats.json",
             ReadProcess => "processes.json",
             JSON_Resources => "resources.json",
+            JSON_Env => "env.json",
             else => return error.TaskFileFailedRead
         };
     }

@@ -3,6 +3,7 @@ const std = @import("std");
 const e = @import("./error.zig");
 const util = @import("./util.zig");
 const Lengths = util.Lengths;
+const file = @import("./file.zig");
 
 pub var debug = false;
 pub var is_forked = false;
@@ -42,15 +43,24 @@ pub fn enable_debug() void {
     debug = true;
 }
 pub fn printdebug(comptime text: []const u8, args: anytype) e.Errors!void {
+    const colour_str = try util.colour_string(
+        "[DEBUG]", 243, 0, 255
+    );
+    defer util.gpa.free(colour_str);
+    const content = std.fmt.allocPrint(util.gpa, " " ++ text ++ "\n", args)
+        catch return error.InternalLoggingFailed;
+    defer util.gpa.free(content);
+    const line = std.fmt.allocPrint(util.gpa, "{s} {s}", .{colour_str, content})
+        catch return error.InternalLoggingFailed;
+    defer util.gpa.free(line);
+    if (debug) {
+        write_to_debug_log_file(line)
+            catch return error.InternalLoggingFailed;
+    }
     if (debug and !is_forked and !builtin.is_test) {
         const stdout = stdout_file.writer();
-        const colour_str = try util.colour_string(
-            "[DEBUG]", 243, 0, 255
-        );
-        defer util.gpa.free(colour_str);
         stdout.print("{s}", .{colour_str})
             catch return error.InternalLoggingFailed;
-
         stdout.print(" " ++ text ++ "\n", args)
             catch return error.InternalLoggingFailed;
     }
@@ -136,4 +146,22 @@ pub fn print_help(comptime rows: anytype) e.Errors!void {
             }
         }
     }
+}
+
+/// Writes any debug statement to the log file
+fn write_to_debug_log_file(text: []const u8) e.Errors!void {
+    const log_file = try file.MainFiles.get_debug_log_file();
+    defer log_file.close();
+    const endPos = log_file.getEndPos()
+        catch return error.DebugLogFileFailedWrite;
+    log_file.seekTo(endPos)
+        catch return error.DebugLogFileFailedWrite;
+    const timestamped = std.fmt.allocPrint(
+        util.gpa,
+        "{d}: {s}",
+        .{std.time.timestamp(), text}
+    ) catch return error.DebugLogFileFailedWrite;
+    defer util.gpa.free(timestamped);
+    log_file.writeAll(text)
+        catch return error.DebugLogFileFailedWrite;
 }

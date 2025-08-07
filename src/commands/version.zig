@@ -4,8 +4,7 @@ const zon: struct {
     version: []const u8,
     fingerprint: u64,
     minimum_zig_version: []const u8,
-    paths: []const []const u8,
-    dependencies: struct {}
+    paths: []const []const u8
 } = @import("build_zon");
 
 const log = @import("../lib/log.zig");

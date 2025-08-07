@@ -4,7 +4,7 @@ const util = @import("../util.zig");
 const e = @import("../error.zig");
 const Errors = e.Errors;
 
-pub fn write_start_time(
+pub fn write_starttime(
     comptime T: type,
     outwriter: *T,
     errwriter: *T
