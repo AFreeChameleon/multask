@@ -1,16 +1,19 @@
-use prettytable::{Table, Cell, Row, format};
+use prettytable::{format, Cell, Row, Table};
+
+use crate::colors::{color_string, ERR_RED};
 
 pub struct MainHeaders {
     pub id: u32,
     pub command: String,
+    pub dir: String,
 }
 
 pub struct ProcessHeaders {
-    pub pid: u32,
-    pub memory: u64,
-    pub cpu: f32,
-    pub runtime: u64,
-    pub status: String
+    pub pid: String,
+    pub memory: String,
+    pub cpu: String,
+    pub runtime: String,
+    pub status: String,
 }
 
 pub struct TableManager {
@@ -42,6 +45,7 @@ impl TableManager {
         self.ascii_table.set_titles(Row::new(vec![
             Cell::new("id").style_spec("b"),
             Cell::new("command").style_spec("b"),
+            Cell::new("location").style_spec("b"),
             Cell::new("pid").style_spec("b"),
             Cell::new("status").style_spec("b"),
             Cell::new("memory").style_spec("b"),
@@ -50,30 +54,27 @@ impl TableManager {
         ]));
     }
 
-    pub fn insert_row(
-        &mut self,
-        headers: MainHeaders,
-        process: Option<ProcessHeaders>
-    ) {
+    pub fn insert_row(&mut self, headers: MainHeaders, process: Option<ProcessHeaders>) {
         let mut row: Vec<Cell> = vec![
             Cell::new(&headers.id.to_string()),
             Cell::new(&headers.command),
+            Cell::new(&headers.dir),
         ];
         if let Some(p) = process {
             row.extend(vec![
-                Cell::new(&p.pid.to_string()),
-                Cell::new(&p.status.to_string()).style_spec("Fgb"),
-                Cell::new(&format_bytes(p.memory as f64)),
-                Cell::new(&p.cpu.to_string()),
-                Cell::new(&p.runtime.to_string())
+                Cell::new(&p.pid),
+                Cell::new(&p.status),
+                Cell::new(&p.memory),
+                Cell::new(&p.cpu),
+                Cell::new(&p.runtime),
             ]);
         } else {
             row.extend(vec![
                 Cell::new("N/A"),
-                Cell::new("Stopped").style_spec("Frb"),
+                Cell::new(&color_string(ERR_RED, "Stopped")),
                 Cell::new("N/A"),
                 Cell::new("N/A"),
-                Cell::new("N/A")
+                Cell::new("N/A"),
             ]);
         }
 
@@ -99,4 +100,3 @@ pub fn format_bytes(bytes: f64) -> String {
 
     [&result, SUFFIX[base.floor() as usize]].join(" ")
 }
-

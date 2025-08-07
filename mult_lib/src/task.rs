@@ -1,28 +1,30 @@
 use std::{
-    io::Write,
-    fs::{self, File},
     env::args,
-    path::Path
+    fs::{self, File},
+    io::Write,
+    path::Path,
 };
 
 use bincode;
 use home;
-use colored::Colorize;
 
-use crate::error::{MultError, MultErrorTuple};
 use crate::command::{CommandData, CommandManager};
+use crate::{
+    colors::{color_string, ERR_RED},
+    error::{MultError, MultErrorTuple},
+};
 
 const PROCESS_FILES: [&str; 3] = ["stdout.out", "stderr.err", "data.bin"];
 
 pub struct Files {
     pub process_dir: Box<Path>,
     pub stdout: File,
-    pub stderr: File
+    pub stderr: File,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Task {
-    pub id: u32
+    pub id: u32,
 }
 
 pub struct TaskManager {}
@@ -33,28 +35,30 @@ impl TaskManager {
             .join(".multi-tasker")
             .join(id.to_string());
         if tasks_dir.exists() {
-            return Err((MultError::TaskDirNotExist, Some(id.to_string())))
+            return Err((MultError::TaskDirNotExist, Some(id.to_string())));
         }
         for file in PROCESS_FILES.iter() {
             if tasks_dir.join(file).exists() {
-                println!("Could not get {}", file.red());
+                return Err((
+                    MultError::CustomError,
+                    Some(format!("Could not get {}", color_string(ERR_RED, file)))
+                ));
             }
         }
         Ok(())
     }
-    
+
     pub fn get_tasks() -> Result<Vec<Task>, MultErrorTuple> {
-        let main_dir = Path::new(&home::home_dir().unwrap())
-            .join(".multi-tasker");
+        let main_dir = Path::new(&home::home_dir().unwrap()).join(".multi-tasker");
         if !main_dir.exists() {
-            return Err((MultError::MainDirNotExist, None))
+            return Err((MultError::MainDirNotExist, None));
         }
         let tasks_file = main_dir.join("tasks.bin");
         if tasks_file.exists() {
-            let tasks_encoded: Vec<u8> = fs::read(tasks_file).unwrap(); 
+            let tasks_encoded: Vec<u8> = fs::read(tasks_file).unwrap();
             let tasks_decoded: Vec<Task> = match bincode::deserialize(&tasks_encoded[..]) {
                 Ok(val) => val,
-                Err(_) => return Err((MultError::TaskBinFileUnreadable, None))
+                Err(_) => return Err((MultError::TaskBinFileUnreadable, None)),
             };
             return Ok(tasks_decoded);
         }
@@ -64,7 +68,7 @@ impl TaskManager {
     pub fn get_task(tasks: &Vec<Task>, id: u32) -> Result<Task, MultErrorTuple> {
         let task: Task = match tasks.iter().find(|&t| t.id == id).cloned() {
             Some(t) => t,
-            None => return Err((MultError::TaskNotFound, None))
+            None => return Err((MultError::TaskNotFound, None)),
         };
         Ok(task)
     }
@@ -78,23 +82,25 @@ impl TaskManager {
         tasks_file.write_all(&encoded_data).unwrap();
     }
 
-    pub fn get_task_from_arg(nth_arg: usize) -> Result<(Task, CommandData, Vec<Task>), MultErrorTuple> {
+    pub fn get_task_from_arg(
+        nth_arg: usize,
+    ) -> Result<(Task, CommandData, Vec<Task>), MultErrorTuple> {
         let tasks: Vec<Task> = TaskManager::get_tasks()?;
         let task_id: u32 = match args().nth(nth_arg) {
             Some(arg) => match arg.parse::<u32>() {
                 Ok(id) => id,
-                Err(_) => return Err((MultError::InvalidTaskId, None))
+                Err(_) => return Err((MultError::InvalidTaskId, None)),
             },
-            None => return Err((MultError::InvalidTaskId, None))
+            None => return Err((MultError::InvalidTaskId, None)),
         };
 
         let task: Task = match tasks.iter().find(|&t| t.id == task_id).cloned() {
             Some(t) => t,
-            None => return Err((MultError::TaskNotFound, None))
+            None => return Err((MultError::TaskNotFound, None)),
         };
         let command_data = match CommandManager::read_command_data(task.id) {
             Ok(data) => data,
-            Err(message) => return Err(message)
+            Err(message) => return Err(message),
         };
 
         Ok((task, command_data, tasks))
@@ -105,9 +111,7 @@ impl TaskManager {
             .join(".multi-tasker")
             .join("processes")
             .join(task_id.to_string());
-        fs::create_dir_all(
-            &process_dir
-        ).unwrap();
+        fs::create_dir_all(&process_dir).unwrap();
 
         let stdout = File::create(process_dir.join("stdout.out")).unwrap();
         let stderr = File::create(process_dir.join("stderr.err")).unwrap();
@@ -117,7 +121,7 @@ impl TaskManager {
         Files {
             process_dir: process_dir.into(),
             stdout,
-            stderr
+            stderr,
         }
     }
 
@@ -125,11 +129,10 @@ impl TaskManager {
         let task_id: u32 = match arg {
             Some(arg) => match arg.parse::<u32>() {
                 Ok(id) => id,
-                Err(_) => return Err((MultError::InvalidTaskId, None))
+                Err(_) => return Err((MultError::InvalidTaskId, None)),
             },
-            None => return Err((MultError::InvalidTaskId, None))
+            None => return Err((MultError::InvalidTaskId, None)),
         };
         Ok(task_id)
     }
 }
-
