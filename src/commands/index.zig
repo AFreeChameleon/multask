@@ -1,6 +1,8 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const Errors = @import("../lib/error.zig").Errors;
 const help = @import("./help.zig");
+const version = @import("./version.zig");
 const create = @import("./create.zig");
 const start = @import("./start.zig");
 const restart = @import("./restart.zig");
@@ -11,28 +13,36 @@ const logs = @import("./logs.zig");
 const health = @import("./health.zig");
 const edit = @import("./edit.zig");
 
-pub fn run_commands(args: [][:0]u8) Errors!void {
-    const command = args[1];
+const parse = @import("../lib/args/parse.zig");
+const util = @import("../lib/util.zig");
+const log = @import("../lib/log.zig");
+
+pub fn run_commands(argv: [][]u8) Errors!void {
+    const command = argv[1];
+
     if (std.mem.eql(u8, command, "help") or std.mem.eql(u8, command, "-h")) {
         try help.run();
+    } else if (std.mem.eql(u8, command, "version") or std.mem.eql(u8, command, "-v")) {
+        try version.run();
     } else if (std.mem.eql(u8, command, "create")) {
-        try create.run();
+        // Removing the exe name and the initial command
+        try create.run(argv[2..]);
     } else if (std.mem.eql(u8, command, "start")) {
-        try start.run();
+        try start.run(argv[2..]);
     } else if (std.mem.eql(u8, command, "stop")) {
-        try stop.run();
+        try stop.run(argv[2..]);
     } else if (std.mem.eql(u8, command, "restart")) {
-        try restart.run();
+        try restart.run(argv[2..]);
     } else if (std.mem.eql(u8, command, "delete")) {
-        try delete.run();
+        try delete.run(argv[2..]);
     } else if (std.mem.eql(u8, command, "ls")) {
-        try ls.run();
+        try ls.run(argv[2..]);
     } else if (std.mem.eql(u8, command, "logs")) {
-        try logs.run();
+        try logs.run(argv[2..]);
     } else if (std.mem.eql(u8, command, "health")) {
-        try health.run();
+        try health.run(argv[2..]);
     } else if (std.mem.eql(u8, command, "edit")) {
-        try edit.run();
+        try edit.run(argv[2..]);
     } else {
         return error.MissingArgument;
     }

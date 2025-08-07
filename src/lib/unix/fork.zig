@@ -15,62 +15,72 @@ const t = @import("../task/index.zig");
 const Task = t.Task;
 const Files = t.Files;
 
+
+const Stats = @import("../task/stats.zig").Stats;
+
 const TaskLogger = @import("../task/logger.zig");
-const p = @import("../task/process.zig");
-const Process = p.Process;
-const ExistingLimits = p.ExistingLimits;
+const taskproc = @import("../task/process.zig");
+const Process = taskproc.Process;
+const Cpu = taskproc.Cpu;
+const ExistingLimits = taskproc.ExistingLimits;
 
 const ChildProcess = std.process.Child;
 
 
 pub fn run_daemon(task: *Task, flags: ForkFlags) e.Errors!void {
     try util.save_stats(task, &flags);
-    const process_id = libc.fork();
 
-    // Failed fork
-    if (process_id < 0) {
-        return error.ForkFailed;
+    // Set this to false for dev purposes
+    if (true) {
+        const process_id = libc.fork();
+
+        // Failed fork
+        if (process_id < 0) {
+            return error.ForkFailed;
+        }
+
+        // Parent process - need to kill it
+        if (process_id > 0) {
+            try log.printinfo("Process id of child process {d}", .{process_id});
+            return;
+        }
+
+        // Creates grandchild process to orphan it so no zombie processes are made
+        if (libc.fork() > 0) {
+            libc.exit(0);
+        }
+
+        // Child logic is here vvv
+        log.is_forked = true;
+        try close_std_handles();
+
+        _ = libc.umask(0);
+        const sid = libc.setsid();
+        if (sid < 0) {
+            return error.SetSidFailed;
+        }
     }
 
-    // Parent process - need to kill it
-    if (process_id > 0) {
-        try log.printinfo("Process id of child process {d}", .{process_id});
-        return;
-    }
-
-    // Creates grandchild process to orphan it so no zombie processes are made
-    if (libc.fork() > 0) {
-        libc.exit(0);
-    }
-
-    // Child logic is here vvv
-    log.is_forked = true;
-    try close_std_handles();
-
-    _ = libc.umask(0);
-    const sid = libc.setsid();
-    if (sid < 0) {
-        return error.SetSidFailed;
-    }
-
+    task.daemon = try Process.init(task, util.get_pid(), null);
     while (true) {
-        try task.files.set_task_pid();
         var child = try run_command(task.stats.command, flags.interactive);
         errdefer _ = child.kill() catch {
             std.process.exit(1);
         };
 
-        task.process = try Process.init(child.id, task);
-        if (flags.memory_limit > 0)
-            try task.process.limit_memory(flags.memory_limit);
+        task.process = try Process.init(task, child.id, null);
+        if (flags.memory_limit > 0) {
+            try task.process.?.limit_memory(flags.memory_limit);
+        }
         try monitor_process(&child, task, flags.cpu_limit);
-        try task.process.kill_all();
+        try taskproc.kill_all(&task.process.?);
         if (!flags.persist) {
             break;
         }
         // Persisting with a timeout of 2 seconds
         std.time.sleep(2_000_000_000);
     }
+    Cpu.deinit();
 }
 
 fn monitor_process(
@@ -78,6 +88,7 @@ fn monitor_process(
     task: *Task,
     cpu_limit: util.CpuLimit,
 ) e.Errors!void {
+    try task.process.?.monitor_stats();
     const mode = std.posix.pipe2(.{ .CLOEXEC = true })
         catch return error.TaskFileFailedWrite;
     defer std.posix.close(mode[0]);
@@ -103,8 +114,6 @@ fn monitor_process(
     var stderr_writer = std.io.bufferedWriter(errfile.writer());
     var out_new_line = true;
     var err_new_line = true;
-
-    try task.process.monitor_stats();
 
     var cpu_sleeping = false;
     var cpu_times: ?CpuLimitTimes = if (cpu_limit != 0)
@@ -172,15 +181,24 @@ fn monitor_process(
         }
 
         if (refresh_processes) {
-            if (!task.process.proc_exists()) {
-                break;
+            if (!task.process.?.proc_exists()) {
+                const saved_procs = try taskproc.get_running_saved_procs(&task.process.?);
+                defer util.gpa.free(saved_procs);
+                if (saved_procs.len == 0) {
+                    break;
+                }
             }
             if (cpu_times == null) {
-                try task.process.monitor_stats();
+                try task.process.?.monitor_stats();
                 // Refresh process stats
-                task.stats = try task.files.read_stats_file();
+                const stats = try task.files.read_file(Stats);
+                if (stats == null) {
+                    return error.FailedToGetTaskStats;
+                }
+                task.stats.deinit();
+                task.stats = stats.?;
                 if (task.stats.memory_limit != existing_limits.mem) {
-                    try task.process.limit_memory(task.stats.memory_limit);
+                    try task.process.?.limit_memory(task.stats.memory_limit);
                 }
                 if (task.stats.cpu_limit != existing_limits.cpu) {
                     cpu_times = get_cpu_limit_times(task.stats.cpu_limit);
@@ -189,24 +207,29 @@ fn monitor_process(
                 if (cpu_sleeping) {
                     // Only doing a monitor stats here as it'll be every second
                     // and this code is designed to be run on a 1 second timer
-                    try task.process.monitor_stats();
+                    try task.process.?.monitor_stats();
 
                     // Refresh process stats
-                    task.stats = try task.files.read_stats_file();
+                    const stats = try task.files.read_file(Stats);
+                    if (stats == null) {
+                        return error.FailedToGetTaskStats;
+                    }
+                    task.stats.deinit();
+                    task.stats = stats.?;
                     if (task.stats.memory_limit != existing_limits.mem) {
                         try log.printdebug("Refresh lim {d} {d}", .{existing_limits.mem, task.stats.memory_limit});
-                        try task.process.limit_memory(task.stats.memory_limit);
+                        try task.process.?.limit_memory(task.stats.memory_limit);
                     }
                     if (task.stats.cpu_limit != existing_limits.cpu) {
                         try log.printdebug("CPU Refresh lim {d} {d}", .{existing_limits.cpu, task.stats.cpu_limit});
                         cpu_times = get_cpu_limit_times(task.stats.cpu_limit);
                     }
 
-                    try task.process.set_all_status(.Active);
+                    try task.process.?.set_all_status(.Active);
                     cpu_sleeping = false;
                     time = cpu_times.?.alive;
                 } else {
-                    try task.process.set_all_status(.Sleep);
+                    try task.process.?.set_all_status(.Sleep);
                     cpu_sleeping = true;
                     time = cpu_times.?.sleep;
                 }
@@ -222,6 +245,7 @@ fn run_command(command: []const u8, interactive: bool) e.Errors!ChildProcess {
     var build_args = std.ArrayList([]const u8).init(util.gpa);
     defer build_args.deinit();
     const shell_path = try util.get_shell_path();
+    defer util.gpa.free(shell_path);
     var shell_args: []const u8 = "-c";
     if (interactive) {
         shell_args = "-ic";

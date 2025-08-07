@@ -1,4 +1,5 @@
 const util = @import("../util.zig");
+const Errors = @import("../error.zig").Errors;
 
 pub const Stats = struct {
     const Self = @This();
@@ -12,5 +13,16 @@ pub const Stats = struct {
     pub fn deinit(self: *Self) void {
         util.gpa.free(self.command);
         util.gpa.free(self.cwd);
+    }
+
+    pub fn clone(self: *const Self) Errors!Self {
+        const stats = Self {
+            .command = try util.strdup(self.command, error.FailedToGetTaskStats),
+            .cwd = try util.strdup(self.cwd, error.FailedToGetTaskStats),
+            .memory_limit = self.memory_limit,
+            .cpu_limit = self.cpu_limit,
+            .persist = self.persist
+        };
+        return stats;
     }
 };

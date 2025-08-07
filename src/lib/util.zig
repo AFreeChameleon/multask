@@ -7,19 +7,25 @@ const log = @import("./log.zig");
 
 const t = @import("./task/index.zig");
 const TaskId = t.TaskId;
-const TaskManager = t.TaskManager;
+
+const TaskManager  = @import("./task/manager.zig").TaskManager;
+const Stats = @import("./task/stats.zig").Stats;
 
 const e = @import("./error.zig");
 const Errors = e.Errors;
 
-
-pub const gpa = std.heap.c_allocator;
+pub const gpa = if (builtin.is_test) std.testing.allocator else std.heap.c_allocator;
 
 // pub const Pid = if (builtin.os.tag == .windows) std.os.windows.HANDLE else c_int;
 pub const Pid = if (builtin.target.os.tag == .windows) u32 else i32;
 
 // 4096 is the max line length for the terminal
 pub const MAX_TERM_LINE_LENGTH = 4096;
+
+pub const SysTimes = struct {
+    utime: u64,
+    stime: u64
+};
 
 /// Standard for array length
 pub const Lengths = struct {
@@ -104,9 +110,11 @@ pub fn get_readable_memory(bytes: u64) Errors![]const u8 {
     );
     const base: f64 = std.math.log10(float_bytes) / std.math.log10(UNIT);
     const num_result = std.math.pow(f64, UNIT, base - std.math.floor(base));
-    var format_buf: [128]u8 = std.mem.zeroes([128]u8);
+    const format_buf: []u8 = gpa.alloc(u8, Lengths.MEDIUM)
+        catch |err| return e.verbose_error(err, error.FailedToGetProcessMemory);
+    defer gpa.free(format_buf);
     var result = std.fmt.formatFloat(
-        &format_buf, num_result, .{.precision = 1, .mode = .decimal}
+        format_buf, num_result, .{.precision = 1, .mode = .decimal}
     ) catch |err| return e.verbose_error(err, error.FailedToGetProcessMemory);
     if (std.mem.eql(u8, result[result.len - 2..], ".0")) {
         result = result[0..result.len - 2];
@@ -117,28 +125,23 @@ pub fn get_readable_memory(bytes: u64) Errors![]const u8 {
         return error.FailedToGetProcessMemory;
     }
 
-    var result_suff_buf: [128]u8 = std.mem.zeroes([128]u8);
-    const result_suff = std.fmt.bufPrint(
-        &result_suff_buf, "{s} {s}", .{result, SUFFIX[@as(usize, int_floor_base)]}
+    const result_suff = std.fmt.allocPrint(
+        gpa, "{s} {s}", .{result, SUFFIX[@as(usize, int_floor_base)]}
     ) catch |err| return e.verbose_error(
         err, error.FailedToGetProcessMemory
     );
-    return try util.strdup(result_suff, error.FailedToGetProcessMemory);
+    return result_suff;
 }
 
 /// Colouring strings with ANSI escape codes
 pub fn colour_string(str: []const u8, r: u8, g: u8, b: u8) Errors![]const u8 {
-    const total_len = str.len + 64;
-    const buf = gpa.alloc(u8, total_len)
-        catch |err| return e.verbose_error(err, error.InternalLoggingFailed);
-    defer gpa.free(buf);
-    const final_str = std.fmt.bufPrint(
-        buf,
+    const final_str = std.fmt.allocPrint(
+        gpa,
         "\x1B[38;2;{d};{d};{d}m{s}\x1B[0m",
         .{r, g, b, str}
     ) catch |err| return e.verbose_error(err, error.InternalLoggingFailed);
 
-    return try util.strdup(final_str, error.InternalLoggingFailed);
+    return final_str;
 }
 
 /// Remove ANSI codes starting with 0x1B[ and ending with 'm'
@@ -186,6 +189,7 @@ pub fn strip_ansi_codes(str: []const u8) Errors![]u8 {
 pub fn get_string_visual_length(str: []const u8) Errors!u32 {
     var width: u32 = 0;
     const stripped_str = try strip_ansi_codes(str);
+    defer gpa.free(stripped_str);
     for (stripped_str) |char| {
         // Ignore control characters
         if (
@@ -236,26 +240,41 @@ pub fn get_map_length(comptime T: type, map: T) usize {
 pub const TaskArgs = struct {
     ids: ?[]TaskId = null,
     namespaces: ?[][]u8 = null,
-    parsed: bool = false
+    parsed: bool = false,
+
+    pub fn deinit(self: *TaskArgs) void {
+        if (self.ids != null) {
+            util.gpa.free(self.ids.?);
+        }
+        if (self.namespaces != null) {
+            for (self.namespaces.?) |ns| {
+                util.gpa.free(ns);
+            }
+            util.gpa.free(self.namespaces.?);
+        }
+    }
 };
-/// Converting parsed args to ids and namespaces
-pub fn parse_cmd_args(args: [][*:0]u8) Errors!TaskArgs {
-    var ns = std.ArrayList([]u8).init(util.gpa);
+
+pub fn parse_cmd_vals(vals: [][]u8) Errors!TaskArgs {
+    var ns = std.ArrayList([]u8).init(gpa);
     defer ns.deinit();
-    var ids = std.ArrayList(TaskId).init(util.gpa);
+    var ids = std.ArrayList(TaskId).init(gpa);
     defer ids.deinit();
-    const namespaces = try TaskManager.get_namespaces();
+    var tasks = try TaskManager.get_tasks();
+    defer tasks.deinit();
 
     // Starting from 1 to ignore the command e.g. "start"
-    for (args[1..]) |arg_ptr| {
-        const arg: []u8 = std.mem.span(@as([*:0]u8, arg_ptr));
+    for (vals) |arg| {
         if (is_number(arg)) {
             const id = std.fmt.parseInt(TaskId, arg, 10)
                 catch |err| return e.verbose_error(err, error.ParsingCommandArgsFailed);
             ids.append(id)
                 catch |err| return e.verbose_error(err, error.ParsingCommandArgsFailed);
+        } else if (std.mem.eql(u8, arg, "all")) {
+            ids.appendSlice(tasks.task_ids)
+                catch |err| return e.verbose_error(err, error.ParsingCommandArgsFailed);
         } else {
-            const ns_ids = namespaces.get(arg);
+            const ns_ids = tasks.namespaces.get(arg);
             if (ns_ids == null) return error.NamespaceNotExists;
             ns.append(arg)
                 catch |err| return e.verbose_error(err, error.ParsingCommandArgsFailed);
@@ -267,9 +286,9 @@ pub fn parse_cmd_args(args: [][*:0]u8) Errors!TaskArgs {
             }
         }
     }
+    
     return TaskArgs {
-        .ids = ids.toOwnedSlice()
-            catch |err| return e.verbose_error(err, error.ParsingCommandArgsFailed),
+        .ids = try unique_array(TaskId, ids.items),
         .namespaces = ns.toOwnedSlice()
             catch |err| return e.verbose_error(err, error.ParsingCommandArgsFailed),
         .parsed = true
@@ -288,20 +307,22 @@ pub fn count_occurrences(comptime T: type, list: *[]T, value: T) u32 {
 }
 
 const supported_shells: [3][]const u8 = .{"zsh", "sh", "bash"};
-// Gets path to shell (using the $SHELL env var)
+/// FREE THIS
+/// Gets path to shell (using the $SHELL env var)
 pub fn get_shell_path() Errors![]u8 {
     if (comptime builtin.target.os.tag == .windows) {
         return try util.strdup("cmd", error.InvalidShell);
     } else {
-        const shell = std.process.getEnvVarOwned(util.gpa, "SHELL")
+        const shell = std.process.getEnvVarOwned(gpa, "SHELL")
             catch |err| return e.verbose_error(err, error.InvalidShell);
-        for (supported_shells) |sh| {
+        inline for (supported_shells) |sh| {
             const shell_name = shell[(shell.len - sh.len)..];
             if (std.mem.eql(u8, shell_name, sh)) {
                 return shell;
             }
         }
         try log.printdebug("Unsupported shell used: {s}, using bash", .{shell});
+        gpa.free(shell);
         return try util.strdup("/bin/bash", error.InvalidShell);
     }
 }
@@ -347,25 +368,36 @@ pub fn remove_id_from_namespace(
     while (keys.next()) |key| {
         const val = ns.get(key.*);
         if (val == null) continue;
-
-        var filtered_ids = std.ArrayList(TaskId).init(util.gpa);
-        defer filtered_ids.deinit();
-        for (val.?) |tid| {
-            if (tid != id) {
-                filtered_ids.append(tid)
-                    catch |err| return e.verbose_error(err, error.TasksNamespacesFileFailedDelete);
-            }
+        if (std.mem.indexOfScalar(TaskId, val.?, id) == null) {
+            continue;
         }
+        defer util.gpa.free(val.?);
+
+        const new_val_len = val.?.len - 1;
         // Delete namespace if no more ids in it
-        if (filtered_ids.items.len == 0) {
-            if (!ns.remove(key.*)) {
-                return error.TasksNamespacesFileFailedDelete;
+        if (new_val_len <= 0) {
+            const ret = ns.fetchRemove(key.*);
+            if (ret != null) {
+                util.gpa.free(ret.?.key);
             }
+            continue;
         } else {
+            var filtered_ids = util.gpa.alloc(TaskId, new_val_len)
+                catch |err| return e.verbose_error(err, error.TasksNamespacesFileFailedDelete);
+            var idx: usize = 0;
+            for (val.?) |tid| {
+                if (tid == id) {
+                    continue;
+                }
+                if (idx > filtered_ids.len - 1) {
+                    return error.TasksNamespacesFileFailedDelete;
+                }
+                filtered_ids[idx] = tid;
+                idx += 1;
+            }
             ns.put(
                 key.*,
-                filtered_ids.toOwnedSlice()
-                catch |err| return e.verbose_error(err, error.TasksNamespacesFileFailedDelete)
+                filtered_ids
             ) catch |err| return e.verbose_error(err, error.TasksNamespacesFileFailedDelete);
         }
     }
@@ -385,13 +417,12 @@ pub fn validate_flags(flags: ValidateFlags) Errors!void {
 }
 
 pub fn unique_array(comptime T: type, arr: []T) Errors![]T {
-    var unique = std.ArrayList(T).init(util.gpa);
+    var unique = std.ArrayList(T).init(gpa);
     defer unique.deinit();
     for (arr) |item| {
         if (std.mem.indexOfScalar(T, unique.items, item) == null) {
             unique.append(item)
                 catch |err| return e.verbose_error(err, error.InternalUtilError);
-
         }
     }
     return unique.toOwnedSlice()
@@ -408,5 +439,52 @@ pub fn save_stats(task: *t.Task, flags: *const ForkFlags) Errors!void {
     task.stats.cpu_limit = flags.cpu_limit;
     task.stats.memory_limit = flags.memory_limit;
     task.stats.persist = flags.persist;
-    try task.files.write_stats_file(task.stats);
+    var stats_clone = try task.stats.clone();
+    defer stats_clone.deinit();
+    try task.files.write_file(Stats, stats_clone);
+}
+
+pub fn deinit_hashmap(comptime T: type, hash: T) void {
+    var key_itr = hash.keyIterator();
+    while (key_itr.next()) |key| {
+        gpa.free(key);
+    }
+    var val_itr = hash.valueIterator();
+    while (val_itr.next()) |val| {
+        gpa.free(val);
+    }
+}
+
+test "lib/util.zig" {
+    std.debug.print("\n--- lib/util.zig ---\n", .{});
+}
+
+test "Save stats" {
+    std.debug.print("Save stats\n", .{});
+    const cmd = try std.fmt.allocPrint(util.gpa, "save stats", .{});
+    var task = try TaskManager.add_task(cmd, 0, 0, null, false);
+    defer task.deinit();
+    try save_stats(&task, &ForkFlags { .cpu_limit = 0, .memory_limit = 0, .interactive = false, .persist = false });
+    try task.delete();
+}
+
+test "Readable memory: Parse 1 to 1 B" {
+    std.debug.print("Readable memory: Parse 1 to 1 B\n", .{});
+    const res = try util.get_readable_memory(1);
+    defer util.gpa.free(res);
+    try std.testing.expect(std.mem.eql(u8, res, "1 B"));
+}
+
+test "Readable memory: Parse 1024 to 1 KiB" {
+    std.debug.print("Readable memory: Parse 1024 to 1 KiB\n", .{});
+    const res = try util.get_readable_memory(1024);
+    defer util.gpa.free(res);
+    try std.testing.expect(std.mem.eql(u8, res, "1 KiB"));
+}
+
+test "Readable memory: Parse 1500 to 1.5 KiB" {
+    std.debug.print("Readable memory: Parse 1500 to 1.5 KiB\n", .{});
+    const res = try util.get_readable_memory(1500);
+    defer util.gpa.free(res);
+    try std.testing.expect(std.mem.eql(u8, res, "1.5 KiB"));
 }

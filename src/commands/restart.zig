@@ -1,21 +1,14 @@
 const std = @import("std");
-fn print_help() Errors!void {
-    try log.print_help(rows);
-}
-
-const rows = .{
-    .{"Usage: mlt ls -w -a"},
-    .{"", "Gets stats of processes"},
-    .{"flags:"},
-    .{"", "-w", "Provides updating tables every 2 seconds"},
-    .{"", "-a", "Show all child processes"},
-    .{""},
-    .{"For more, run `mlt help`"},
-};
+const expect = std.testing.expect;
 const builtin = @import("builtin");
 
-const task = @import("../lib/task/index.zig");
-const TaskId = task.TaskId;
+const t = @import("../lib/task/index.zig");
+const TaskId = t.TaskId;
+const Task = t.Task;
+
+const TaskManager = @import("../lib/task/manager.zig").TaskManager;
+
+const taskproc = @import("../lib/task/process.zig");
 
 const file = @import("../lib/file.zig");
 
@@ -23,7 +16,8 @@ const util = @import("../lib/util.zig");
 const Lengths = util.Lengths;
 
 const log = @import("../lib/log.zig");
-const getopt = @import("../lib/args/getopt.zig");
+
+const parse = @import("../lib/args/parse.zig");
 
 const e = @import("../lib/error.zig");
 const Errors = e.Errors;
@@ -34,19 +28,34 @@ pub const Flags = struct {
     cpu_limit: util.CpuLimit,
     persist: bool,
     interactive: bool,
-    ids: []const TaskId
+    args: util.TaskArgs
 };
 
-pub fn run() Errors!void {
-    const flags = try parse_args();
-    if (flags.help) return;
+pub fn run(argv: [][]u8) Errors!void {
+    var flags = try parse_cmd_args(argv);
+    defer flags.args.deinit();
+    if (flags.help) {
+        try log.print_help(help_rows);
+        return;
+    }
 
-    for (flags.ids) |id| {
-        var new_task = try task.TaskManager.get_task_from_id(
-            id
+    if (flags.args.ids == null) {
+        try log.print_custom_err(" Missing task id.", .{});
+        return error.ParsingCommandArgsFailed;
+    }
+
+    for (flags.args.ids.?) |id| {
+        var new_task = Task.init(id);
+        defer new_task.deinit();
+        try TaskManager.get_task_from_id(
+            &new_task
         );
-        if (new_task.process.proc_exists()) {
-            try new_task.process.kill_all();
+        if (new_task.process != null and try taskproc.any_procs_exist(&new_task.process.?)) {
+            try log.printinfo("Killing existing processes.", .{});
+            if (new_task.daemon != null) {
+                try new_task.daemon.?.kill();
+            }
+            try taskproc.kill_all(&new_task.process.?);
         }
         if (comptime builtin.target.os.tag != .windows) {
             const unix_fork = @import("../lib/unix/fork.zig");
@@ -70,31 +79,57 @@ pub fn run() Errors!void {
     }
 }
 
-pub fn parse_args() Errors!Flags {
-    var opts = getopt.getopt("c:m:ipdh");
+fn parse_cmd_args(argv: [][]u8) Errors!Flags {
     var flags = Flags {
         .memory_limit = 0,
         .cpu_limit = 0,
         .interactive = false,
         .persist = false,
         .help = false,
-        .ids = undefined
+        .args = undefined
+    };
+    var pflags = util.gpa.alloc(parse.Flag, 6)
+        catch |err| return e.verbose_error(err, error.ParsingCommandArgsFailed);
+    defer util.gpa.free(pflags);
+    pflags[0] = parse.Flag {
+        .name = 'c',
+        .type = .value
+    };
+    pflags[1] = parse.Flag {
+        .name = 'm',
+        .type = .value
+    };
+    pflags[2] = parse.Flag {
+        .name = 'i',
+        .type = .static
+    };
+    pflags[3] = parse.Flag {
+        .name = 'p',
+        .type = .static
+    };
+    pflags[4] = parse.Flag {
+        .name = 'd',
+        .type = .static
+    };
+    pflags[5] = parse.Flag {
+        .name = 'h',
+        .type = .static
     };
 
-    var next_val = try opts.next();
-    while (!opts.optbreak) {
-        if (next_val == null) {
-            next_val = try opts.next();
+    const vals = try parse.parse_args(argv, pflags);
+    defer util.gpa.free(vals);
+
+    for (pflags) |flag| {
+        if (!flag.exists) {
             continue;
         }
-        const opt = next_val.?;
-        switch (opt.opt) {
+        switch (flag.name) {
+            'c' => {
+                flags.cpu_limit = std.fmt.parseInt(util.CpuLimit, flag.value.?, 10)
+                    catch return error.CpuLimitValueInvalid;
+            },
             'm' => {
-                if (opt.arg == null) {
-                    return error.MemoryLimitValueMissing;
-                }
-                const arg: []const u8 = opt.arg.?;
-                flags.memory_limit = std.fmt.parseIntSizeSuffix(arg, 10)
+                flags.memory_limit = std.fmt.parseIntSizeSuffix(flag.value.?, 10)
                     catch |err| switch (err) {
                         error.InvalidCharacter => {
                             return error.MemoryLimitValueInvalid;
@@ -102,51 +137,23 @@ pub fn parse_args() Errors!Flags {
                         else => return error.ParsingCommandArgsFailed
                     };
             },
-            'c' => {
-                if (opt.arg == null) {
-                    return error.CpuLimitValueMissing;
-                }
-                const arg: []const u8 = opt.arg.?;
-                flags.cpu_limit = std.fmt.parseInt(util.CpuLimit, arg, 10)
-                    catch {
-                        return error.CpuLimitValueInvalid;
-                    };
-            },
-            'i' => {
-                flags.interactive = true;
-            },
-            'p' => {
-                flags.persist = true;
-            },
-            'h' => {
-                flags.help = true;
-                try log.print_help(restart_help);
-                return flags;
-            },
-            'd' => {
-                log.enable_debug();
-                try log.printdebug("DEBUG MODE", .{});
-            },
-            else => unreachable,
+            'i' => flags.interactive = true,
+            'h' => flags.help = true,
+            'p' => flags.persist = true,
+            'd' => log.enable_debug(),
+            else => continue
         }
-        next_val = try opts.next();
     }
-
-
-    if (opts.args() == null) {
-        return error.ParsingCommandArgsFailed;
+    const parsed_args = try util.parse_cmd_vals(vals);
+    flags.args = parsed_args;
+    if (vals.len == 0) {
+        flags.args.deinit();
+        return error.MissingTaskId;
     }
-    const parsed_args = try util.parse_cmd_args(opts.args().?);
-    flags.ids = parsed_args.ids.?;
-    if (flags.ids.len == 0) {
-        try log.print_custom_err(" Missing task id.", .{});
-        return error.ParsingCommandArgsFailed;
-    }
-
     return flags;
 }
 
-const restart_help = .{
+const help_rows = .{
     .{"Restarts tasks by task id or namespace"},
     .{"Usage: mlt restart -m 100M -c 50 -i -p all"},
     .{"flags:"},
@@ -157,3 +164,69 @@ const restart_help = .{
     .{""},
     .{"For more, run `mlt help`"},
 };
+
+test "commands/restart.zig" {
+    std.debug.print("\n--- commands/restart.zig ---\n", .{});
+}
+
+test "Parse restart command args" {
+    std.debug.print("Parse restart command args\n", .{});
+    var args = std.ArrayList([]u8).init(util.gpa);
+    defer args.deinit();
+
+    const memf = try std.fmt.allocPrint(util.gpa, "-m", .{});
+    defer util.gpa.free(memf);
+    try args.append(memf);
+    const memv = try std.fmt.allocPrint(util.gpa, "20k", .{});
+    defer util.gpa.free(memv);
+    try args.append(memv);
+
+    const cpuf = try std.fmt.allocPrint(util.gpa, "-c", .{});
+    defer util.gpa.free(cpuf);
+    try args.append(cpuf);
+    const cpuv = try std.fmt.allocPrint(util.gpa, "50", .{});
+    defer util.gpa.free(cpuv);
+    try args.append(cpuv);
+
+    const interactivef = try std.fmt.allocPrint(util.gpa, "-i", .{});
+    defer util.gpa.free(interactivef);
+    try args.append(interactivef);
+
+    const persistf = try std.fmt.allocPrint(util.gpa, "-p", .{});
+    defer util.gpa.free(persistf);
+    try args.append(persistf);
+
+    const helpf = try std.fmt.allocPrint(util.gpa, "-h", .{});
+    defer util.gpa.free(helpf);
+    try args.append(helpf);
+
+    log.debug = false;
+    const debugf = try std.fmt.allocPrint(util.gpa, "-d", .{});
+    defer util.gpa.free(debugf);
+    try args.append(debugf);
+
+    const test_tidv = try std.fmt.allocPrint(util.gpa, "1", .{});
+    defer util.gpa.free(test_tidv);
+    try args.append(test_tidv);
+
+    var flags = try parse_cmd_args(args.items);
+    defer flags.args.deinit();
+
+    try expect(flags.cpu_limit == 50);
+    try expect(flags.memory_limit == 20_000);
+    try expect(flags.interactive);
+    try expect(flags.persist);
+    try expect(flags.help);
+    try expect(log.debug);
+    try expect(flags.args.ids.?[0] == 1);
+}
+
+test "No id passed" {
+    std.debug.print("No id passed\n", .{});
+    const args = try util.gpa.alloc([]u8, 0);
+    defer util.gpa.free(args);
+
+    const flags = parse_cmd_args(args);
+
+    try expect(flags == error.MissingTaskId);
+}

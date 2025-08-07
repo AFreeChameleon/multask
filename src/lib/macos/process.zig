@@ -19,77 +19,93 @@ const MainFiles = @import("../file.zig").MainFiles;
 const Cpu = @import("./cpu.zig");
 const MacosCpu = Cpu.MacosCpu;
 
-const CpuStatus = @import("../task/process.zig").CpuStatus;
+const taskproc = @import("../task/process.zig");
+const CpuStatus = taskproc.CpuStatus;
 
 pub const MacosProcess = struct {
     const Self = @This();
 
-    keep_running: bool = false,
-    start_time: u64,
     pid: Pid,
-    cpu: MacosCpu,
-    children: []Self,
     task: *Task,
-    file_strings: FileStrings,
+    start_time: u64,
+    children: ?[]Self = null,
     memory_limit: util.MemLimit = 0,
 
     pub fn init(
-        pid: Pid,
         task: *Task,
+        pid: Pid,
+        starttime: ?u64
     ) Errors!Self {
-        const cpu = MacosCpu.init();
-        const file_strings = FileStrings{
-            .processes = std.mem.zeroes([1024]u8),
-            .usage = std.mem.zeroes([1024]u8),
-        };
         var proc = Self {
-            .cpu = cpu,
             .pid = pid,
-            .children = &.{},
             .task = task,
-            .file_strings = file_strings,
             .start_time = 0
         };
-        if (proc.proc_exists()) {
+        if (starttime != null) {
+            proc.start_time = starttime.?;
+        } else if (proc.proc_exists()) {
             proc.start_time = try proc.get_starttime();
         }
-
         return proc;
     }
 
-    pub fn deinit(self: *Self) void {
-        self.cpu.deinit();
+    pub fn deinit(self: Self) void {
+        if (self.children != null) {
+            util.gpa.free(self.children.?);
+        }
     }
 
     pub fn monitor_stats(
         self: *Self,
     ) Errors!void {
-        try self.task.files.clear_file("processes");
-        try self.task.files.clear_file("usage");
-        self.keep_running = false;
-        const tree = try self.get_all_processes();
+        var keep_running = false;
 
-        try tree.build_file_strings(self);
-        try self.save_files();
+        var children = std.ArrayList(Self).init(util.gpa);
+        defer children.deinit();
 
-        if (!self.keep_running) {
-            try self.kill_all();
+        if (!self.proc_exists()) {
+            // If main proc doesnt exist, read the saved child processes
+            // if any of those exist, set the main process to the first one that's running?
+            // should I do that? what if there are multiple child processes running alongside each other?
+            // don't do it because I can just check saved processes and add it
+            // to the children array and save them
+            const saved_procs = try taskproc.get_running_saved_procs(self);
+            defer util.gpa.free(saved_procs);
+            if (saved_procs.len != 0) {
+                keep_running = true;
+            }
+            for (saved_procs) |sproc| {
+                var exists = false;
+                for (children.items) |proc| {
+                    if (
+                        sproc.pid == proc.pid and
+                        sproc.start_time == proc.start_time
+                    ) {
+                        exists = true;
+                        break;
+                    }
+                }
+                if (!exists) {
+                    children.append(
+                        try Self.init(sproc.task, sproc.pid, sproc.start_time)
+                    ) catch |err| return e.verbose_error(err, error.FailedToGetProcessChildren);
+                    try self.get_children(&children, sproc.pid);
+                }
+            }
+        } else {
+            keep_running = true;
+            try self.get_children(&children, self.pid);
         }
-    }
 
-    fn save_files(self: *Self) Errors!void {
-        const usage = try self.task.files.get_file("usage");
-        defer usage.close();
-        const processes = try self.task.files.get_file("processes");
-        defer processes.close();
-        usage.writeAll(
-            std.mem.trimRight(u8, &self.file_strings.usage, &[1]u8{0})
-        ) catch |err| return e.verbose_error(err, error.FailedToGetProcesses);
-        processes.writeAll(
-            std.mem.trimRight(u8, &self.file_strings.processes, &[1]u8{0})
-        ) catch |err| return e.verbose_error(err, error.FailedToGetProcesses);
-        self.file_strings.processes = std.mem.zeroes([Lengths.LARGE]u8);
-        self.file_strings.usage = std.mem.zeroes([Lengths.LARGE]u8);
+        self.children = children.items;
+        defer self.children = null;
+        try taskproc.check_memory_limit_within_limit(self);
+        try taskproc.save_files(self);
+
+        try MacosCpu.update_time_total(self);
+        if (!keep_running) {
+            try taskproc.kill_all(self);
+        }
     }
 
     pub fn get_starttime(self: *Self) Errors!u64 {
@@ -97,177 +113,42 @@ pub const MacosProcess = struct {
         return bsdinfo.pbi_start_tvsec;
     }
 
-    fn build_file_strings(
-        self: *Self,
-        original: *Self,
+    var all_pids: ?[]Pid = null;
+    var parent_pid: ?Pid = null;
+    pub fn get_children(
+        self: *const Self, children: *std.ArrayList(Self), ppid: Pid
     ) Errors!void {
-        var proc_string = std.ArrayList(u8).init(util.gpa);
-        defer proc_string.deinit();
-        if (original.file_strings.processes[0] != 0) {
-            proc_string.appendSlice(std.mem.sliceTo(&original.file_strings.processes, 0))
-                catch |err| return e.verbose_error(err, error.FailedToGetProcesses);
-        }
-
-        if (self.proc_exists()) {
-            // Saving processes file
-            const start_time = try self.get_starttime();
-            const pid_str: []u8 = std.fmt.allocPrint(util.gpa, "{d}:{d},", .{
-                self.pid, start_time
-            }) catch |err| return e.verbose_error(err, error.FailedToSaveProcesses);
-            defer util.gpa.free(pid_str);
-            proc_string.appendSlice(try util.strdup(pid_str, error.FailedToSaveProcesses))
-                catch |err| return e.verbose_error(err, error.FailedToSaveProcesses);
-
-            original.keep_running = true;
-
-            // Saving cpu usage
-            const cpu_usage = try self.cpu.get_cpu_usage();
-
-            var precise_cpu_buf: [Lengths.SMALL]u8 = undefined;
-            const precise_cpu_usage = std.fmt.formatFloat(
-                &precise_cpu_buf,
-                cpu_usage,
-                .{ .precision = 2, .mode = .decimal }
-            ) catch |err| return e.verbose_error(err, error.FailedToSaveProcesses);
-
-            var usage_buf: [Lengths.LARGE]u8 = undefined;
-            const usage = std.fmt.bufPrint(
-                &usage_buf,
-                "{s}{d}:{s}|",
-                .{
-                    std.mem.sliceTo(&original.file_strings.usage, 0),
-                    self.pid,
-                    precise_cpu_usage
-                }
-            ) catch |err| return e.verbose_error(err, error.FailedToSaveProcesses);
-            std.mem.copyForwards(u8, &original.file_strings.usage, usage);
-            if (self.children.len == 0) {
-                std.mem.copyForwards(u8, &original.file_strings.processes, proc_string.items);
-            }
-        }
-        if (self.children.len == 0) {
-            return;
-        }
-
-        proc_string.appendSlice("(")
-            catch |err| return e.verbose_error(err, error.FailedToSaveProcesses);
-        std.mem.copyForwards(u8, &original.file_strings.processes, proc_string.items);
-
-        for (self.children) |*child| {
-            try child.build_file_strings(original);
-        }
-
-        var processes_buf: [Lengths.LARGE]u8 = undefined;
-        const processes = std.fmt.bufPrint(&processes_buf, "{s})", .{
-            std.mem.sliceTo(&original.file_strings.processes, 0),
-        }) catch |err| return e.verbose_error(err, error.FailedToSaveProcesses);
-
-        std.mem.copyForwards(u8, &original.file_strings.processes, processes);
-    }
-
-    pub fn get_all_processes(self: *Self) Errors!*Self {
-        if (!self.proc_exists()) {
-            return self;
-        }
-        try self.check_memory_limit_within_limit();
-        const taskinfo = try self.get_task_stats();
-        self.cpu.old_stime = self.cpu.stime;
-        self.cpu.old_utime = self.cpu.utime;
-        self.cpu.stime = taskinfo.pti_total_system;
-        self.cpu.utime = taskinfo.pti_total_user;
-        try self.get_process_children(self.pid);
-        return self;
-    }
-
-    fn check_memory_limit_within_limit(self: *Self) Errors!void {
-        if (self.memory_limit != 0) {
-            const mem = try self.get_memory();
-            if (mem > self.memory_limit) {
-                try self.kill();
-            }
-        }
-    }
-
-    fn get_process_children(
-        self: *Self,
-        ppid: Pid,
-    ) Errors!void {
-        var children = std.ArrayList(MacosProcess).init(util.gpa);
-        defer children.deinit();
-        const num_procs: Pid = libc.proc_listallpids(null, 0);
-        const processes = util.gpa.alloc(Pid, @intCast(num_procs))
-            catch |err| return e.verbose_error(err, error.FailedToGetProcessChildren);
-
-        _ = libc.proc_listallpids(
-            processes.ptr,
-            @sizeOf(Pid) * num_procs
-        );
-
-        for (processes) |pid| {
-            if (pid == 0) continue;
-            var proc = try MacosProcess.init(pid, self.task);
-            const bsdinfo = proc.get_process_stats()
-                catch |err| switch (err) {
-                    error.ProcessNotExists => continue,
-                    else => return err
-                };
-            if (bsdinfo.pbi_ppid == ppid) {
-                try self.check_memory_limit_within_limit();
-                const taskinfo = try proc.get_task_stats();
-                proc.cpu.stime = taskinfo.pti_total_system;
-                proc.cpu.utime = taskinfo.pti_total_user;
-
-                const old_time = Cpu.usage_stats.fetchPut(pid, .{ proc.cpu.utime, proc.cpu.stime })
-                    catch |err| return e.verbose_error(err, error.FailedToGetProcessChildren);
-                if (old_time == null) {
-                    proc.cpu.old_utime = 0;
-                    proc.cpu.old_stime = 0;
-                } else {
-                    proc.cpu.old_utime = old_time.?.value[0];
-                    proc.cpu.old_stime = old_time.?.value[1];
-                }
-
-                try proc.get_process_children(proc.pid);
-                children.append(proc)
-                    catch |err| return e.verbose_error(err, error.FailedToGetProcessChildren);
-            }
-        }
-        self.children = children.toOwnedSlice()
-            catch |err| return e.verbose_error(err, error.FailedToGetProcessChildren);
-    }
-
-    fn get_child_pids(
-        self: *const Self,
-        pids: *std.ArrayList(Pid),
-        ppid: Pid,
-        all_pids: ?[]Pid
-    ) Errors!void {
-        var processes: []Pid = undefined;
+        // if this is the first process
         if (all_pids == null) {
+            parent_pid = ppid;
             const num_procs: Pid = libc.proc_listallpids(null, 0);
-            processes = util.gpa.alloc(Pid, @intCast(num_procs))
+            all_pids = util.gpa.alloc(Pid, @intCast(num_procs))
                 catch |err| return e.verbose_error(err, error.FailedToGetProcessChildren);
 
             _ = libc.proc_listallpids(
-                processes.ptr,
+                all_pids.?.ptr,
                 @sizeOf(Pid) * num_procs
             );
-        } else {
-            processes = all_pids.?;
         }
-        for (processes) |pid| {
+        for (all_pids.?) |pid| {
             if (pid == 0) continue;
-            var proc = try MacosProcess.init(pid, self.task);
+            var proc = try MacosProcess.init(self.task, pid, null);
             const bsdinfo = proc.get_process_stats()
                 catch |err| switch (err) {
                     error.ProcessNotExists => continue,
                     else => return err
                 };
             if (bsdinfo.pbi_ppid == ppid) {
-                pids.append(pid)
+                children.append(try Self.init(self.task, pid, bsdinfo.pbi_start_tvsec))
                     catch |err| return e.verbose_error(err, error.FailedToGetProcessChildren);
-                try self.get_child_pids(pids, pid, processes);
+                try self.get_children(children, pid);
             }
+        }
+        // if this is the first process
+        if (parent_pid == ppid) {
+            util.gpa.free(all_pids.?);
+            all_pids = null;
+            parent_pid = null;
         }
     }
 
@@ -348,23 +229,9 @@ pub const MacosProcess = struct {
         return true;
     }
 
-    pub fn kill_all(self: *const Self) Errors!void {
-        var pids = std.ArrayList(Pid).init(util.gpa);
-        defer pids.deinit();
-        if (libc.kill(self.pid, 9) != 0) {
-            return error.FailedToKillAllProcesses;
-        }
-        try self.get_child_pids(&pids, self.pid, null);
-        for (pids.items) |pid| {
-            if (libc.kill(pid, 9) != 0) {
-                return error.FailedToKillAllProcesses;
-            }
-        }
-    }
-
     pub fn kill(self: *const Self) Errors!void {
         if (libc.kill(self.pid, 9) != 0) {
-            return error.FailedToKillAllProcesses;
+            return error.FailedToKillProcess;
         }
     }
 
@@ -380,16 +247,16 @@ pub const MacosProcess = struct {
         self: *Self,
         status: CpuStatus
     ) Errors!void {
-        var pids = std.ArrayList(Pid).init(util.gpa);
-        defer pids.deinit();
-        try self.get_child_pids(&pids, self.pid, null);
-        pids.append(self.pid)
+        var procs = std.ArrayList(Self).init(util.gpa);
+        defer procs.deinit();
+        try self.get_children(&procs, self.pid);
+        procs.append(try Self.init(self.task, self.pid, self.start_time))
             catch |err| return e.verbose_error(err, error.FailedToSetProcessStatus);
         const sig = if (status == .Sleep) libc.SIGSTOP else libc.SIGCONT;
-        const pids_owned = pids.toOwnedSlice()
+        const procs_owned = procs.toOwnedSlice()
             catch |err| return e.verbose_error(err, error.FailedToSetProcessStatus);
-        for (pids_owned) |pid| {
-            if (libc.kill(pid, sig) != 0) {
+        for (procs_owned) |proc| {
+            if (libc.kill(proc.pid, sig) != 0) {
                 return error.FailedToSetProcessStatus;
             }
         }

@@ -9,16 +9,19 @@ const Errors = e.Errors;
 
 const t = @import("./lib/task/index.zig");
 const TaskId = t.TaskId;
-const TaskManager = t.TaskManager;
 const Task = t.Task;
+
+const Stats = @import("./lib/task/stats.zig").Stats;
+
+const TaskManager = @import("./lib/task/manager.zig").TaskManager;
 
 const TaskLogger = @import("./lib/task/logger.zig");
 
 const util = @import("./lib/util.zig");
 
-const p = @import("./lib/task/process.zig");
-const Process = p.Process;
-const ExistingLimits = p.ExistingLimits;
+const taskproc = @import("./lib/task/process.zig");
+const Process = taskproc.Process;
+const ExistingLimits = taskproc.ExistingLimits;
 
 var out_handle_r: libc.HANDLE = std.mem.zeroes(libc.HANDLE);
 var out_handle_w: libc.HANDLE = std.mem.zeroes(libc.HANDLE);
@@ -44,7 +47,9 @@ pub fn main() !void {
     const task_id = std.fmt.parseInt(TaskId, args[1], 10)
         catch |err| return e.verbose_error(err, error.ForkFailed);
 
-    var task = try TaskManager.get_task_from_id(task_id);
+    var task = Task.init(task_id);
+    defer task.deinit();
+    try TaskManager.get_task_from_id(&task);
 
     var job_name = std.fmt.allocPrintZ(util.gpa, "Global\\mult-{d}", .{task_id})
         catch |err| return e.verbose_error(err, error.ForkFailed);
@@ -54,9 +59,9 @@ pub fn main() !void {
     defer {
         _ = libc.CloseHandle(job_handle);
     }
-    while (true) {
-        try task.files.set_task_pid();
 
+    task.daemon = try Process.init(&task, util.get_pid(), null);
+    while (true) {
         try set_job_limits(job_handle, task.stats.memory_limit, task.stats.cpu_limit);
         // const thread_handle = libc.GetCurrentThread();
         const process_handle = libc.GetCurrentProcess();
@@ -72,10 +77,10 @@ pub fn main() !void {
             _ = libc.CloseHandle(out_handle_w);
             _ = libc.CloseHandle(err_handle_w);
         }
-        task.process = try Process.init(proc_info.dwProcessId, &task);
+        task.process = try Process.init(&task, proc_info.dwProcessId, null);
 
         try monitor_process(&task, job_handle);
-        try task.process.kill_all();
+        try taskproc.kill_all(&task.process.?);
         if (!task.stats.persist) {
             break;
         }
@@ -420,6 +425,7 @@ fn monitor_process(
             var dw_read: libc.DWORD = 0;
             const buf = util.gpa.alloc(u8, err_queued_bytes)
                 catch |err| return e.verbose_error(err, error.CommandFailed);
+            defer util.gpa.free(buf);
             if (libc.ReadFile(err_handle_r, buf.ptr, err_queued_bytes, &dw_read, null) == 0) {
                 try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
                 return error.CommandFailed;
@@ -435,28 +441,31 @@ fn monitor_process(
         // Making sure every second this is ran
         const current_time = std.time.nanoTimestamp();
         if (current_time > monitor_time + 1_000_000_000) {
-            if (!task.process.proc_exists()) {
+            if (task.process == null or !task.process.?.proc_exists()) {
                 break;
             }
             
             if (task.stats.memory_limit != 0) {
+                task.process.?.memory_limit = task.stats.memory_limit;
                 // Manual check for memory limit because windows' mem limit doesn't react quick and leaves zombie processes
-                try task.process.windows.check_mem_overflowing_procs();
+                try taskproc.check_memory_limit_within_limit(&task.process.?);
             }
-            
-            try task.process.monitor_stats();
+            try task.process.?.monitor_stats();
             monitor_time = current_time;
 
-            task.stats = try task.files.read_stats_file();
+            const stats = try task.files.read_file(Stats);
+            if (stats != null) {
+                task.stats = stats.?;
+            }
             
             // Proc limits
             if (task.stats.memory_limit != existing_limits.mem or task.stats.cpu_limit != existing_limits.cpu) {
+                task.process.?.memory_limit = task.stats.memory_limit;
                 try set_job_limits(job_handle, task.stats.memory_limit, task.stats.cpu_limit);
                 existing_limits.mem = task.stats.memory_limit;
                 existing_limits.cpu = task.stats.cpu_limit;
             }
         }
-
         if (monitor_time + 1_000_000_000 - current_time < 1_000_000) {
             std.Thread.sleep(@intCast(monitor_time + 1_000_000_000 - current_time));
         } else {

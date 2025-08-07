@@ -1,5 +1,6 @@
 const std = @import("std");
-const Process = @import("../task/process.zig").Process;
+const taskproc = @import("../task/process.zig");
+const Process = taskproc.Process;
 
 const t = @import("../task/index.zig");
 const Task = t.Task;
@@ -45,6 +46,18 @@ const Row = struct {
             .header = false,
             .table = table,
         };
+    }
+
+    pub fn deinit(self: *Row) void {
+        util.gpa.free(self.id);
+        util.gpa.free(self.namespace);
+        util.gpa.free(self.command);
+        util.gpa.free(self.location);
+        util.gpa.free(self.pid);
+        util.gpa.free(self.status);
+        util.gpa.free(self.memory);
+        util.gpa.free(self.cpu);
+        util.gpa.free(self.runtime);
     }
 };
 
@@ -127,15 +140,40 @@ pub const Table = struct {
     }
 
     pub fn deinit(self: *Self) void {
+        for (self.rows.items) |*it| {
+            if (!it.header) {
+                it.deinit();
+            }
+        }
+        self.rows.clearAndFree();
+        self.rows.clearRetainingCapacity();
         self.rows.deinit();
     }
 
     /// Taking a task and converting it into adding table rows
     /// main row with the task, and secondary rows with each process
     pub fn add_task(self: *Self, task: *Task) Errors!void {
-        try self.append_main_row(task, &task.process, false);
+        try self.append_main_row(
+            task, if (task.process == null) null else &task.process.?, false
+        );
 
-        if (task.process.proc_exists()) {
+        if (task.process == null) return;
+
+        if (!task.process.?.proc_exists()) {
+            const saved_procs = try taskproc.get_running_saved_procs(&task.process.?);
+            defer util.gpa.free(saved_procs);
+            if (saved_procs.len == 0) {
+                return;
+            }
+            if (!self.show_all) {
+                try self.append_trunced_processes(saved_procs.len - 1);
+            } else {
+                for (0..saved_procs.len) |i| {
+                    var sproc: Process = saved_procs[i];
+                    try self.append_main_row(task, &sproc, true);
+                }
+            }
+        } else {
             if (!self.show_all) {
                 const proc_len = util.get_map_length(
                     std.AutoHashMap(Pid, f64), task.resources.cpu
@@ -146,17 +184,13 @@ pub const Table = struct {
                 ) {
                     try self.append_trunced_processes(proc_len - 1);
                 }
-                return;
-            }
-
-            // Getting child PIDs from the CPU usage stats
-            var pid_itr = task.resources.cpu.iterator();
-            while (pid_itr.next()) |item| {
-                const pid = item.key_ptr.*;
-                if (task.process.get_pid() == pid)
-                    continue;
-                var process = try Process.init(pid, task);
-                try self.append_main_row(task, &process, true);
+            } else {
+                if (task.process.?.children != null) {
+                    for (0..task.process.?.children.?.len) |i| {
+                        var child: Process = task.process.?.children.?[i];
+                        try self.append_main_row(task, &child, true);
+                    }
+                }
             }
         }
     }
@@ -187,14 +221,13 @@ pub const Table = struct {
         self: *Self, proc_amount: usize
     ) Errors!void {
         var row = Row.init(self);
-        var buf: [Lengths.MEDIUM]u8 = undefined;
 
-        row.command = try util.strdup(std.fmt.bufPrint(
-            &buf, " + {d} more process{s}", .{
+        row.command = std.fmt.allocPrint(
+            util.gpa, " + {d} more process{s}", .{
                 proc_amount, if (proc_amount != 1) "es" else ""
         }) catch |err| return e.verbose_error(
             err, error.FailedAppendTableRow
-        ), error.FailedAppendTableRow);
+        );
 
         self.rows.append(row)
             catch |err| return e.verbose_error(
@@ -206,64 +239,71 @@ pub const Table = struct {
     /// Appending task row to the table
     /// if the child flag is true, it instead adds a child process under the task
     pub fn append_main_row(
-        self: *Self, task: *Task, proc: *Process, child: bool
+        self: *Self, task: *Task, some_proc: ?*Process, child: bool
     ) Errors!void {
-        var buf: [Lengths.MEDIUM]u8 = undefined;
-
         var row = Row.init(self);
         if (!child) {
-            row.id = try util.strdup(std.fmt.bufPrint(&buf, "{d}", .{task.id})
-                catch |err| return e.verbose_error(
-                    err, error.FailedAppendTableRow
-            ), error.FailedAppendTableRow);
+            row.id = std.fmt.allocPrint(util.gpa, "{d}", .{task.id})
+                catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
         } else {
-            row.id = "";
+            row.id = util.gpa.alloc(u8, 0)
+                catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
         }
 
         if (!child) {
             row.namespace = if (task.namespace == null)
-                "N/A"
+                std.fmt.allocPrint(util.gpa, "N/A", .{})
+                catch |err| return e.verbose_error(err, error.FailedAppendTableRow)
             else
-                task.namespace.?;
+                std.fmt.allocPrint(util.gpa, "{s}", .{task.namespace.?})
+                catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
         } else {
-            row.namespace = "";
+            row.namespace = util.gpa.alloc(u8, 0)
+                catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
         }
 
         if (!child) {
-            const command = if (task.stats.command.len > 32)
-                task.stats.command[0..29] ++ "..."
+            row.command = if (task.stats.command.len > 32)
+                std.fmt.allocPrint(util.gpa, "{s}...", .{task.stats.command[0..29]})
+                catch |err| return e.verbose_error(err, error.FailedAppendTableRow)
             else
-                task.stats.command;
-            row.command = try util.strdup(command, error.FailedAppendTableRow);
+                std.fmt.allocPrint(util.gpa, "{s}", .{task.stats.command})
+                catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
         } else {
-            const exe = try proc.get_exe();
+            const exe = try some_proc.?.get_exe();
+            defer util.gpa.free(exe);
             // This truncates wide strings from windows funcs
-            const trim_exe = if (exe.len > 32)
-                exe[0..29] ++ "..."
+            row.command = if (exe.len > 32)
+                std.fmt.allocPrint(util.gpa, "{s}...", .{exe[0..29]})
+                catch |err| return e.verbose_error(err, error.FailedAppendTableRow)
             else
-                exe;
-            row.command = try util.strdup(trim_exe, error.FailedAppendTableRow);
+                std.fmt.allocPrint(util.gpa, "{s}", .{exe})
+                catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
         }
 
-        buf = std.mem.zeroes([Lengths.MEDIUM]u8);
-        var cwd = task.stats.cwd;
         if (task.stats.cwd.len > 24) {
-            const new_cwd = std.fmt.bufPrint(
-                &buf, "...{s}",
-                .{task.stats.cwd[(task.stats.cwd.len - 21)..(task.stats.cwd.len)]
-            }) catch |err| return e.verbose_error(
+            const concat_str = task.stats.cwd[(task.stats.cwd.len - 21)..(task.stats.cwd.len)];
+            row.location = std.fmt.allocPrint(
+                util.gpa, "...{s}",
+                .{concat_str}
+            ) catch |err| return e.verbose_error(
                 err, error.FailedAppendTableRow
             );
-            cwd = try util.strdup(new_cwd, error.FailedAppendTableRow);
+        } else {
+            row.location = std.fmt.allocPrint(util.gpa, "{s}", .{task.stats.cwd})
+                catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
         }
-        row.location = try util.strdup(cwd, error.FailedAppendTableRow);
 
-        if (!proc.proc_exists()) {
-            row.pid = "N/A";
-            row.status = try get_proc_status(task, proc);
-            row.memory = "N/A";
-            row.cpu = "N/A";
-            row.runtime = "N/A";
+        if (some_proc == null or !some_proc.?.proc_exists()) {
+            row.pid = std.fmt.allocPrint(util.gpa, "N/A", .{})
+                catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+            row.status = try get_proc_status(task, some_proc);
+            row.memory = std.fmt.allocPrint(util.gpa, "N/A", .{})
+                catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+            row.cpu = std.fmt.allocPrint(util.gpa, "N/A", .{})
+                catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+            row.runtime = std.fmt.allocPrint(util.gpa, "N/A", .{})
+                catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
             self.rows.append(row)
                 catch |err| return e.verbose_error(
                     err, error.FailedAppendTableRow
@@ -272,18 +312,20 @@ pub const Table = struct {
             return;
         }
 
-        row.pid = try util.strdup(std.fmt.bufPrint(&buf, "{d}", .{proc.get_pid()})
+        var proc = some_proc.?;
+        row.pid = std.fmt.allocPrint(util.gpa, "{d}", .{proc.pid})
             catch |err| return e.verbose_error(
                 err, error.FailedAppendTableRow
-            ), error.FailedAppendTableRow);
+            );
         row.status = try get_proc_status(task, proc);
 
         const memory_str = try util.get_readable_memory(try proc.get_memory());
         row.memory = memory_str;
 
-        const cpu_int = task.resources.cpu.get(proc.get_pid());
+        const cpu_int = task.resources.cpu.get(proc.pid);
         if (cpu_int == null) {
-            row.cpu = "N/A";
+            row.cpu = std.fmt.allocPrint(util.gpa, "N/A", .{})
+                catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
         } else {
             const cpu_perc_str = try util.get_readable_cpu_usage(cpu_int.?);
             row.cpu = cpu_perc_str;
@@ -302,19 +344,22 @@ pub const Table = struct {
     /// Inserting an erroneous row for when a task is missing some things
     /// likely due to corruption
     pub fn add_corrupted_task(self: *Self, task_id: TaskId) Errors!void {
-        var buf: [Lengths.MEDIUM]u8 = undefined;
         var row = Row.init(self);
-        row.id = try util.strdup(std.fmt.bufPrint(&buf, "{d}", .{task_id})
-            catch |err| return e.verbose_error(
-                err, error.FailedAppendTableRow
-        ), error.FailedAppendTableRow);
-        row.command = "Error";
-        row.location = "N/A";
-        row.pid = "N/A";
+        row.id = std.fmt.allocPrint(util.gpa, "{d}", .{task_id})
+            catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+        row.command = std.fmt.allocPrint(util.gpa, "Error", .{})
+            catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+        row.location = std.fmt.allocPrint(util.gpa, "N/A", .{})
+            catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+        row.pid = std.fmt.allocPrint(util.gpa, "N/A", .{})
+            catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
         row.status = try util.colour_string("Corrupted", 148, 0, 211);
-        row.memory = "N/A";
-        row.cpu = "N/A";
-        row.runtime = "N/A";
+        row.memory = std.fmt.allocPrint(util.gpa, "N/A", .{})
+            catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+        row.cpu = std.fmt.allocPrint(util.gpa, "N/A", .{})
+            catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+        row.runtime = std.fmt.allocPrint(util.gpa, "N/A", .{})
+            catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
         self.rows.append(row)
             catch |err| return e.verbose_error(
                 err, error.FailedAppendTableRow
@@ -439,10 +484,7 @@ pub const Table = struct {
     }
 
     /// Clears the printed table
-    pub fn clear(self: *Self) Errors!void {
-        // Top & bottom border and separator of header
-        const num_of_rows = self.rows.items.len + 3;
-
+    pub fn clear(self: *Self, num_of_rows: usize) Errors!void {
         // Length of table row in terminal columns
         const fl_row_width: f32 = @floatFromInt(self.get_total_row_width());
         const fl_window_cols: f32 = @floatFromInt(try window.get_window_cols());
@@ -455,23 +497,38 @@ pub const Table = struct {
 
         // VT100 go up 1 line and erase it
         for (0..total_rows_printed) |_| try log.print("\x1b[A\x1b[2K", .{});
+    }
+
+    pub fn reset(self: *Self) void {
+        for (self.rows.items) |*it| {
+            if (!it.header) {
+                it.deinit();
+            }
+        }
         self.rows.clearAndFree();
+        self.rows.clearRetainingCapacity();
         self.row_widths = RowWidths{};
     }
 
-    fn get_proc_status(task: *Task, proc: *Process) Errors![]const u8 {
-        // Does inner process exist
-        if (proc.proc_exists()) {
-            var task_proc = try Process.init(task.pid, task);
-            if (!task_proc.proc_exists()) {
-                return try util.colour_string("Detached", 204, 0, 0);
+    fn get_proc_status(task: *Task, some_proc: ?*Process) Errors![]const u8 {
+        if (some_proc != null) {
+            var proc = some_proc.?;
+            // Does inner process exist
+            if (proc.proc_exists()) {
+                if (task.daemon == null or !task.daemon.?.proc_exists()) {
+                    return try util.colour_string("Headless", 204, 0, 0);
+                }
+                return try util.colour_string("Running", 0, 204, 102);
             }
-            return try util.colour_string("Running", 0, 204, 102);
-        }
-        var task_proc = try Process.init(task.pid, task);
-        if (task_proc.proc_exists() and task.stats.persist) {
-            // The child command hasn't been run but the parent task proc is waiting
-            return try util.colour_string("Restarting", 204, 102, 0);
+            if (task.daemon != null and task.daemon.?.proc_exists() and task.stats.persist) {
+                // The child command hasn't been run but the parent task proc is waiting
+                return try util.colour_string("Restarting", 204, 102, 0);
+            }
+            const saved_procs = try taskproc.get_running_saved_procs(proc);
+            defer util.gpa.free(saved_procs);
+            if (saved_procs.len != 0) {
+                return try util.colour_string("Detached", 204, 102, 0);
+            }
         }
         return try util.colour_string("Stopped", 204, 0, 0);
     }

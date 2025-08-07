@@ -40,7 +40,7 @@ pub fn write_timed_logs(
                 const str_epoch_sep = std.fmt.allocPrint(util.gpa, "{d}|", .{epoch})
                     catch |err| return e.verbose_error(err, error.TaskFileFailedWrite);
                 defer util.gpa.free(str_epoch_sep);
-                line.appendSlice(try util.strdup(str_epoch_sep, error.TaskFileFailedWrite))
+                line.appendSlice(str_epoch_sep)
                     catch |err| return e.verbose_error(err, error.TaskFileFailedWrite);
                 new_line.* = false;
             }

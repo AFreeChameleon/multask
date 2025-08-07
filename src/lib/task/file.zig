@@ -8,6 +8,9 @@ const Task = t.Task;
 const TaskId = t.TaskId;
 
 const Stats = @import("./stats.zig").Stats;
+const r = @import("./resources.zig");
+const Resources = r.Resources;
+const JSON_Resources = r.JSON_Resources;
 
 const util = @import("../util.zig");
 const Pid = util.Pid;
@@ -16,14 +19,33 @@ const Lengths = util.Lengths;
 const e = @import("../error.zig");
 const Errors = e.Errors;
 
-const ReadProcess = struct {
+pub const ReadProcess = struct {
+    task: ProcessSection,
     pid: Pid,
-    starttime: u32,
-    children: []ProcessSection
+    starttime: u64,
+    children: []ProcessSection,
+
+    pub fn deinit(self: *ReadProcess) void {
+        util.gpa.free(self.children);
+    }
+
+    pub fn clone(self: *const ReadProcess) Errors!ReadProcess {
+        const proc = ReadProcess {
+            .task = ProcessSection {
+                .pid = self.task.pid,
+                .starttime = self.task.starttime
+            },
+            .pid = self.pid,
+            .starttime = self.starttime,
+            .children = util.gpa.dupe(ProcessSection, self.children)
+                catch |err| return e.verbose_error(err, error.FailedToSaveProcesses)
+        };
+        return proc;
+    }
 };
-const ProcessSection = struct {
+pub const ProcessSection = struct {
     pid: Pid,
-    starttime: u32,
+    starttime: u64,
 };
 const LogLineData = struct {
     time: i64,
@@ -46,10 +68,9 @@ pub const Files = struct {
     const file_list = .{
         "stdout",
         "stderr",
-        "processes",
-        "stats",
-        "usage",
-        "task_pid"
+        "processes.json",
+        "stats.json",
+        "resources.json",
     };
 
     pub fn init(task_id: TaskId) Errors!Self {
@@ -115,163 +136,35 @@ pub const Files = struct {
         return dir;
     }
 
-    /// Reads task's processes file.
-    /// path: .mult/tasks/task_id/processes
-    pub fn read_processes_file(self: *Self) Errors!ReadProcess {
-        try log.printdebug("Getting task processes file", .{});
-        var bracket_count: i32 = 0;
+    pub fn read_file(
+        self: *Self, comptime T: type
+    ) Errors!?T {
+        const name = comptime get_file_name_from_type(T);
 
-        var arena = std.heap.ArenaAllocator.init(util.gpa);
-        defer arena.deinit();
-        var children = std.ArrayList(ProcessSection).init(arena.allocator());
-        defer children.deinit();
-        var main_pid: util.Pid = 0;
-        var main_starttime: u32 = 0;
-        const processes_file = try self.get_file("processes");
-        defer processes_file.close();
+        const file = try self.get_file(name);
+        defer file.close();
 
-        var buf_reader = std.io.bufferedReader(processes_file.reader());
-        var reader = buf_reader.reader();
-        var buf: [Lengths.MEDIUM]u8 = std.mem.zeroes([Lengths.MEDIUM]u8);
-        var buf_fbs = std.io.fixedBufferStream(&buf);
-        while (
-            true
-        ) {
-            // this will get the <pid>:<starttime>
-            reader.streamUntilDelimiter(buf_fbs.writer(), ',', buf_fbs.buffer.len)
-                catch |err| switch (err) {
-                    error.NoSpaceLeft => break,
-                    error.EndOfStream => break,
-                    else => |inner_err| return e.verbose_error(
-                        inner_err, error.FailedToGetProcesses
-                    )
-                };
-            const it = buf_fbs.getWritten();
-            defer buf_fbs.reset();
-            if (it.len == 0) {
-                break;
-            }
+        try log.printdebug("Parsing file: {s}", .{name});
 
-            const section = try util.strdup(it, error.FailedToGetProcesses);
-            defer util.gpa.free(section);
-            if (section[0] == '(') {
-                bracket_count += 1;
-                const proc_section = try separate_process_section(section[1..]);
-                children.append(proc_section)
-                    catch |err| return e.verbose_error(
-                        err, error.FailedToGetProcesses
-                    );
-                continue;
-            }
-            if (section[section.len - 1] == ')') {
-                bracket_count -= 1;
-                continue;
-            }
-            // Main pid
-            if (bracket_count == 0) {
-                const proc_section = try separate_process_section(section);
-                main_pid = proc_section.pid;
-                main_starttime = proc_section.starttime;
-            } else {
-                const proc_section = try separate_process_section(section);
-                children.append(
-                    proc_section
-                ) catch |err| return e.verbose_error(
-                    err, error.FailedToGetProcesses
-                );
-            }
-        }
-        processes_file.seekTo(0)
-            catch |err| return e.verbose_error(err, error.FailedToGetProcesses);
-        return ReadProcess {
-            .pid = main_pid,
-            .starttime = main_starttime,
-            .children = util.gpa.dupe(ProcessSection, children.items)
-                catch |err| return e.verbose_error(
-                    err, error.FailedToGetProcesses
-                )
-        };
-    }
-
-
-    pub fn read_task_pid_file(self: *Self) Errors!Pid {
-        try log.printdebug("Reading task pid file...", .{});
-        const task_pid = try self.get_file("task_pid");
-        defer task_pid.close();
-        const file_stat = task_pid.stat()
-            catch |err| return e.verbose_error(err, error.FailedToReadTaskPid);
-        if (file_stat.size > Lengths.TINY) {
-            try log.printdebug("Pid is too large for buffer", .{});
-            return error.FailedToReadTaskPid;
+        const file_content = file.readToEndAlloc(util.gpa, 10240)
+            catch |err| return e.verbose_error(err, error.TaskFileFailedRead);
+        defer util.gpa.free(file_content);
+        if (file_content.len == 0) {
+            return null;
         }
 
-        // All this needs to do is read a pid string into a pid
-        const line = task_pid.readToEndAlloc(util.gpa, @intCast(file_stat.size))
-            catch |err| return e.verbose_error(err, error.FailedToReadTaskPid);
-        defer util.gpa.free(line);
-
-        const pid = std.fmt.parseInt(Pid, line, 10)
-            catch |err| return e.verbose_error(err, error.FailedToReadTaskPid);
-        task_pid.seekTo(0)
-            catch |err| return e.verbose_error(err, error.FailedToReadTaskPid);
-        return pid;
-    }
-
-    pub fn read_stats_file(self: *Self) Errors!Stats {
-        try log.printdebug("Getting task stats file", .{});
-
-        var stats = Stats {
-            .cwd = undefined,
-            .command = undefined,
-            .memory_limit = undefined,
-            .cpu_limit = undefined,
-            .persist = undefined
-        };
-
-        const stats_file = try self.get_file("stats");
-        defer stats_file.close();
-        stats_file.seekTo(0)
-            catch |err| return e.verbose_error(err, error.FailedToGetTaskStats);
-        const file_stat = stats_file.stat()
-            catch |err| return e.verbose_error(err, error.FailedToGetTaskStats);
-        if (file_stat.size > Lengths.HUGE) {
-            try log.printdebug("File is too large for buffer", .{});
-            return error.FailedToGetTaskStats;
+        var json = std.json.parseFromSlice(
+            T,
+            util.gpa,
+            file_content,
+            .{}
+        ) catch |err| return e.verbose_error(err, error.TaskFileFailedRead);
+        defer {
+            json.deinit();
         }
-        
+        const value: T = try json.value.clone();
 
-        const buf = stats_file.readToEndAlloc(util.gpa, file_stat.size)
-            catch |err| return e.verbose_error(err, error.FailedToGetTaskStats);
-        defer util.gpa.free(buf);
-        var stats_itr = std.mem.splitScalar(u8, buf, '\n');
-        var stats_idx: usize = 0;
-        while (stats_itr.next()) |val| {
-            switch (stats_idx) {
-                0 => {
-                    stats.cwd = try util.strdup(val, error.FailedToGetTaskStats);
-                },
-                1 => {
-                    stats.command = try util.strdup(val, error.FailedToGetTaskStats);
-                },
-                2 => {
-                    stats.memory_limit = std.fmt.parseInt(util.MemLimit, val, 10)
-                        catch |err| return e.verbose_error(err, error.FailedToGetTaskStats);
-                },
-                3 => {
-                    stats.cpu_limit = std.fmt.parseInt(util.CpuLimit, val, 10)
-                        catch |err| return e.verbose_error(err, error.FailedToGetTaskStats);
-                },
-                4 => {
-                    stats.persist = std.mem.eql(u8, val, "1");
-                },
-                else => {
-                    return error.FailedToGetTaskStats;
-                }
-            }
-            stats_idx += 1;
-        }
-
-        return stats;
+        return value;
     }
 
     fn filename_valid(comptime name: []const u8) bool {
@@ -286,6 +179,7 @@ pub const Files = struct {
     pub fn get_file(self: *Self, comptime name: []const u8) Errors!std.fs.File {
         // This is a runtime check which is bad, make this an enum or something
         if (!filename_valid(name)) return error.InvalidFile;
+        try log.printdebug("Getting file: {s}", .{name});
         var task_dir = try self.get_task_dir();
         defer task_dir.close();
         const file = task_dir.openFile(name, .{.mode = .read_write})
@@ -293,32 +187,48 @@ pub const Files = struct {
         return file;
     }
 
-    pub fn clear_file(self: *Self, comptime name: []const u8) Errors!void {
+    pub fn clear_file(self: *Self, comptime T: type) Errors!void {
+        const name = comptime get_file_name_from_type(T);
         // This is a runtime check which is bad, make this an enum or something
         if (!filename_valid(name)) return error.InvalidFile;
         const file = try self.get_file(name);
         defer file.close();
+        try log.printdebug("Clearing file: {s}", .{name});
         file.setEndPos(0)
             catch |err| return e.verbose_error(err, error.TaskFileFailedWrite);
         file.seekTo(0)
             catch |err| return e.verbose_error(err, error.TaskFileFailedWrite);
     }
 
-    pub fn write_stats_file(
+    fn get_file_name_from_type(comptime T: type) []const u8 {
+        return comptime switch (T) {
+            Stats => "stats.json",
+            ReadProcess => "processes.json",
+            JSON_Resources => "resources.json",
+            else => return error.TaskFileFailedRead
+        };
+    }
+
+    pub fn write_file(
         self: *Self,
-        stats: Stats
+        comptime T: type,
+        raw_data: T
     ) Errors!void {
-        try self.clear_file("stats");
-        const file = try self.get_file("stats");
+        const name = comptime get_file_name_from_type(T);
+
+        try log.printdebug("Writing task {s} file", .{name});
+
+        try self.clear_file(T);
+
+        const file = try self.get_file(name);
         defer file.close();
-        const stats_str = std.fmt.allocPrintZ(util.gpa, "{s}\n{s}\n{d}\n{d}\n{s}", .{
-            stats.cwd, stats.command, stats.memory_limit, stats.cpu_limit, if (stats.persist) "1" else "0"
-        }) catch |err| return e.verbose_error(err, error.FailedToSaveStats);
-        defer util.gpa.free(stats_str);
-        file.writeAll(std.mem.trimRight(u8, stats_str, &[1]u8{0}))
-            catch |err| return e.verbose_error(err, error.FailedToSaveStats);
-        file.seekTo(0)
-            catch |err| return e.verbose_error(err, error.FailedToSaveStats);
+        var data = if (@hasDecl(T, "to_json"))
+                try raw_data.to_json()
+            else
+                try raw_data.clone();
+        defer data.deinit();
+        std.json.stringify(data, .{}, file.writer())
+            catch |err| return e.verbose_error(err, error.MainFileFailedWrite);
     }
 
     pub fn delete_files(self: *Self) Errors!void {
@@ -377,12 +287,14 @@ pub const Files = struct {
             if (out_line == null) {
                 log_order.append(.StdErr)
                     catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
+                util.gpa.free(err_line.?);
                 err_line = null;
                 continue;
             }
             if (err_line == null) {
                 log_order.append(.StdOut)
                     catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
+                util.gpa.free(out_line.?);
                 out_line = null;
                 continue;
             }
@@ -391,10 +303,18 @@ pub const Files = struct {
             if (out_data.time < err_data.time) {
                 log_order.append(.StdOut)
                     catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
+
+                util.gpa.free(out_line.?);
+                out_data.deinit();
+
                 out_line = null;
             } else {
                 log_order.append(.StdErr)
                     catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
+
+                util.gpa.free(err_line.?);
+                err_data.deinit();
+
                 err_line = null;
             }
         }
@@ -419,7 +339,9 @@ pub const Files = struct {
             else
                 try get_log_line(&errfile);
             if (line == null) break;
+            defer util.gpa.free(line.?);
             const data = try get_data_from_line(line.?);
+            defer data.deinit();
             if (log_type == .StdOut) {
                 try log.printstdout("{s}", .{data.message});
             } else {
@@ -652,16 +574,5 @@ pub const Files = struct {
 
             std.time.sleep(100000); // 100ms
         }
-    }
-
-    pub fn set_task_pid(self: *Self) Errors!void {
-        try self.clear_file("task_pid");
-        const pid_str = std.fmt.allocPrintZ(util.gpa, "{d}", .{util.get_pid()})
-            catch |err| return e.verbose_error(err, error.TaskFileFailedCreate);
-        defer util.gpa.free(pid_str);
-        const task_pid = try self.get_file("task_pid");
-        defer task_pid.close();
-        _ = task_pid.writeAll(pid_str)
-            catch |err| return e.verbose_error(err, error.TaskFileFailedCreate);
     }
 };
