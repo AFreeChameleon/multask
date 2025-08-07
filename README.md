@@ -9,6 +9,9 @@
     A process manager for Linux, Mac, Windows & FreeBSD written in rust to simplify your developer environment.
   </p>
   <p align="center">
+    <a href="https://afreechameleon.github.io/multask-docs/">Docs</a>
+  </p>
+  <p align="center">
     Designed to organise projects which need processes running at the same time with flexible resource limits for scaling.
   </p>
 </div>
@@ -17,12 +20,22 @@
 
 For Linux, Mac & FreeBSD:
 ```
-curl -s "https://github.com/AFreeChameleon/multask-docs/blob/develop/install/scripts/linux.sh?raw=true" | bash
+curl -s "https://raw.githubusercontent.com/AFreeChameleon/multask-docs/refs/heads/master/install/scripts/linux.sh" | bash
+```
+
+For Mac:
+```
+curl -s "https://raw.githubusercontent.com/AFreeChameleon/multask-docs/refs/heads/master/install/scripts/osx.sh" | bash
+```
+
+For FreeBSD:
+```
+curl -s "https://raw.githubusercontent.com/AFreeChameleon/multask-docs/refs/heads/master/install/scripts/freebsd.sh" | bash
 ```
 
 For Windows:
 ```
-powershell -c "irm https://github.com/AFreeChameleon/multask-docs/blob/develop/install/scripts/win.ps1?raw=true|iex"
+powershell -c "irm https://raw.githubusercontent.com/AFreeChameleon/multask-docs/refs/heads/master/install/scripts/win.ps1|iex"
 ```
 
 ## Getting Started
@@ -35,6 +48,7 @@ options:
         -m [num]    Set maximum memory limit e.g 4GB
         -c [num]    Set limit cpu usage by percentage e.g 20
         -i          Interactive mode (can use aliased commands on your environment)
+        -p          Persist mode, the command will restart when finished with a wait of 2 seconds
 
     stop    Stops a process. [value] must be a task id e.g 0
 
@@ -42,11 +56,13 @@ options:
         -m [num]    Set maximum memory limit e.g 4GB
         -c [num]    Set maximum cpu percentage limit e.g 20
         -i          Interactive mode (can use aliased commands on your environment)
+        -p          Persist mode, the command will restart when finished with a wait of 2 seconds
 
     restart Restarts a process. [value] must be a task id e.g 0
         -m [num]    Set maximum memory limit e.g 4GB
         -c [num]    Set maximum cpu percentage limit e.g 20
         -i          Interactive mode (can use aliased commands on your environment)
+        -p          Persist mode, the command will restart when finished with a wait of 2 seconds
 
     ls      Shows all processes.
         -w          Provides updating tables every 2 seconds.
