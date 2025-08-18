@@ -22,6 +22,7 @@ const util = @import("./lib/util.zig");
 const taskproc = @import("./lib/task/process.zig");
 const Process = taskproc.Process;
 const ExistingLimits = taskproc.ExistingLimits;
+const Cpu = taskproc.Cpu;
 
 const taskenv = @import("./lib/task/env.zig");
 const procenv = @import("./lib/windows/env.zig");
@@ -33,6 +34,7 @@ var err_handle_r: libc.HANDLE = std.mem.zeroes(libc.HANDLE);
 var err_handle_w: libc.HANDLE = std.mem.zeroes(libc.HANDLE);
 
 pub fn main() !void {
+    // log.enable_debug();
     const args = try std.process.argsAlloc(util.gpa);
     defer std.process.argsFree(util.gpa, args);
 
@@ -69,8 +71,9 @@ pub fn main() !void {
     }
 
     task.daemon = try Process.init(&task, util.get_pid(), null);
+    task.resources.?.meta = Cpu.init();
     while (true) {
-        try set_job_limits(job_handle, task.stats.memory_limit, task.stats.cpu_limit);
+        try set_job_limits(job_handle, task.stats.?.memory_limit, task.stats.?.cpu_limit);
         // const thread_handle = libc.GetCurrentThread();
         const process_handle = libc.GetCurrentProcess();
         if (libc.AssignProcessToJobObject(job_handle, process_handle) == 0) {
@@ -78,7 +81,7 @@ pub fn main() !void {
             return error.ForkFailed;
         }
 
-        const proc_info = try run_command(task.stats.command, env_block);
+        const proc_info = try run_command(task.stats.?.command, task.stats.?.cwd, env_block);
         defer {
             _ = libc.CloseHandle(proc_info.hProcess);
             _ = libc.CloseHandle(proc_info.hThread);
@@ -89,11 +92,14 @@ pub fn main() !void {
 
         try monitor_process(&task, job_handle);
         try taskproc.kill_all(&task.process.?);
-        if (!task.stats.persist) {
+        if (!task.stats.?.persist) {
             break;
         }
         // Persisting with a timeout of 2 seconds
         std.Thread.sleep(2_000_000_000);
+    }
+    if (task.resources.?.meta != null) {
+        task.resources.?.meta.?.deinit();
     }
 }
 
@@ -317,7 +323,7 @@ fn create_job(
     return job;
 }
 
-fn run_command(command: []const u8, env_block: [:0]u8) e.Errors!libc.PROCESS_INFORMATION {
+fn run_command(command: []const u8, cwd: []const u8, env_block: [:0]u8) e.Errors!libc.PROCESS_INFORMATION {
     var saAttr = std.mem.zeroes(libc.SECURITY_ATTRIBUTES);
     saAttr.nLength = @sizeOf(libc.SECURITY_ATTRIBUTES);
     saAttr.bInheritHandle = 1;
@@ -353,12 +359,17 @@ fn run_command(command: []const u8, env_block: [:0]u8) e.Errors!libc.PROCESS_INF
         catch |err| return e.verbose_error(err, error.CommandFailed);
     defer util.gpa.free(proc_string);
 
+    const cwd_z = std.fmt.allocPrintZ(util.gpa, "{s}", .{cwd})
+        catch |err| return e.verbose_error(err, error.ForkFailed);
+    defer util.gpa.free(cwd_z);
+
+
     if (libc.CreateProcessA(
         null, proc_string.ptr, null,
         null, 1,
         0,
-        env_block.ptr,
-        null, @as([*c]libc.struct__STARTUPINFOA, @ptrCast(&si.StartupInfo)),
+        env_block.ptr, cwd_z.ptr,
+        @as([*c]libc.struct__STARTUPINFOA, @ptrCast(&si.StartupInfo)),
         @as([*c]libc.PROCESS_INFORMATION, @ptrCast(&proc_info))
     ) == 0) {
         try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
@@ -382,14 +393,14 @@ fn monitor_process(
     }
 
     var existing_limits: ExistingLimits = ExistingLimits {
-        .mem = task.stats.memory_limit,
-        .cpu = task.stats.cpu_limit
+        .mem = task.stats.?.memory_limit,
+        .cpu = task.stats.?.cpu_limit
     };
 
     // Seeking to end to truncate logs
-    const outfile = try task.files.get_file("stdout");
+    const outfile = try task.files.?.get_file("stdout");
     defer outfile.close();
-    const errfile = try task.files.get_file("stderr");
+    const errfile = try task.files.?.get_file("stderr");
     defer errfile.close();
     outfile.seekFromEnd(0)
         catch |err| return e.verbose_error(err, error.CommandFailed);
@@ -453,25 +464,25 @@ fn monitor_process(
                 break;
             }
             
-            if (task.stats.memory_limit != 0) {
-                task.process.?.memory_limit = task.stats.memory_limit;
+            if (task.stats.?.memory_limit != 0) {
+                task.process.?.memory_limit = task.stats.?.memory_limit;
                 // Manual check for memory limit because windows' mem limit doesn't react quick and leaves zombie processes
                 try taskproc.check_memory_limit_within_limit(&task.process.?);
             }
             try task.process.?.monitor_stats();
             monitor_time = current_time;
 
-            const stats = try task.files.read_file(Stats);
+            const stats = try task.files.?.read_file(Stats);
             if (stats != null) {
-                task.stats = stats.?;
+                task.stats.? = stats.?;
             }
             
             // Proc limits
-            if (task.stats.memory_limit != existing_limits.mem or task.stats.cpu_limit != existing_limits.cpu) {
-                task.process.?.memory_limit = task.stats.memory_limit;
-                try set_job_limits(job_handle, task.stats.memory_limit, task.stats.cpu_limit);
-                existing_limits.mem = task.stats.memory_limit;
-                existing_limits.cpu = task.stats.cpu_limit;
+            if (task.stats.?.memory_limit != existing_limits.mem or task.stats.?.cpu_limit != existing_limits.cpu) {
+                task.process.?.memory_limit = task.stats.?.memory_limit;
+                try set_job_limits(job_handle, task.stats.?.memory_limit, task.stats.?.cpu_limit);
+                existing_limits.mem = task.stats.?.memory_limit;
+                existing_limits.cpu = task.stats.?.cpu_limit;
             }
         }
         if (monitor_time + 1_000_000_000 - current_time < 1_000_000) {

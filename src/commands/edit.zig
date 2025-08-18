@@ -58,15 +58,15 @@ pub fn run(argv: [][]u8) Errors!void {
             &new_task
         );
         if (flags.memory_limit != 0) {
-            new_task.stats.memory_limit = flags.memory_limit;
+            new_task.stats.?.memory_limit = flags.memory_limit;
         }
         if (flags.cpu_limit != 0) {
-            new_task.stats.cpu_limit = flags.cpu_limit;
+            new_task.stats.?.cpu_limit = flags.cpu_limit;
         }
         if (flags.monitoring != null) {
-            new_task.stats.monitoring = flags.monitoring.?;
+            new_task.stats.?.monitoring = flags.monitoring.?;
         }
-        try new_task.files.write_file(Stats, new_task.stats);
+        try new_task.files.?.write_file(Stats, new_task.stats.?);
 
         if (flags.namespace != null) {
             // Need a clone because putting it in the namespaces

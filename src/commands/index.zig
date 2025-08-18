@@ -24,10 +24,10 @@ pub fn run_commands(argv: [][]u8) Errors!void {
         try help.run();
     } else if (std.mem.eql(u8, command, "version") or std.mem.eql(u8, command, "-v")) {
         try version.run();
-    } else if (std.mem.eql(u8, command, "create")) {
+    } else if (std.mem.eql(u8, command, "create") or std.mem.eql(u8, command, "c")) {
         // Removing the exe name and the initial command
         try create.run(argv[2..]);
-    } else if (std.mem.eql(u8, command, "start")) {
+    } else if (std.mem.eql(u8, command, "start") or std.mem.eql(u8, command, "s")) {
         try start.run(argv[2..]);
     } else if (std.mem.eql(u8, command, "stop")) {
         try stop.run(argv[2..]);

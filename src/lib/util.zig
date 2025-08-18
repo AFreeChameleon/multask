@@ -17,6 +17,12 @@ const e = @import("./error.zig");
 const Errors = e.Errors;
 
 pub const gpa = if (builtin.is_test) std.testing.allocator else std.heap.c_allocator;
+// const heap = std.heap.DebugAllocator(.{
+//     .safety = true,
+//     .retain_metadata = true,
+//     .verbose_log = false,
+//     .never_unmap = true
+// }){.backing_allocator = gpa};
 
 pub const Pid = switch (builtin.target.os.tag) {
     .linux => i32,
@@ -151,7 +157,7 @@ pub fn get_readable_memory(bytes: u64) Errors![]const u8 {
 
 /// Colouring strings with ANSI escape codes
 pub fn colour_string(str: []const u8, r: u8, g: u8, b: u8) Errors![]const u8 {
-    const final_str = std.fmt.allocPrint(
+    const final_str: []u8 = std.fmt.allocPrint(
         gpa,
         "\x1B[38;2;{d};{d};{d}m{s}\x1B[0m",
         .{r, g, b, str}
@@ -263,9 +269,7 @@ pub const TaskArgs = struct {
             util.gpa.free(self.ids.?);
         }
         if (self.namespaces != null) {
-            for (self.namespaces.?) |ns| {
-                util.gpa.free(ns);
-            }
+            // Don't free each slice because the args are freed at the end of the program
             util.gpa.free(self.namespaces.?);
         }
     }
@@ -279,7 +283,6 @@ pub fn parse_cmd_vals(vals: [][]u8) Errors!TaskArgs {
     var tasks = try TaskManager.get_tasks();
     defer tasks.deinit();
 
-    // Starting from 1 to ignore the command e.g. "start"
     for (vals) |arg| {
         if (is_number(arg)) {
             const id = std.fmt.parseInt(TaskId, arg, 10)
@@ -452,12 +455,12 @@ pub fn save_stats(task: *t.Task, flags: *const ForkFlags) Errors!void {
     });
 
     // Have to refresh stats
-    task.stats.cpu_limit = flags.cpu_limit;
-    task.stats.memory_limit = flags.memory_limit;
-    task.stats.persist = flags.persist;
-    var stats_clone = try task.stats.clone();
+    task.stats.?.cpu_limit = flags.cpu_limit;
+    task.stats.?.memory_limit = flags.memory_limit;
+    task.stats.?.persist = flags.persist;
+    var stats_clone = try task.stats.?.clone();
     defer stats_clone.deinit();
-    try task.files.write_file(Stats, stats_clone);
+    try task.files.?.write_file(Stats, stats_clone);
 }
 
 pub fn deinit_hashmap(comptime T: type, hash: T) void {

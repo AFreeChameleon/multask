@@ -19,22 +19,36 @@ const procstats = @import("./stats.zig");
 pub const MacosCpu = struct {
     const Self = @This();
 
-    pub var usage_stats: std.AutoHashMap(Pid, SysTimes) =
-        std.AutoHashMap(Pid, SysTimes).init(util.gpa);
+    systimes: std.AutoHashMap(Pid, SysTimes),
+    time_total: u64,
 
-    pub var time_total: u64 = 0;
+    pub fn init() Self {
+        return Self {
+            .systimes = std.AutoHashMap(Pid, SysTimes).init(util.gpa),
+            .time_total = 0
+        };
+    }
 
-    pub fn deinit() void {
-        usage_stats.clearAndFree();
-        usage_stats.deinit();
+    pub fn deinit(self: *Self) void {
+        self.systimes.clearAndFree();
+        self.systimes.deinit();
+    }
+
+    pub fn clone(self: *Self) Errors!Self {
+        return Self {
+            .systimes = self.systimes.clone()
+                catch |err| return e.verbose_error(err, error.FailedToGetCpuStats),
+            .time_total = self.time_total
+        };
     }
 
     pub fn get_cpu_usage(
+        self: *Self,
         process: *MacosProcess
     ) Errors!f64 {
-        const old_times = usage_stats.get(process.pid);
+        const old_times = self.systimes.get(process.pid);
         if (old_times == null) {
-            usage_stats.put(process.pid, SysTimes {
+            self.systimes.put(process.pid, SysTimes {
                 .utime = 0,
                 .stime = 0,
             }) catch |err| return e.verbose_error(err, error.FailedToGetCpuUsage);
@@ -59,7 +73,7 @@ pub const MacosCpu = struct {
             const usage = (
                 @as(f64, @floatFromInt(total_time_diff_ns)) / macutil.TIME_INTERVAL
             ) * 100.0;
-            usage_stats.put(process.pid, SysTimes {
+            self.systimes.put(process.pid, SysTimes {
                 .utime = taskinfo.pti_total_user,
                 .stime = taskinfo.pti_total_system,
             }) catch |err| return e.verbose_error(err, error.FailedToGetCpuUsage);
@@ -69,7 +83,7 @@ pub const MacosCpu = struct {
         }
     }
 
-    pub fn update_time_total(process: *MacosProcess) Errors!void {
+    pub fn update_time_total(self: *Self, process: *MacosProcess) Errors!void {
         const taskinfo = try procstats.get_task_stats(process.pid);
 
         const user_time_ns = macutil.mach_ticks_to_nanoseconds(
@@ -78,6 +92,6 @@ pub const MacosCpu = struct {
         const system_time_ns = macutil.mach_ticks_to_nanoseconds(
             taskinfo.pti_total_system
         );
-        time_total = user_time_ns + system_time_ns;
+        self.time_total = user_time_ns + system_time_ns;
     }
 };

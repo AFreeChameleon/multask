@@ -45,7 +45,6 @@ pub fn run(argv: [][]u8) Errors!void {
         flags.persist,
         flags.monitoring
     );
-    defer new_task.deinit();
 
     if (comptime builtin.target.os.tag != .windows) {
         const unix_fork = @import("../lib/unix/fork.zig");
@@ -65,6 +64,7 @@ pub fn run(argv: [][]u8) Errors!void {
             .persist = flags.persist,
             .update_envs = true,
         });
+        defer new_task.deinit();
     }
 
     try log.printsucc("Task started with id {d}.", .{new_task.id});
@@ -119,9 +119,7 @@ fn parse_cmd_args(argv: [][]u8) Errors!Flags {
     };
 
     const vals = try parse.parse_args(argv, pflags);
-    defer {
-        util.gpa.free(vals);
-    }
+    defer util.gpa.free(vals);
 
     for (pflags) |flag| {
         if (!flag.exists) {

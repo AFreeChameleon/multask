@@ -47,14 +47,17 @@ pub fn run(argv: [][]u8) Errors!void {
         return error.ParsingCommandArgsFailed;
     }
 
+    if (flags.update_envs) {
+        try log.printinfo("Updating environment variables...", .{});
+    }
+
     for (flags.args.ids.?) |id| {
         var new_task = Task.init(id);
-        defer new_task.deinit();
         try TaskManager.get_task_from_id(
             &new_task
         );
         if (flags.monitoring != null) {
-            new_task.stats.monitoring = flags.monitoring.?;
+            new_task.stats.?.monitoring = flags.monitoring.?;
         }
 
         if (new_task.process != null and try taskproc.any_procs_exist(&new_task.process.?)) {
@@ -82,6 +85,7 @@ pub fn run(argv: [][]u8) Errors!void {
                 .persist = flags.persist,
                 .update_envs = flags.update_envs,
             });
+            defer new_task.deinit();
         }
 
         try log.printsucc("Task restarted with id {d}.", .{new_task.id});

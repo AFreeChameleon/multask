@@ -46,19 +46,23 @@ pub fn run(argv: [][]u8) Errors!void {
         return error.ParsingCommandArgsFailed;
     }
 
+    if (flags.update_envs) {
+        try log.printinfo("Updating environment variables...", .{});
+    }
+
     for (flags.args.ids.?) |id| {
         // Files are closed in the forked process
         var new_task = Task.init(id);
-        defer new_task.deinit();
         try TaskManager.get_task_from_id(
             &new_task
         );
         if (flags.monitoring != null) {
-            new_task.stats.monitoring = flags.monitoring.?;
+            new_task.stats.?.monitoring = flags.monitoring.?;
         }
 
         if (new_task.process != null and new_task.process.?.proc_exists()) {
-            return error.TaskAlreadyRunning;
+            try log.printinfo("Task {d} is already running.", .{id});
+            continue;
         }
         if (comptime builtin.target.os.tag != .windows) {
             const unix_fork = @import("../lib/unix/fork.zig");
@@ -78,6 +82,7 @@ pub fn run(argv: [][]u8) Errors!void {
                 .persist = flags.persist,
                 .update_envs = flags.update_envs
             });
+            defer new_task.deinit();
         }
 
         try log.printsucc("Task started with id {d}.", .{new_task.id});

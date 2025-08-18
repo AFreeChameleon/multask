@@ -65,7 +65,7 @@ pub const WindowsProcess = struct {
         };
         if (data != null) {
             proc.starttime = data.?.starttime;
-        } else if (proc.proc_exists()) {
+        } else if (proc.pid_exists()) {
             proc.starttime = try proc.get_starttime();
         }
         return proc;
@@ -78,6 +78,18 @@ pub const WindowsProcess = struct {
     }
 
     pub fn proc_exists(self: *const Self) bool {
+        if (!self.pid_exists()) {
+            return false;
+        }
+        const starttime = self.get_starttime()
+            catch return false; 
+        if (starttime != self.starttime) {
+            return false;
+        }
+        return true;
+    }
+
+    fn pid_exists(self: *const Self) bool {
         const proc_handle = libc.OpenProcess(libc.PROCESS_QUERY_INFORMATION, 1, self.pid);
         if (proc_handle == null) {
             return false;
@@ -98,7 +110,6 @@ pub const WindowsProcess = struct {
         var keep_running = false;
         
         const related_procs = try self.get_related_procs();
-
         if (related_procs.len > 0 or self.proc_exists()) {
             keep_running = true;
         }
@@ -106,7 +117,7 @@ pub const WindowsProcess = struct {
         
         try taskproc.check_memory_limit_within_limit(self);
         try taskproc.save_files(self);
-        WindowsCpu.update_time_total();
+        self.task.resources.?.meta.?.update_time_total();
         if (!keep_running) {
             try taskproc.kill_all(self);
         }
@@ -212,13 +223,23 @@ pub const WindowsProcess = struct {
         } else {
             try self.get_children(&related_procs, self.pid);
         }
-        if (self.task.stats.monitoring == Monitoring.Deep) {
+
+        if (self.task.daemon == null) {
+            return error.FailedToGetRelatedProcs;
+        }
+
+        if (self.task.stats.?.monitoring == Monitoring.Deep) {
+            related_procs.append(self.*)
+                catch |err| return e.verbose_error(err, error.FailedToGetRelatedProcs);
+            related_procs.append(self.task.daemon.?)
+                catch |err| return e.verbose_error(err, error.FailedToGetRelatedProcs);
             const procs = try self.search_related_procs(related_procs.items);
             related_procs.appendSlice(procs)
                 catch |err| return e.verbose_error(err, error.FailedToGetRelatedProcs);
         }
-        return related_procs.toOwnedSlice()
-            catch |err| return e.verbose_error(err, error.FailedToGetProcessChildren);
+        const unique_procs = try taskproc.filter_dupe_and_self_procs(self, related_procs.items);
+
+        return unique_procs;
     }
 
     pub fn kill_all(self: *Self) Errors!void {
@@ -489,7 +510,7 @@ pub const WindowsProcess = struct {
         return "";
     }
 
-    pub fn get_starttime(self: *Self) Errors!u64 {
+    pub fn get_starttime(self: *const Self) Errors!u64 {
         const stats = try self.get_stats();
         return stats[0];
     }

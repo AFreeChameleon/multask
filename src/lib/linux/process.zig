@@ -78,6 +78,7 @@ pub const LinuxProcess = struct {
         const procExists = proc.proc_exists();
         if (procExists) {
             const stats = try ProcFs.get_process_stats(proc.pid);
+
             defer stats.deinit();
 
             if (data != null) {
@@ -103,6 +104,31 @@ pub const LinuxProcess = struct {
         if (self.children != null) {
             util.gpa.free(self.children.?);
         }
+    }
+
+    pub fn clone(self: *Self, taskptr: ?*Task) Errors!LinuxProcess {
+        var new_proc: LinuxProcess = undefined;
+        new_proc.pid = self.pid;
+        new_proc.sid = self.sid;
+        new_proc.pgrp = self.pgrp;
+        new_proc.starttime = self.starttime;
+        if (taskptr != null) {
+            new_proc.task = taskptr.?;
+        } else {
+            new_proc.task = self.task;
+        }
+
+        new_proc.memory_limit = self.memory_limit;
+        if (self.children != null) {
+            var new_children = util.gpa.alloc(LinuxProcess, self.children.?.len)
+                catch |err| return e.verbose_error(err, error.FailedToGetProcessChildren);
+            for (self.children.?, 0..) |*child, i| {
+                new_children[i] = try child.clone(taskptr);
+            }
+        } else {
+            new_proc.children = null;
+        }
+        return new_proc;
     }
 
     pub fn monitor_stats(
@@ -132,7 +158,7 @@ pub const LinuxProcess = struct {
         try taskproc.check_memory_limit_within_limit(self);
 
         try taskproc.save_files(self);
-        try LinuxCpu.update_time_total();
+        try self.task.resources.?.meta.?.update_time_total();
         if (!keep_running) {
             try taskproc.kill_all(self);
         }
@@ -146,7 +172,7 @@ pub const LinuxProcess = struct {
         // should I do that? what if there are multiple child processes running alongside each other?
         // don't do it because I can just check saved processes and add it
         // to the children array and save them
-        var related_procs = std.ArrayList(Self).init(util.gpa);
+        var related_procs = std.ArrayList(LinuxProcess).init(util.gpa);
         defer related_procs.deinit();
         if (self.proc_exists()) {
             try self.get_children(&related_procs, self.pid);
@@ -182,7 +208,7 @@ pub const LinuxProcess = struct {
             return error.FailedToGetRelatedProcs;
         }
 
-        if (self.task.stats.monitoring == Monitoring.Deep) {
+        if (self.task.stats.?.monitoring == Monitoring.Deep) {
             related_procs.append(self.*)
                 catch |err| return e.verbose_error(err, error.FailedToGetRelatedProcs);
             related_procs.append(self.task.daemon.?)
@@ -216,7 +242,11 @@ pub const LinuxProcess = struct {
     /// More info, use `man proc` and go to /proc/pid/comm
     pub fn get_exe(self: *Self) Errors![]const u8 {
         const content = try ProcFs.read_file(self.pid, ProcFs.FileType.Comm);
-        return std.mem.trimRight(u8, content, &[2]u8{0, '\n'});
+        defer util.gpa.free(content);
+        return try util.strdup(
+            std.mem.trimRight(u8, content, &[2]u8{0, '\n'}),
+            error.FailedToGetProcessComm
+        );
     }
 
 

@@ -4,7 +4,6 @@ const e = @import("../error.zig");
 const Errors = e.Errors;
 
 const util = @import("../util.zig");
-
 const FlagType = enum(u2){
     value,
     static
@@ -59,6 +58,9 @@ pub fn parse_args(args: [][]u8, flags: []Flag) Errors![][]u8 {
                 if (res != null) {
                     capture_mode = res.?.capture_mode;
                     capturing = res.?.arg_char;
+                } else {
+                    values.append(arg)
+                        catch |err| return e.verbose_error(err, error.ParsingCommandArgsFailed);
                 }
                 continue;
             // Triggering the -- as an argument to make anything else after an arg
@@ -168,8 +170,10 @@ test "Parsing -a which exists" {
     defer util.gpa.free(args1);
     try args.append(args1);
 
-    _ = try parse_args(args.items, flags);
+    const vals = try parse_args(args.items, flags);
+    defer util.gpa.free(vals);
 
+    try expect(vals.len == 0);
     try expect(flags[0].exists);
 }
 
@@ -189,11 +193,12 @@ test "Parsing -b which does not exist to get InvalidOption" {
     defer util.gpa.free(args1);
     try args.append(args1);
 
-    _ = parse_args(args.items, flags) catch |err| switch (err) {
+    const vals = parse_args(args.items, flags) catch |err| switch (err) {
         error.InvalidOption => return,
         else => return err
     };
-    try expect(false);
+    defer util.gpa.free(vals);
+    try expect(vals.len == 0);
 }
 
 test "Parsing -a with a value" {
@@ -359,6 +364,7 @@ test "Parsing -a -b with a value" {
     try args.append(args3);
 
     const vals = try parse_args(args.items, flags);
+    defer util.gpa.free(vals);
     try expect(flags[0].exists);
     try expect(std.mem.eql(u8, flags[1].value.?, "testval"));
     try expect(vals.len == 0);
@@ -385,4 +391,27 @@ test "Parsing only values" {
     try expect(vals.len == 2);
     try expect(std.mem.eql(u8, vals[0], "val1"));
     try expect(std.mem.eql(u8, vals[1], "val 2"));
+}
+
+test "Parsing fake arguments" {
+    std.debug.print("Parsing fake arguments\n", .{});
+    const flags = try util.gpa.alloc(Flag, 0);
+    defer util.gpa.free(flags);
+
+    var args = std.ArrayList([]u8).init(util.gpa);
+    defer args.deinit();
+    const args1 = try std.fmt.allocPrint(util.gpa, "--fake=value", .{});
+    defer util.gpa.free(args1);
+    try args.append(args1);
+
+    const args2 = try std.fmt.allocPrint(util.gpa, "regular-arg", .{});
+    defer util.gpa.free(args2);
+    try args.append(args2);
+
+    const vals = try parse_args(args.items, flags);
+    defer util.gpa.free(vals);
+
+    try expect(vals.len == 2);
+    try expect(std.mem.eql(u8, vals[0], "--fake=value"));
+    try expect(std.mem.eql(u8, vals[1], "regular-arg"));
 }

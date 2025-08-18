@@ -31,10 +31,6 @@ const ChildProcess = std.process.Child;
 
 pub fn run_daemon(task: *Task, flags: ForkFlags) e.Errors!void {
     try util.save_stats(task, &flags);
-    var envs = try taskproc.get_envs(task, flags.update_envs);
-    defer envs.deinit();
-    try taskenv.add_multask_taskid_to_map(&envs, task.id);
-
     // Set this to false for dev purposes
     if (true) {
         const process_id = libc.fork();
@@ -65,10 +61,17 @@ pub fn run_daemon(task: *Task, flags: ForkFlags) e.Errors!void {
             libc.exit(0);
         }
     }
+    defer task.deinit();
 
+    var envs = try taskproc.get_envs(task, flags.update_envs);
+    defer envs.deinit();
+    try taskenv.add_multask_taskid_to_map(&envs, task.id);
+
+    task.resources.?.meta = Cpu.init();
     task.daemon = try Process.init(task, util.get_pid(), null);
+
     while (true) {
-        var child = try run_command(task.stats.command, flags.interactive, envs);
+        var child = try run_command(task.stats.?.command, task.stats.?.cwd, flags.interactive, envs);
         errdefer _ = child.kill() catch {
             std.process.exit(1);
         };
@@ -85,7 +88,6 @@ pub fn run_daemon(task: *Task, flags: ForkFlags) e.Errors!void {
         // Persisting with a timeout of 2 seconds
         std.time.sleep(2_000_000_000);
     }
-    Cpu.deinit();
 }
 
 fn monitor_process(
@@ -107,9 +109,9 @@ fn monitor_process(
     defer poller.deinit();
 
     // Seeking to end to truncate logs
-    const outfile = try task.files.get_file("stdout");
+    const outfile = try task.files.?.get_file("stdout");
     defer outfile.close();
-    const errfile = try task.files.get_file("stderr");
+    const errfile = try task.files.?.get_file("stderr");
     defer errfile.close();
     outfile.seekFromEnd(0)
         catch |err| return e.verbose_error(err, error.CommandFailed);
@@ -140,8 +142,8 @@ fn monitor_process(
             catch |err| return e.verbose_error(err, error.CommandFailed)
     ) {
         const existing_limits: ExistingLimits = ExistingLimits {
-            .mem = task.stats.memory_limit,
-            .cpu = task.stats.cpu_limit
+            .mem = task.stats.?.memory_limit,
+            .cpu = task.stats.?.cpu_limit
         };
         const stdout_buffer = util.gpa.alloc(u8, poller.fifo(.stdout).readableLength())
             catch |err| return e.verbose_error(err, error.CommandFailed);
@@ -196,17 +198,17 @@ fn monitor_process(
             if (cpu_times == null) {
                 try task.process.?.monitor_stats();
                 // Refresh process stats
-                const stats = try task.files.read_file(Stats);
+                const stats = try task.files.?.read_file(Stats);
                 if (stats == null) {
                     return error.FailedToGetTaskStats;
                 }
-                task.stats.deinit();
+                task.stats.?.deinit();
                 task.stats = stats.?;
-                if (task.stats.memory_limit != existing_limits.mem) {
-                    try task.process.?.limit_memory(task.stats.memory_limit);
+                if (task.stats.?.memory_limit != existing_limits.mem) {
+                    try task.process.?.limit_memory(task.stats.?.memory_limit);
                 }
-                if (task.stats.cpu_limit != existing_limits.cpu) {
-                    cpu_times = get_cpu_limit_times(task.stats.cpu_limit);
+                if (task.stats.?.cpu_limit != existing_limits.cpu) {
+                    cpu_times = get_cpu_limit_times(task.stats.?.cpu_limit);
                 }
             } else {
                 if (cpu_sleeping) {
@@ -215,19 +217,19 @@ fn monitor_process(
                     try task.process.?.monitor_stats();
 
                     // Refresh process stats
-                    const stats = try task.files.read_file(Stats);
+                    const stats = try task.files.?.read_file(Stats);
                     if (stats == null) {
                         return error.FailedToGetTaskStats;
                     }
-                    task.stats.deinit();
+                    task.stats.?.deinit();
                     task.stats = stats.?;
-                    if (task.stats.memory_limit != existing_limits.mem) {
-                        try log.printdebug("Refresh lim {d} {d}", .{existing_limits.mem, task.stats.memory_limit});
-                        try task.process.?.limit_memory(task.stats.memory_limit);
+                    if (task.stats.?.memory_limit != existing_limits.mem) {
+                        try log.printdebug("Refresh lim {d} {d}", .{existing_limits.mem, task.stats.?.memory_limit});
+                        try task.process.?.limit_memory(task.stats.?.memory_limit);
                     }
-                    if (task.stats.cpu_limit != existing_limits.cpu) {
-                        try log.printdebug("CPU Refresh lim {d} {d}", .{existing_limits.cpu, task.stats.cpu_limit});
-                        cpu_times = get_cpu_limit_times(task.stats.cpu_limit);
+                    if (task.stats.?.cpu_limit != existing_limits.cpu) {
+                        try log.printdebug("CPU Refresh lim {d} {d}", .{existing_limits.cpu, task.stats.?.cpu_limit});
+                        cpu_times = get_cpu_limit_times(task.stats.?.cpu_limit);
                     }
 
                     try task.process.?.set_all_status(.Active);
@@ -247,7 +249,12 @@ fn monitor_process(
     try log.printdebug("No more saved processes are alive.", .{});
 }
 
-fn run_command(command: []const u8, interactive: bool, envs: std.process.EnvMap) e.Errors!ChildProcess {
+fn run_command(
+    command: []const u8,
+    cwd: []const u8,
+    interactive: bool,
+    envs: std.process.EnvMap
+) e.Errors!ChildProcess {
     var build_args = std.ArrayList([]const u8).init(util.gpa);
     defer build_args.deinit();
     const shell_path = try util.get_shell_path();
@@ -270,6 +277,7 @@ fn run_command(command: []const u8, interactive: bool, envs: std.process.EnvMap)
     child_process.stdout_behavior = .Pipe;
     child_process.stderr_behavior = .Pipe;
     child_process.stdin_behavior = .Pipe;
+    child_process.cwd = cwd;
     child_process.spawn()
         catch |err| return e.verbose_error(err, error.CommandFailed);
     return child_process;

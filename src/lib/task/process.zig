@@ -65,7 +65,7 @@ pub fn save_files(proc: *Process) Errors!void {
 
 fn save_processes(proc: *Process) Errors!void {
     try log.printdebug("Saving processes", .{});
-    try proc.task.files.clear_file(ReadProcess);
+    try proc.task.files.?.clear_file(ReadProcess);
     var children_procs = util.gpa.alloc(
         ReadProcess,
         if (proc.children == null) 0 else proc.children.?.len
@@ -83,16 +83,19 @@ fn save_processes(proc: *Process) Errors!void {
     var read_proc = ReadProcess.init(proc, task_proc, children_procs);
     defer read_proc.deinit();
 
-    try proc.task.files.write_file(ReadProcess, read_proc);
+    try proc.task.files.?.write_file(ReadProcess, read_proc);
 }
 
 fn save_resources(proc: *Process) Errors!void {
+    if (proc.task.resources.?.meta == null) {
+        return error.FailedToGetProcesses;
+    }
     try log.printdebug("Saving resources", .{});
-    try proc.task.files.clear_file(JSON_Resources);
+    try proc.task.files.?.clear_file(JSON_Resources);
     var resources = Resources.init();
     defer resources.deinit();
     if (proc.proc_exists()) {
-        const self_usage = try Cpu.get_cpu_usage(proc);
+        const self_usage = try proc.task.resources.?.meta.?.get_cpu_usage(proc);
         resources.cpu.put(proc.pid, self_usage)
             catch |err| return e.verbose_error(err, error.FailedToGetProcesses);
     }
@@ -100,7 +103,7 @@ fn save_resources(proc: *Process) Errors!void {
     if (proc.children != null) {
         for (proc.children.?) |*child| {
             if (child.proc_exists()) {
-                const usage = try Cpu.get_cpu_usage(child);
+                const usage = try proc.task.resources.?.meta.?.get_cpu_usage(child);
                 resources.cpu.put(child.pid, usage)
                     catch |err| return e.verbose_error(err, error.FailedToGetProcesses);
             }
@@ -109,7 +112,7 @@ fn save_resources(proc: *Process) Errors!void {
 
     const json_resources = try resources.to_json();
     defer json_resources.deinit();
-    try proc.task.files.write_file(JSON_Resources, json_resources);
+    try proc.task.files.?.write_file(JSON_Resources, json_resources);
 }
 
 /// Reads child processes in the `processes.json` file and checks
@@ -122,7 +125,7 @@ pub fn get_running_saved_procs(proc: *Process) Errors![]Process {
     var children = std.ArrayList(Process).init(util.gpa);
     defer children.deinit();
     // This may sometimes fail due to a read happening while a daemon is trying to save to it
-    var saved_procs = proc.task.files.read_file(ReadProcess)
+    var saved_procs = proc.task.files.?.read_file(ReadProcess)
         catch |err| switch (err) {
             error.TaskFileFailedRead => return &[0]Process{},
             else => return err
@@ -265,7 +268,7 @@ pub fn get_envs(task: *Task, update_envs: bool) Errors!std.process.EnvMap {
     if (update_envs) {
         return try save_current_envs(task);
     }
-    const content = task.files.read_file(JSON_Env)
+    const content = task.files.?.read_file(JSON_Env)
         catch |err| return switch (err) {
             error.TaskFileNotFound => try save_current_envs(task),
             else => err
@@ -283,6 +286,7 @@ pub fn save_current_envs(task: *Task) Errors!std.process.EnvMap {
     const env = std.process.getEnvMap(util.gpa)
         catch |err| return e.verbose_error(err, error.FailedToGetEnvs);
     const json = try taskenv.serialise(env);
-    try task.files.write_file(JSON_Env, json);
+    defer json.deinit();
+    try task.files.?.write_file(JSON_Env, json);
     return env;
 }

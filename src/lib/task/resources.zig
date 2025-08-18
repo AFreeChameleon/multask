@@ -7,6 +7,8 @@ const Lengths = util.Lengths;
 const e = @import("../error.zig");
 const Errors = e.Errors;
 
+const Cpu = @import("./process.zig").Cpu;
+
 const JSON_CpuResource = struct {
     pid: util.Pid,
     percentage: f64
@@ -38,24 +40,34 @@ pub const JSON_Resources = struct {
 };
 
 pub const Resources = struct {
-    cpu: std.AutoHashMap(util.Pid, f64) = undefined,
+    cpu: std.AutoHashMap(util.Pid, f64),
+    meta: ?Cpu,
 
     pub fn init() Resources {
         return Resources {
-            .cpu = std.AutoHashMap(util.Pid, f64).init(util.gpa)
+            .cpu = std.AutoHashMap(util.Pid, f64).init(util.gpa),
+            .meta = null
         };
     }
 
     pub fn deinit(self: *Resources) void {
         self.cpu.clearAndFree();
         self.cpu.deinit();
+        if (self.meta != null) {
+            self.meta.?.deinit();
+        }
     }
 
-    pub fn clone(self: *const Resources) Resources {
-        return Resources {
+    pub fn clone(self: *Resources) Errors!Resources {
+        var new_resources = Resources {
             .cpu = self.cpu.clone()
-                catch |err| return e.verbose_error(err, error.FailedToGetCpuUsage)
+                catch |err| return e.verbose_error(err, error.FailedToGetCpuUsage),
+            .meta = null
         };
+        if (self.meta != null) {
+            new_resources.meta = try self.meta.?.clone();
+        }
+        return new_resources;
     }
 
     pub fn to_json(self: *const Resources) Errors!JSON_Resources {
@@ -101,7 +113,7 @@ pub const Resources = struct {
     }
 
     fn get_resources(task: *Task) Errors!Resources {
-        const json_res = task.files.read_file(JSON_Resources)
+        const json_res = task.files.?.read_file(JSON_Resources)
             catch |err| switch (err) {
                 error.TaskFileFailedRead => return Resources.init(),
                 else => return err

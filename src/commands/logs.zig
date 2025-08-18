@@ -42,12 +42,12 @@ pub fn run(argv: [][]u8) Errors!void {
     const last_lines: u32 = if (flags.lines == 0) 20 else flags.lines;
     // Task read last lines
     try log.printinfo("Getting last {d} lines.", .{last_lines});
-    try task.files.read_last_logs(last_lines);
+    try task.files.?.read_last_logs(last_lines);
     if (flags.watch) {
         try log.printinfo("Listening to new lines...", .{});
         // try log.printdebug("Listening is still buggy - logs don't sync properly.", .{});
         // Task watch future lines by attaching to the /proc/{id}/fd/1 and 2 handles
-        try task.files.listen_log_files();
+        try task.files.?.listen_log_files();
     }
 }
 

@@ -250,7 +250,7 @@ pub const TaskManager = struct {
             .resources = Resources.init(),
             .process = null
         };
-        try task.files.write_file(Stats, task.stats);
+        try task.files.?.write_file(Stats, task.stats.?);
         
         if (namespace != null) {
             try add_task_to_namespace(&tasks.namespaces, task.id, namespace.?);
@@ -302,13 +302,13 @@ pub const TaskManager = struct {
         task.namespace = try get_namespace(task.id);
         task.files = try Files.init(task.id);
 
-        const stats = try task.files.read_file(Stats);
+        const stats = try task.files.?.read_file(Stats);
         if (stats == null) {
             return error.FailedToGetTaskStats;
         }
         task.stats = stats.?;
 
-        var procs = try task.files.read_file(ReadProcess);
+        var procs = try task.files.?.read_file(ReadProcess);
         if (procs != null) {
             defer procs.?.deinit();
             try log.printdebug("Initialising main process from id", .{});
@@ -358,9 +358,9 @@ test "Creating task with namespace" {
     );
     try expect(new_task.id == 1);
     try expect(std.mem.eql(u8, new_task.namespace.?, "ns"));
-    try expect(std.mem.eql(u8, new_task.stats.command, "echo hi"));
-    try expect(new_task.stats.memory_limit == 20_000);
-    try expect(new_task.stats.cpu_limit == 20);
+    try expect(std.mem.eql(u8, new_task.stats.?.command, "echo hi"));
+    try expect(new_task.stats.?.memory_limit == 20_000);
+    try expect(new_task.stats.?.cpu_limit == 20);
 
     try new_task.delete();
     new_task.deinit();
@@ -385,9 +385,9 @@ test "Reading saved task with namespace" {
 
     try expect(task.id == 1);
     try expect(std.mem.eql(u8, task.namespace.?, "ns"));
-    try expect(std.mem.eql(u8, task.stats.command, "echo hi"));
-    try expect(task.stats.memory_limit == 20_000);
-    try expect(task.stats.cpu_limit == 20);
+    try expect(std.mem.eql(u8, task.stats.?.command, "echo hi"));
+    try expect(task.stats.?.memory_limit == 20_000);
+    try expect(task.stats.?.cpu_limit == 20);
 
     try task.delete();
     task.deinit();
@@ -428,9 +428,9 @@ test "Reading saved task with no namespace" {
 
     try expect(task.id == 1);
     try expect(task.namespace == null);
-    try expect(std.mem.eql(u8, task.stats.command, "echo hi"));
-    try expect(task.stats.memory_limit == 20_000);
-    try expect(task.stats.cpu_limit == 20);
+    try expect(std.mem.eql(u8, task.stats.?.command, "echo hi"));
+    try expect(task.stats.?.memory_limit == 20_000);
+    try expect(task.stats.?.cpu_limit == 20);
 
     try task.delete();
     task.deinit();
