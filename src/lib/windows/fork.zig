@@ -42,7 +42,7 @@ pub fn run_daemon(task: *Task, flags: ForkFlags) Errors!void {
 
     // Convert to utf16 = https://ziglang.org/documentation/master/std/#std.unicode.utf8ToUtf16LeAlloc
     // In the future, just make the exe read from the file for it's limits, only pass in the task id.
-    const proc_string = std.fmt.allocPrint(
+    const proc_string = std.fmt.allocPrintZ(
         util.gpa,
         "{s}\\spawn.exe {d}",
         .{

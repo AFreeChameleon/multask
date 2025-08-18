@@ -19,31 +19,33 @@ const Errors = e.Errors;
 pub const WindowsCpu = struct {
     const Self = @This();
 
-    pub var usage_stats: std.AutoHashMap(Pid, SysTimes) =
-        std.AutoHashMap(Pid, SysTimes).init(util.gpa);
-    pub var time_total: u64 = 0;
+    systimes: std.AutoHashMap(Pid, SysTimes),
+    time_total: u64,
 
-    // cpu_time_total: u64 = 0,
-    // old_utime: u64 = 0,
-    // old_stime: u64 = 0,
-    // utime: u64 = 0,
-    // stime: u64 = 0,
-
-    // pub fn init() Self {
-    //     var cpu = Self {};
-    //     cpu.set_cpu_time_total();
-    //     return cpu;
-    // }
-
-    pub fn deinit() void {
-        usage_stats.clearAndFree();
-        usage_stats.deinit();
+    pub fn init() Self {
+        return Self {
+            .systimes = std.AutoHashMap(Pid, SysTimes).init(util.gpa),
+            .time_total = 0
+        };
     }
 
-    pub fn update_time_total() void {
+    pub fn deinit(self: *Self) void {
+        self.systimes.clearAndFree();
+        self.systimes.deinit();
+    }
+
+    pub fn clone(self: *Self) Errors!Self {
+        return Self {
+            .systimes = self.systimes.clone()
+                catch |err| return e.verbose_error(err, error.FailedToGetCpuStats),
+            .time_total = self.time_total
+        };
+    }
+
+    pub fn update_time_total(self: *Self) void {
         var ft: libc.FILETIME = std.mem.zeroes(libc.FILETIME);
         libc.GetSystemTimeAsFileTime(&ft);
-        WindowsCpu.time_total = winutil.combine_filetime(&ft);
+        self.time_total = winutil.combine_filetime(&ft);
     }
 
     fn get_proc_count() u32 {
@@ -53,14 +55,15 @@ pub const WindowsCpu = struct {
     }
 
     pub fn get_cpu_usage(
+        self: *Self,
         process: *WindowsProcess
     ) Errors!f64 {
         const processor_count = get_proc_count();
         var now: libc.FILETIME = std.mem.zeroes(libc.FILETIME);
         libc.GetSystemTimeAsFileTime(&now);
-        const old_proc_times_struct = usage_stats.get(process.pid);
+        const old_proc_times_struct = self.systimes.get(process.pid);
         if (old_proc_times_struct == null) {
-            usage_stats.put(process.pid, SysTimes {
+            self.systimes.put(process.pid, SysTimes {
                 .utime = 0,
                 .stime = 0,
             }) catch |err| return e.verbose_error(err, error.FailedToGetCpuUsage);
@@ -73,7 +76,7 @@ pub const WindowsCpu = struct {
         const last_system_time = old_proc_times_struct.?.utime + old_proc_times_struct.?.stime;
         const time = winutil.combine_filetime(&now);
         const system_time_delta: u64 = system_time - last_system_time;
-        const time_delta: u64 = time - time_total;
+        const time_delta: u64 = time - self.time_total;
         // Happens when starting off
         if (time_delta == 0) {
             return 0.0;
@@ -86,7 +89,7 @@ pub const WindowsCpu = struct {
             return error.FailedToGetCpuUsage;
         }
         // Set 'old' data for next iteration
-        const val = usage_stats.getOrPut(process.pid)
+        const val = self.systimes.getOrPut(process.pid)
             catch |err| return e.verbose_error(err, error.FailedToGetCpuUsage);
         val.value_ptr.*.utime = utime;
         val.value_ptr.*.stime = stime;

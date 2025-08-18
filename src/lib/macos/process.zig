@@ -117,7 +117,7 @@ pub const MacosProcess = struct {
         if (self.task.daemon == null) {
             return error.ForkFailed;
         }
-        try MacosCpu.update_time_total(&self.task.daemon.?);
+        try self.task.resources.?.meta.?.update_time_total(&self.task.daemon.?);
         if (!keep_running) {
             try taskproc.kill_all(self);
         }
@@ -165,7 +165,7 @@ pub const MacosProcess = struct {
             return error.FailedToGetRelatedProcs;
         }
 
-        if (self.task.stats.monitoring == .Deep) {
+        if (self.task.stats.?.monitoring == .Deep) {
             related_procs.append(self.*)
                 catch |err| return e.verbose_error(err, error.FailedToGetRelatedProcs);
             related_procs.append(self.task.daemon.?)

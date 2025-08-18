@@ -1,6 +1,6 @@
 <div align="center">
   <a href="https://afreechameleon.github.io/multask-docs/">
-    <img src="https://github.com/afreechameleon/multask-docs/blob/develop/images/gecko.png?raw=true" alt="Logo" width="150" height="150">
+    <img src="https://github.com/afreechameleon/multask-docs/blob/master/images/gecko.png?raw=true" alt="Logo" width="150" height="150">
   </a>
 
   <h1 align="center">Multask</h1>

@@ -69,6 +69,12 @@ pub const Files = struct {
         return file;
     }
 
+    pub fn clone(self: *Self) Self {
+        return Files {
+            .task_id = self.task_id
+        };
+    }
+
     // Static fns - Don't need to cache files/Dirs
     /// Checks if a task's directory exists. If not, then it creates it.
     /// directory path: .mult/tasks/{here}

@@ -200,7 +200,7 @@ pub const Table = struct {
         } else {
             if (!self.show_all) {
                 var proc_len = util.get_map_length(
-                    std.AutoHashMap(Pid, f64), task.resources.cpu
+                    std.AutoHashMap(Pid, f64), task.resources.?.cpu
                 );
                 const status = try get_enum_proc_status(task, &task.process.?);
                 if (status != ProcStatus.Detached) {
@@ -280,14 +280,14 @@ pub const Table = struct {
                 std.fmt.allocPrint(util.gpa, "{s}", .{task.namespace.?})
                 catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
 
-            row.command = if (task.stats.command.len > 32)
-                std.fmt.allocPrint(util.gpa, "{s}...", .{task.stats.command[0..29]})
+            row.command = if (task.stats.?.command.len > 32)
+                std.fmt.allocPrint(util.gpa, "{s}...", .{task.stats.?.command[0..29]})
                 catch |err| return e.verbose_error(err, error.FailedAppendTableRow)
             else
-                std.fmt.allocPrint(util.gpa, "{s}", .{task.stats.command})
+                std.fmt.allocPrint(util.gpa, "{s}", .{task.stats.?.command})
                 catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
 
-            row.monitoring = if (task.stats.monitoring == .Deep)
+            row.monitoring = if (task.stats.?.monitoring == .Deep)
                 std.fmt.allocPrint(util.gpa, "deep", .{})
                     catch |err| return e.verbose_error(err, error.FailedAppendTableRow)
             else 
@@ -314,8 +314,8 @@ pub const Table = struct {
                 catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
         }
 
-        if (task.stats.cwd.len > 24) {
-            const concat_str = task.stats.cwd[(task.stats.cwd.len - 21)..(task.stats.cwd.len)];
+        if (task.stats.?.cwd.len > 24) {
+            const concat_str = task.stats.?.cwd[(task.stats.?.cwd.len - 21)..(task.stats.?.cwd.len)];
             row.location = std.fmt.allocPrint(
                 util.gpa, "...{s}",
                 .{concat_str}
@@ -323,7 +323,7 @@ pub const Table = struct {
                 err, error.FailedAppendTableRow
             );
         } else {
-            row.location = std.fmt.allocPrint(util.gpa, "{s}", .{task.stats.cwd})
+            row.location = std.fmt.allocPrint(util.gpa, "{s}", .{task.stats.?.cwd})
                 catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
         }
 
@@ -355,7 +355,7 @@ pub const Table = struct {
         const memory_str = try util.get_readable_memory(try proc.get_memory());
         row.memory = memory_str;
 
-        const cpu_int = task.resources.cpu.get(proc.pid);
+        const cpu_int = task.resources.?.cpu.get(proc.pid);
         if (cpu_int == null) {
             row.cpu = std.fmt.allocPrint(util.gpa, "N/A", .{})
                 catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
@@ -372,6 +372,13 @@ pub const Table = struct {
                 err, error.FailedAppendTableRow
             );
         try self.update_row_widths(&row);
+    }
+
+    pub fn remove_rows(self: *Self, num_rows: usize) Errors!void {
+        for (0..num_rows) |_| {
+            self.rows.items[self.rows.items.len - 1].deinit();
+            _ = self.rows.swapRemove(self.rows.items.len - 1);
+        }
     }
 
     /// Inserting an erroneous row for when a task is missing some things
@@ -568,7 +575,7 @@ pub const Table = struct {
             }
             if (task.daemon != null) {
                 const daemon_exists = task.daemon.?.proc_exists();
-                if (daemon_exists and task.stats.persist) {
+                if (daemon_exists and task.stats.?.persist) {
                     // The child command hasn't been run but the parent task proc is waiting
                     return ProcStatus.Restarting;
                 } else if (daemon_exists) {

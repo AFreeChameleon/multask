@@ -18,13 +18,27 @@ const ProcFs = @import("./file.zig").ProcFs;
 pub const LinuxCpu = struct {
     const Self = @This();
 
-    pub var usage_stats: std.AutoHashMap(Pid, SysTimes) =
-        std.AutoHashMap(Pid, SysTimes).init(util.gpa);
-    pub var time_total: u64 = 0;
+    systimes: std.AutoHashMap(Pid, SysTimes),
+    time_total: u64,
 
-    pub fn deinit() void {
-        usage_stats.clearAndFree();
-        usage_stats.deinit();
+    pub fn init() Self {
+        return Self {
+            .systimes = std.AutoHashMap(Pid, SysTimes).init(util.gpa),
+            .time_total = 0
+        };
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.systimes.clearAndFree();
+        self.systimes.deinit();
+    }
+
+    pub fn clone(self: *Self) Errors!Self {
+        return Self {
+            .systimes = self.systimes.clone()
+                catch |err| return e.verbose_error(err, error.FailedToGetCpuStats),
+            .time_total = self.time_total
+        };
     }
 
     pub fn get_cpu_time_total(cpu_stats: [][]const u8) u64 {
@@ -52,7 +66,8 @@ pub const LinuxCpu = struct {
         const cpu_line = stat_reader.readUntilDelimiterOrEofAlloc(util.gpa, '\n', Lengths.LARGE)
             catch |err| return e.verbose_error(err, error.FailedToGetCpuStats);
         if (cpu_line == null) {
-            return &.{};
+            return util.gpa.alloc([]const u8, 0)
+                catch |err| return e.verbose_error(err, error.FailedToGetCpuStats);
         }
         defer util.gpa.free(cpu_line.?);
 
@@ -67,6 +82,7 @@ pub const LinuxCpu = struct {
     }
 
     pub fn get_cpu_usage(
+        self: *Self,
         process: *LinuxProcess,
     ) Errors!f64 {
         const stats = try ProcFs.get_process_stats(process.pid);
@@ -80,9 +96,9 @@ pub const LinuxCpu = struct {
                 catch |err| return e.verbose_error(err, error.FailedToGetProcesses);
         }
 
-        const old_proc_times_struct = usage_stats.get(process.pid);
+        const old_proc_times_struct = self.systimes.get(process.pid);
         if (old_proc_times_struct == null) {
-            usage_stats.put(process.pid, SysTimes {
+            self.systimes.put(process.pid, SysTimes {
                 .utime = 0,
                 .stime = 0,
             }) catch |err| return e.verbose_error(err, error.FailedToGetCpuUsage);
@@ -102,11 +118,11 @@ pub const LinuxCpu = struct {
             * 100.0
             * (
                 (@as(f64, @floatFromInt(proc_times)) - @as(f64, @floatFromInt(old_proc_times))) /
-                (@as(f64, @floatFromInt(new_time_total)) - @as(f64, @floatFromInt(time_total)))
+                (@as(f64, @floatFromInt(new_time_total)) - @as(f64, @floatFromInt(self.time_total)))
             );
 
         // Set 'old' data for next iteration
-        const val = usage_stats.getOrPut(process.pid)
+        const val = self.systimes.getOrPut(process.pid)
             catch |err| return e.verbose_error(err, error.FailedToGetCpuUsage);
         val.value_ptr.*.utime = utime;
         val.value_ptr.*.stime = stime;
@@ -120,7 +136,7 @@ pub const LinuxCpu = struct {
         return cpu_usage;
     }
 
-    pub fn update_time_total() Errors!void {
+    pub fn update_time_total(self: *Self) Errors!void {
         const cpu_stats = try get_cpu_stats();
         defer {
             for (cpu_stats) |stat| {
@@ -128,6 +144,6 @@ pub const LinuxCpu = struct {
             }
             util.gpa.free(cpu_stats);
         }
-        time_total = get_cpu_time_total(cpu_stats);
+        self.time_total = get_cpu_time_total(cpu_stats);
     }
 };

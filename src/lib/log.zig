@@ -85,6 +85,7 @@ pub fn printwarn(comptime text: []const u8, args: anytype) e.Errors!void {
     const colour_str = try util.colour_string(
         "[WARNING]", 204, 102, 0
     );
+    defer util.gpa.free(colour_str);
     stdout.print("{s}", .{colour_str})
         catch return error.InternalLoggingFailed;
     stdout.print(" " ++ text ++ "\n", args)
@@ -133,6 +134,16 @@ pub fn printerr(e_type: e.Errors) e.Errors!void {
     const message = try e.get_error_msg(e_type);
     stderr.print("\x1B[38;2;204;0;0m[ERROR]\x1B[0m {s}\n", .{message})
         catch return error.InternalLoggingFailed;
+    if (debug) {
+        const content = std.fmt.allocPrint(
+            util.gpa,
+            "[ERROR] {s}\n",
+            .{message}
+        ) catch return error.InternalLoggingFailed;
+        defer util.gpa.free(content);
+        write_to_debug_log_file(content)
+            catch return error.InternalLoggingFailed;
+    }
 }
 
 pub fn print_help(comptime rows: anytype) e.Errors!void {

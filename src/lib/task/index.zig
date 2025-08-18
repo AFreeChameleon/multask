@@ -29,25 +29,30 @@ pub const Task = struct {
     id: TaskId,
     daemon: ?Process = null,
     namespace: ?[]const u8,
-    files: Files,
+    files: ?Files,
     process: ?Process,
-    stats: Stats,
-    resources: Resources,
+    stats: ?Stats,
+    resources: ?Resources,
 
     pub fn init(id: TaskId) Task {
         return Task {
             .id = id,
             .namespace = null,
-            .files = undefined,
             .process = null,
-            .stats = undefined,
-            .resources = undefined
+            .files = null,
+            .stats = null,
+            .resources = null
         };
     }
 
     pub fn deinit(self: *Self) void {
-        self.stats.deinit();
-        self.resources.deinit();
+        if (self.stats != null) {
+            self.stats.?.deinit();
+        }
+
+        if (self.resources != null) {
+            self.resources.?.deinit();
+        }
 
         if (self.process != null) {
             self.process.?.deinit();
@@ -56,6 +61,30 @@ pub const Task = struct {
         if (self.namespace != null) {
             util.gpa.free(self.namespace.?);
         }
+    }
+
+    pub fn clone(self: *Self) Errors!Self {
+        var new_task: Task = undefined;
+        new_task.id = self.id;
+        if (self.namespace != null) {
+            new_task.namespace = try util.strdup(self.namespace.?, error.CorruptedTask);
+        } else {
+            new_task.namespace = null;
+        }
+        if (self.daemon != null) {
+            new_task.daemon = try self.daemon.?.clone(&new_task);
+        } else {
+            new_task.daemon = null;
+        }
+        if (self.process != null) {
+            new_task.process = try self.process.?.clone(&new_task);
+        } else {
+            new_task.process = null;
+        }
+        new_task.files = self.files.clone();
+        new_task.stats = try self.stats.clone();
+        new_task.resources = try self.resources.clone();
+        return new_task;
     }
 
     pub fn refresh(self: *Self) Errors!void {
@@ -83,7 +112,7 @@ pub const Task = struct {
         var tasks = try TaskManager.get_tasks();
         defer tasks.deinit();
 
-        try self.files.delete_files();
+        try self.files.?.delete_files();
 
         try util.remove_id_from_namespace(self.id, &tasks.namespaces);
 

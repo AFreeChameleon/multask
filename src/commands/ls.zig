@@ -56,15 +56,20 @@ pub fn run(argv: [][]u8) Errors!void {
                 try table.add_corrupted_task(task_id);
                 continue;
             };
-        task.resources.set_cpu_usage(&task)
+        task.resources.?.set_cpu_usage(&task)
             catch |err| {
                 try log.printdebug("{any}", .{err});
                 try table.add_corrupted_task(task_id);
                 continue;
             };
+        const existing_rows = table.rows.items.len;
         table.add_task(&task)
             catch |err| {
                 try log.printdebug("{any}", .{err});
+                const current_rows = table.rows.items.len;
+                if (current_rows > existing_rows) {
+                    try table.remove_rows(current_rows - existing_rows);
+                }
                 try table.add_corrupted_task(task_id);
                 continue;
             };
@@ -79,6 +84,7 @@ pub fn run(argv: [][]u8) Errors!void {
         var new_table = try Table.init(flags.all);
         try new_table.append_header();
         const ids = try check_taskids(flags.args);
+        std.mem.sort(TaskId, ids, {}, comptime std.sort.asc(TaskId));
         defer util.gpa.free(ids);
 
         for (ids) |task_id| {
@@ -87,11 +93,26 @@ pub fn run(argv: [][]u8) Errors!void {
             TaskManager.get_task_from_id(&task)
                 catch |err| {
                     try log.printdebug("{any}", .{err});
-                    try table.add_corrupted_task(task_id);
+                    try new_table.add_corrupted_task(task_id);
                     continue;
                 };
-            try task.resources.set_cpu_usage(&task);
-            try new_table.add_task(&task);
+            task.resources.?.set_cpu_usage(&task)
+                catch |err| {
+                    try log.printdebug("{any}", .{err});
+                    try new_table.add_corrupted_task(task_id);
+                    continue;
+                };
+            const existing_rows = new_table.rows.items.len;
+            new_table.add_task(&task)
+                catch |err| {
+                    try log.printdebug("{any}", .{err});
+                    const current_rows = new_table.rows.items.len;
+                    if (current_rows > existing_rows) {
+                        try new_table.remove_rows(current_rows - existing_rows);
+                    }
+                    try new_table.add_corrupted_task(task_id);
+                    continue;
+                };
         }
 
         try table.clear();
