@@ -14,6 +14,12 @@
   <p align="center">
     Designed to organise projects which need processes running at the same time with flexible resource limits for scaling.
   </p>
+  <p align="center">
+    <a href="https://www.youtube.com/watch?v=KVUPj4636hE">Watch the demo</a>
+  </p>
+  <a href="https://www.youtube.com/watch?v=KVUPj4636hE">
+    <img src="https://img.youtube.com/vi/KVUPj4636hE/0.jpg" alt="Demo video">
+  </a>
 </div>
 
 ## Installation
