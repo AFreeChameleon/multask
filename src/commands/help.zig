@@ -46,7 +46,7 @@ const rows = .{
     .{""},
     .{ "", "ls", "Shows all tasks" },
     .{ "", "", "-w", "Provides updating tables every 2 seconds" },
-    .{ "", "", "-a", "Show all child tasks" },
+    .{ "", "", "-a", "Show all child processes" },
     .{""},
     .{ "", "logs", "Shows output from task. [value] must be a task id e.g 1" },
     .{ "", "", "-l [num]", "See number of previous lines default is 20" },
