@@ -1,6 +1,4 @@
-<a href="https://afreechameleon.github.io/multask/">
-    <img src="/multask/_media/gecko.png" alt="Logo" width="150" height="150">
-</a>
+<img src="/multask/_media/gecko.png" alt="Logo" width="150" height="150" />
 
 # Multask
 
