@@ -1,6 +1,6 @@
 # Commands
 
-## Create
+## create
 Usage:
 ```
 > mlt create "echo hi"
@@ -17,7 +17,7 @@ This creates a task from your specified command and runs it.
 - `-M, --monitor` How thorough looking for child processes will be, use `deep` for complex 
 applications like GUIs although it can be a little more CPU intensive, `shallow` is the default
 
-## Start
+## start
 Usage:
 ```
 > mlt start 1
@@ -33,14 +33,14 @@ This runs existing tasks by their task ids or namespaces.
 - `-p` Persist mode (will restart after 2 seconds if the program exits)
 - `-M, --monitor` How thorough looking for child processes will be, use `deep` for complex 
 
-## Stop
+## stop
 Usage:
 ```
 > mlt stop 1
 ```
 This stops tasks by their task ids or namespaces.
 
-## Edit
+## edit
 Usage:
 ```
 > mlt edit 1
@@ -54,7 +54,7 @@ Edits task details by their task ids or namespaces.
 - `-p` Persist mode (will restart after 2 seconds if the program exits)
 - `-M, --monitor` How thorough looking for child processes will be, use `deep` for complex 
 
-## Restart
+## restart
 Usage:
 ```
 > mlt restart 1
@@ -69,7 +69,7 @@ This stops and starts existing tasks by their task ids or namespaces.
 - `-p` Persist mode (will restart after 2 seconds if the program exits)
 - `-M, --monitor` How thorough looking for child processes will be, use `deep` for complex 
 
-## Ls
+## ls
 Usage:
 ```
 > mlt ls
@@ -82,7 +82,7 @@ You can also specify task ids or namespaces to only view those.
 - `-w` Updates the table every 2 seconds
 - `-a` Shows all child processes each task has spawned
 
-## Logs
+## logs
 Usage:
 ```
 > mlt logs 1
@@ -94,21 +94,21 @@ Shows output from a task by its task id.
 - `-l [num]` See number of previous lines default is 20
 - `-w, -f` Listen to new logs coming in
 
-## Delete
+## delete
 Usage:
 ```
 > mlt delete 1
 ```
 Deletes tasks by their task ids or namespaces.
 
-## Health
+## health
 Usage:
 ```
 > mlt health
 ```
 Checks state of multask, run this when multask is not working.
 
-## Help
+## help
 Usage:
 ```
 > mlt help
