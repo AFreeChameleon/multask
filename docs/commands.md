@@ -79,7 +79,7 @@ Lists all tasks with data associated to it e.g memory and cpu usage.
 You can also specify task ids or namespaces to only view those.
 
 ### Flags
-- `-w` Updates the table every 2 seconds
+- `-w, -f` Updates the table every 2 seconds
 - `-a` Shows all child processes each task has spawned
 
 ## logs
