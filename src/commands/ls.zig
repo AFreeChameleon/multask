@@ -9,9 +9,9 @@ const Task = t.Task;
 const p = @import("../lib/task/process.zig");
 const Process = p.Process;
 
-const TaskManager  = @import("../lib/task/manager.zig").TaskManager;
+const TaskManager = @import("../lib/task/manager.zig").TaskManager;
 
-const ReadProcess  = @import("../lib/task/file.zig").ReadProcess;
+const ReadProcess = @import("../lib/task/file.zig").ReadProcess;
 
 const file = @import("../lib/file.zig");
 
@@ -50,29 +50,26 @@ pub fn run(argv: [][]u8) Errors!void {
     for (flags.args.ids.?) |task_id| {
         var task = Task.init(task_id);
         defer task.deinit();
-        TaskManager.get_task_from_id(&task)
-            catch |err| {
-                try log.printdebug("{any}", .{err});
-                try table.add_corrupted_task(task_id);
-                continue;
-            };
-        task.resources.?.set_cpu_usage(&task)
-            catch |err| {
-                try log.printdebug("{any}", .{err});
-                try table.add_corrupted_task(task_id);
-                continue;
-            };
+        TaskManager.get_task_from_id(&task) catch |err| {
+            try log.printdebug("{any}", .{err});
+            try table.add_corrupted_task(task_id);
+            continue;
+        };
+        task.resources.?.set_cpu_usage(&task) catch |err| {
+            try log.printdebug("{any}", .{err});
+            try table.add_corrupted_task(task_id);
+            continue;
+        };
         const existing_rows = table.rows.items.len;
-        table.add_task(&task)
-            catch |err| {
-                try log.printdebug("{any}", .{err});
-                const current_rows = table.rows.items.len;
-                if (current_rows > existing_rows) {
-                    try table.remove_rows(current_rows - existing_rows);
-                }
-                try table.add_corrupted_task(task_id);
-                continue;
-            };
+        table.add_task(&task) catch |err| {
+            try log.printdebug("{any}", .{err});
+            const current_rows = table.rows.items.len;
+            if (current_rows > existing_rows) {
+                try table.remove_rows(current_rows - existing_rows);
+            }
+            try table.add_corrupted_task(task_id);
+            continue;
+        };
     }
     try table.print_table();
 
@@ -90,29 +87,26 @@ pub fn run(argv: [][]u8) Errors!void {
         for (ids) |task_id| {
             var task = Task.init(task_id);
             defer task.deinit();
-            TaskManager.get_task_from_id(&task)
-                catch |err| {
-                    try log.printdebug("{any}", .{err});
-                    try new_table.add_corrupted_task(task_id);
-                    continue;
-                };
-            task.resources.?.set_cpu_usage(&task)
-                catch |err| {
-                    try log.printdebug("{any}", .{err});
-                    try new_table.add_corrupted_task(task_id);
-                    continue;
-                };
+            TaskManager.get_task_from_id(&task) catch |err| {
+                try log.printdebug("{any}", .{err});
+                try new_table.add_corrupted_task(task_id);
+                continue;
+            };
+            task.resources.?.set_cpu_usage(&task) catch |err| {
+                try log.printdebug("{any}", .{err});
+                try new_table.add_corrupted_task(task_id);
+                continue;
+            };
             const existing_rows = new_table.rows.items.len;
-            new_table.add_task(&task)
-                catch |err| {
-                    try log.printdebug("{any}", .{err});
-                    const current_rows = new_table.rows.items.len;
-                    if (current_rows > existing_rows) {
-                        try new_table.remove_rows(current_rows - existing_rows);
-                    }
-                    try new_table.add_corrupted_task(task_id);
-                    continue;
-                };
+            new_table.add_task(&task) catch |err| {
+                try log.printdebug("{any}", .{err});
+                const current_rows = new_table.rows.items.len;
+                if (current_rows > existing_rows) {
+                    try new_table.remove_rows(current_rows - existing_rows);
+                }
+                try new_table.add_corrupted_task(task_id);
+                continue;
+            };
         }
 
         try table.clear();
@@ -132,8 +126,7 @@ fn check_taskids(targs: TaskArgs) Errors![]TaskId {
     var tasks = try TaskManager.get_tasks();
     defer tasks.deinit();
     if (!targs.parsed) {
-        return util.gpa.dupe(TaskId, tasks.task_ids)
-            catch |err| return e.verbose_error(err, error.TasksIdsFileFailedRead);
+        return util.gpa.dupe(TaskId, tasks.task_ids) catch |err| return e.verbose_error(err, error.TasksIdsFileFailedRead);
     }
     var new_ids = std.ArrayList(TaskId).init(util.gpa);
     defer new_ids.deinit();
@@ -141,57 +134,31 @@ fn check_taskids(targs: TaskArgs) Errors![]TaskId {
     // namespace ids + regular selected ids
     var selected_id_list = std.ArrayList(TaskId).init(util.gpa);
     defer selected_id_list.deinit();
-    selected_id_list.appendSlice(targs.ids.?)
-        catch |err| return e.verbose_error(err, error.TasksIdsFileFailedRead);
+    selected_id_list.appendSlice(targs.ids.?) catch |err| return e.verbose_error(err, error.TasksIdsFileFailedRead);
     if (targs.namespaces != null) {
-        selected_id_list.appendSlice(try TaskManager.get_ids_from_namespaces(
-                tasks.namespaces, targs.namespaces.?
-        )) catch |err| return e.verbose_error(err, error.TasksIdsFileFailedRead);
+        selected_id_list.appendSlice(try TaskManager.get_ids_from_namespaces(tasks.namespaces, targs.namespaces.?)) catch |err| return e.verbose_error(err, error.TasksIdsFileFailedRead);
     }
     const selected_ids = try util.unique_array(TaskId, selected_id_list.items);
     defer util.gpa.free(selected_ids);
 
     for (selected_ids) |tid| {
         if (std.mem.indexOfScalar(TaskId, tasks.task_ids, tid) != null) {
-            new_ids.append(tid)
-                catch |err| return e.verbose_error(err, error.TasksIdsFileFailedRead);
+            new_ids.append(tid) catch |err| return e.verbose_error(err, error.TasksIdsFileFailedRead);
         }
     }
-    const owned_new_ids = new_ids.toOwnedSlice()
-        catch |err| return e.verbose_error(err, error.TasksIdsFileFailedRead);
+    const owned_new_ids = new_ids.toOwnedSlice() catch |err| return e.verbose_error(err, error.TasksIdsFileFailedRead);
     return owned_new_ids;
 }
 
 fn parse_cmd_args(argv: [][]u8) Errors!Flags {
-    var flags = Flags {
-        .watch = false,
-        .all = false,
-        .help = false,
-        .args = TaskArgs {}
-    };
-    var pflags = util.gpa.alloc(parse.Flag, 5)
-        catch |err| return e.verbose_error(err, error.ParsingCommandArgsFailed);
+    var flags = Flags{ .watch = false, .all = false, .help = false, .args = TaskArgs{} };
+    var pflags = util.gpa.alloc(parse.Flag, 5) catch |err| return e.verbose_error(err, error.ParsingCommandArgsFailed);
     defer util.gpa.free(pflags);
-    pflags[0] = parse.Flag {
-        .name = 'a',
-        .type = .static
-    };
-    pflags[1] = parse.Flag {
-        .name = 'w',
-        .type = .static
-    };
-    pflags[2] = parse.Flag {
-        .name = 'f',
-        .type = .static
-    };
-    pflags[3] = parse.Flag {
-        .name = 'h',
-        .type = .static
-    };
-    pflags[4] = parse.Flag {
-        .name = 'd',
-        .type = .static
-    };
+    pflags[0] = parse.Flag{ .name = 'a', .type = .static };
+    pflags[1] = parse.Flag{ .name = 'w', .type = .static };
+    pflags[2] = parse.Flag{ .name = 'f', .type = .static };
+    pflags[3] = parse.Flag{ .name = 'h', .type = .static };
+    pflags[4] = parse.Flag{ .name = 'd', .type = .static };
 
     const vals = try parse.parse_args(argv, pflags);
     defer util.gpa.free(vals);
@@ -205,14 +172,13 @@ fn parse_cmd_args(argv: [][]u8) Errors!Flags {
             'a' => flags.all = true,
             'h' => flags.help = true,
             'd' => log.enable_debug(),
-            else => continue
+            else => continue,
         }
     }
     if (vals.len == 0) {
         var tasks = try TaskManager.get_tasks();
         defer tasks.deinit();
-        flags.args.ids = util.gpa.dupe(TaskId, tasks.task_ids)
-            catch |err| return e.verbose_error(err, error.ParsingCommandArgsFailed);
+        flags.args.ids = util.gpa.dupe(TaskId, tasks.task_ids) catch |err| return e.verbose_error(err, error.ParsingCommandArgsFailed);
         std.mem.sort(TaskId, flags.args.ids.?, {}, comptime std.sort.asc(TaskId));
         return flags;
     }
@@ -225,14 +191,14 @@ const help_rows = .{
     .{"Gets stats and resource usage of tasks"},
     .{"Usage: mlt ls -w -a [task ids or namespaces OPTIONAL]"},
     .{"flags:"},
-    .{"", "-w", "Provides updating tables every 2 seconds"},
-    .{"", "-a", "Show all child processes"},
+    .{ "", "-w, -f", "Provides updating tables every 2 seconds" },
+    .{ "", "-a", "Show all child processes" },
     .{""},
     .{"A task's different states are:"},
-    .{"Running", "", "The process is running"},
-    .{"Stopped", "", "The task is stopped"},
-    .{"Detached", "The main process in the task has stopped, but it has child processes that are still running."},
-    .{"Headless", "The main process is running, but the multask daemon is not. This is bad and the task should be restarted."},
+    .{ "Running", "", "The process is running" },
+    .{ "Stopped", "", "The task is stopped" },
+    .{ "Detached", "The main process in the task has stopped, but it has child processes that are still running." },
+    .{ "Headless", "The main process is running, but the multask daemon is not. This is bad and the task should be restarted." },
     .{""},
     .{"For more, run `mlt help`"},
 };
@@ -276,4 +242,3 @@ test "Parse ls command args" {
     try expect(log.debug);
     try expect(flags.args.ids.?[0] == 1);
 }
-

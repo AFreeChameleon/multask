@@ -112,12 +112,12 @@ options:
                 -M, --monitor   How thorough looking for child processes will be, use "deep" for complex applications like GUIs although it can be a little more CPU intensive, "shallow" is the default.
 
         ls      Shows all taskes
-                -w      Provides updating tables every 2 seconds
-                -a      Show all child taskes
+                -w, -f          Provides updating tables every 2 seconds
+                -a              Show all child taskes
 
         logs    Shows output from task. [value] must be a task id e.g 1
                 -l [num]        See number of previous lines default is 20
-                -w              Listen to new logs coming in
+                -w, -f          Listen to new logs coming in
 
         delete  Deletes tasks. [value] must be a task id or a namespace e.g 1
 
