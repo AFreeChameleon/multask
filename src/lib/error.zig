@@ -432,7 +432,7 @@ pub fn get_error_msg(e_type: Errors) Errors![]const u8 {
             result = "Cpu limit needs to have a value.";
         },
         error.MemoryLimitValueInvalid => {
-            result = "Memory must have be a valid number with a suffix e.g 10(b, k, m ...).";
+            result = "Memory must have be a valid number with a suffix e.g 10(B, K, M ...).";
         },
         error.MemoryLimitValueMissing => {
             result = "Memory limit needs to have a value.";
