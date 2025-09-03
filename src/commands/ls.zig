@@ -169,7 +169,7 @@ fn parse_cmd_args(argv: [][]u8) Errors!Flags {
         .help = false,
         .args = TaskArgs {}
     };
-    var pflags = util.gpa.alloc(parse.Flag, 4)
+    var pflags = util.gpa.alloc(parse.Flag, 5)
         catch |err| return e.verbose_error(err, error.ParsingCommandArgsFailed);
     defer util.gpa.free(pflags);
     pflags[0] = parse.Flag {
@@ -181,10 +181,14 @@ fn parse_cmd_args(argv: [][]u8) Errors!Flags {
         .type = .static
     };
     pflags[2] = parse.Flag {
-        .name = 'h',
+        .name = 'f',
         .type = .static
     };
     pflags[3] = parse.Flag {
+        .name = 'h',
+        .type = .static
+    };
+    pflags[4] = parse.Flag {
         .name = 'd',
         .type = .static
     };
@@ -197,7 +201,7 @@ fn parse_cmd_args(argv: [][]u8) Errors!Flags {
             continue;
         }
         switch (flag.name) {
-            'w' => flags.watch = true,
+            'w', 'f' => flags.watch = true,
             'a' => flags.all = true,
             'h' => flags.help = true,
             'd' => log.enable_debug(),
