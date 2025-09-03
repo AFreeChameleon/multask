@@ -29,14 +29,14 @@ To build from source, you need:
 - Git [here](https://git-scm.com/downloads)
 
 ### Creating folders
-**Unix:** If you don't have the ~/.local/bin, create it and add it to the `$PATH` in your .rc file:
+**Unix:** If you don't have the `~/.local/bin` directory, create it and add it to the `$PATH` in your .rc file:
 ```
 > mkdir -p $HOME/.local/bin
 ```
 
 **Windows:** Create a `multi-tasker` folder in your %USERPROFILE% and create a `bin` folder inside of if:
 ```
-powershell -c 'New-Item "$env:USERPROFILE\.multi-tasker\bin\ " -ItemType Directory -Force | Out-Null'
+> powershell -c 'New-Item "$env:USERPROFILE\.multi-tasker\bin\ " -ItemType Directory -Force | Out-Null'
 ```
 
 ### Installing the executable
@@ -53,8 +53,9 @@ And to build it, just run:
 
 **Windows**
 ```
-> zig build -Doptimize=ReleaseSmall --prefix-exe-dir %USERPROFILE%/.multi-tasker/bin/
+> powershell -c 'zig build -Doptimize=ReleaseSmall --prefix-exe-dir "$env:USERPROFILE\.multi-tasker\bin\ "'
 ```
+And you also need to add `%USERPROFILE%\.multi-tasker\bin` to the Path environment variable.
 
 Or you could move the `mlt` executable into a directory which works for you.
 
