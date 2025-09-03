@@ -34,7 +34,7 @@ To build from source, you need:
 > mkdir -p $HOME/.local/bin
 ```
 
-**Windows:** Create a `multi-tasker` folder in your %USERPROFILE% and create a `bin` folder inside of if:
+**Windows:** Create a `.multi-tasker` folder in your %USERPROFILE% and create a `bin` folder inside of it:
 ```
 > powershell -c 'New-Item "$env:USERPROFILE\.multi-tasker\bin\ " -ItemType Directory -Force | Out-Null'
 ```
