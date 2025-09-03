@@ -23,11 +23,37 @@ Multask's newest version is currently not supporting FreeBSD. So in the meantime
 
 ## Source
 
-To build from source, you need the Zig compiler version 0.14.0 and to build it for production, just run:
+To build from source, you need the Zig compiler version 0.14.0 which can be installed [here](https://ziglang.org/download/#release-0.14.0)
+
+### Creating folders
+**Unix:** If you don't have the ~/.local/bin, create it and add it to the `$PATH` in your .rc file:
+```
+> mkdir -p $HOME/.local/bin
+```
+
+**Windows:** Create a `multi-tasker` folder in your %USERPROFILE% and create a `bin` folder inside of if:
+```
+powershell -c 'New-Item "$env:USERPROFILE\.multi-tasker\bin\ " -ItemType Directory -Force | Out-Null'
+```
+
+### Installing the executable
+Next, clone the repo and go inside it:
 ```
 > git clone https://github.com/AFreeChameleon/multask && cd multask
-> zig build -Doptimize=ReleaseSmall
 ```
+
+And to build it, just run:
+**Unix**
+```
+> zig build -Doptimize=ReleaseSmall --prefix-exe-dir $HOME/.local/bin/
+```
+
+**Windows**
+```
+> zig build -Doptimize=ReleaseSmall --prefix-exe-dir %USERPROFILE%/.multi-tasker/bin/
+```
+
+Or you could move the `mlt` executable into a directory which works for you.
 
 The different options for the `-Doptimize` flag are:
 
