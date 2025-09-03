@@ -7,4 +7,4 @@ mkdir -p $HOME/.local/bin
 mv $PWD/mlt $HOME/.local/bin
 rm $PWD/mlt.tar.gz
 
-echo "Multask installed! Run mlt -h for options on how to use it."
+echo "Multask installed! To use multask, add this to your .rc file: export PATH=\"\$PATH:$HOME/.local/bin\""
