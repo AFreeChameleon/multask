@@ -32,6 +32,7 @@ This runs existing tasks by their task ids or namespaces.
 - `-i` Interactive mode (can use aliased commands on your environment)
 - `-p` Persist mode (will restart after 2 seconds if the program exits)
 - `-M, --monitor` How thorough looking for child processes will be, use `deep` for complex 
+applications like GUIs although it can be a little more CPU intensive, `shallow` is the default
 
 ## stop
 Usage:
@@ -53,6 +54,7 @@ Edits task details by their task ids or namespaces.
 - `-n [text]` Set namespace for the task. can only include alphabetical characters
 - `-p` Persist mode (will restart after 2 seconds if the program exits)
 - `-M, --monitor` How thorough looking for child processes will be, use `deep` for complex 
+applications like GUIs although it can be a little more CPU intensive, `shallow` is the default
 
 ## restart
 Usage:
@@ -68,6 +70,7 @@ This stops and starts existing tasks by their task ids or namespaces.
 - `-i` Interactive mode (can use aliased commands on your environment)
 - `-p` Persist mode (will restart after 2 seconds if the program exits)
 - `-M, --monitor` How thorough looking for child processes will be, use `deep` for complex 
+applications like GUIs although it can be a little more CPU intensive, `shallow` is the default
 
 ## ls
 Usage:

@@ -6,7 +6,7 @@ Multask is in early alpha so bugs are sadly to be expected, if you come across o
 
 ## Pull requests
 
-Please fork the repository, work from the `develop` branch and when creating the pull request,
+Please fork the repository, create a branch from the `develop` branch and when creating the pull request,
 set the base to the `develop` branch.
 
 ## License

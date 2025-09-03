@@ -19,7 +19,7 @@ powershell -c "irm https://raw.githubusercontent.com/AFreeChameleon/multask/refs
 
 ## FreeBSD (outdated)
 
-Multask's newest version is currently not supporting FreeBSD. So in the meantime the older version can still be used. [here](https://github.com/AFreeChameleon/multask/releases/tag/0.20.0)
+Multask's newest version is currently not supporting FreeBSD. So in the meantime the older version can still be used. [here](https://github.com/AFreeChameleon/multask/releases/tag/v0.2.0)
 
 ## Source
 
@@ -46,6 +46,7 @@ Next, clone the repo and go inside it:
 ```
 
 And to build it, just run:
+
 **Unix**
 ```
 > zig build -Doptimize=ReleaseSmall --prefix-exe-dir $HOME/.local/bin/
@@ -58,6 +59,8 @@ And to build it, just run:
 And you also need to add `%USERPROFILE%\.multi-tasker\bin` to the Path environment variable.
 
 Or you could move the `mlt` executable into a directory which works for you.
+
+**Optimisations**
 
 The different options for the `-Doptimize` flag are:
 
