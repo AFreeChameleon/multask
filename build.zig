@@ -2,11 +2,25 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 pub fn build(b: *std.Build) void {
+    if (
+        b.graph.host.result.os.tag != .linux and 
+        b.graph.host.result.os.tag != .macos and
+        b.graph.host.result.os.tag != .windows
+    ) {
+        std.debug.print("Unsupported OS. Valid operating systems are: Linux, Macos and Windows\n", .{});
+        return;
+    }
     const exe = b.addExecutable(.{
         .name = "mlt",
         .root_source_file = b.path("src/main.zig"),
-        .target = b.graph.host,
-        .optimize = .ReleaseSmall,
+        .target = b.standardTargetOptions(.{
+            .whitelist = &.{
+                .{ .os_tag = .linux },
+                .{ .os_tag = .macos },
+                .{ .os_tag = .windows },
+            }
+        }),
+        .optimize = b.standardOptimizeOption(.{}),
     });
 
     b.installArtifact(exe);

@@ -58,7 +58,7 @@ fn parse_cmd_args(argv: [][]u8) Errors!Flags {
         .watch = false,
         .args = undefined
     };
-    var pflags = util.gpa.alloc(parse.Flag, 4)
+    var pflags = util.gpa.alloc(parse.Flag, 5)
         catch |err| return e.verbose_error(err, error.ParsingCommandArgsFailed);
     defer util.gpa.free(pflags);
     pflags[0] = parse.Flag {
@@ -70,10 +70,14 @@ fn parse_cmd_args(argv: [][]u8) Errors!Flags {
         .type = .static
     };
     pflags[2] = parse.Flag {
-        .name = 'h',
+        .name = 'f',
         .type = .static
     };
     pflags[3] = parse.Flag {
+        .name = 'h',
+        .type = .static
+    };
+    pflags[4] = parse.Flag {
         .name = 'd',
         .type = .static
     };
@@ -96,7 +100,7 @@ fn parse_cmd_args(argv: [][]u8) Errors!Flags {
                         else => return error.ParsingCommandArgsFailed
                     };
             },
-            'w' => flags.watch = true,
+            'w', 'f' => flags.watch = true,
             'h' => flags.help = true,
             'd' => log.enable_debug(),
             else => continue
@@ -104,7 +108,7 @@ fn parse_cmd_args(argv: [][]u8) Errors!Flags {
     }
     const parsed_args = try util.parse_cmd_vals(vals);
     flags.args = parsed_args;
-    if (vals.len == 0) {
+    if (vals.len == 0 and !flags.help) {
         flags.args.deinit();
         return error.MissingTaskId;
     }
@@ -120,7 +124,7 @@ const help_rows = .{
     .{"Usage: mlt logs -l 1000 -w 1"},
     .{"flags:"},
     .{"", "-l [num]", "Get number of previous lines, default is 20"},
-    .{"", "-w", "", "Listen to new logs coming in"},
+    .{"", "-w, -f", "", "Listen to new logs coming in"},
     .{""},
     .{"For more, run `mlt help`"},
 };
