@@ -23,7 +23,10 @@ Multask's newest version is currently not supporting FreeBSD. So in the meantime
 
 ## Source
 
-To build from source, you need the Zig compiler version 0.14.0 which can be installed [here](https://ziglang.org/download/#release-0.14.0)
+To build from source, you need:
+
+- Zig compiler version 0.14.0 [here](https://ziglang.org/download/#release-0.14.0)
+- Git [here](https://git-scm.com/downloads)
 
 ### Creating folders
 **Unix:** If you don't have the ~/.local/bin, create it and add it to the `$PATH` in your .rc file:
