@@ -10,16 +10,27 @@ pub const Errors = error {
     MissingCwd,
     CommandFailed,
     InternalLoggingFailed,
+
     MainDirNotFound,
     MainDirFailedCreate,
+
     PathNotFound,
     TasksFileMissingOrCorrupt,
+
     TasksDirNotFound,
     TasksDirFailedCreate,
+
+    StartupFileFailedCreate,
+    StartupFileFailedRead,
+    StartupFileFailedWrite,
+    StartupFileNotExists,
+    StartupFileEmpty,
+
     TasksIdsFileFailedCreate,
     TasksIdsFileFailedRead,
     TasksIdsFileFailedWrite,
     TasksIdsFileNotExists,
+
     TasksNamespacesFileNotExists,
     TaskFileFailedWrite,
     MissingHomeDirectory,
@@ -124,6 +135,9 @@ pub const Errors = error {
     FailedToGetLoadavg,
     CorruptTaskIdEnvVariable,
     FailedToGetJob,
+
+    FailedToGetStartupDetails,
+    FailedToSetStartupDetails,
 };
 
 pub fn verbose_error(og_err: anytype, mult_err: Errors) Errors {
@@ -137,6 +151,12 @@ pub fn verbose_error(og_err: anytype, mult_err: Errors) Errors {
 pub fn get_error_msg(e_type: Errors) Errors![]const u8 {
     var result: []const u8 = undefined;
     switch (e_type) {
+        error.FailedToSetStartupDetails => {
+            result = "Failed to set startup details.";
+        },
+        error.FailedToGetStartupDetails => {
+            result = "Failed to get startup details.";
+        },
         error.FailedToGetJob => {
             result = "Failed to get group of processes.";
         },
@@ -353,6 +373,23 @@ pub fn get_error_msg(e_type: Errors) Errors![]const u8 {
         error.TasksFileMissingOrCorrupt => {
             result = "Tasks file is missing or corrupt.";
         },
+
+        error.StartupFileEmpty => {
+            result = "Startup file is empty. Please run mlt health";
+        },
+        error.StartupFileFailedCreate => {
+            result = "Failed to create startup file.";
+        },
+        error.StartupFileFailedRead => {
+            result = "Failed to read startup file.";
+        },
+        error.StartupFileFailedWrite => {
+            result = "Failed to write to startup file.";
+        },
+        error.StartupFileNotExists => {
+            result = "Startup file does not exist.";
+        },
+
         error.TasksIdsFileFailedCreate => {
             result = "Failed to create task ids file.";
         },

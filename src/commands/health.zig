@@ -85,12 +85,12 @@ pub fn parse_cmd_args(argv: [][]u8) Errors!Flags {
     return flags;
 }
 
-const help_rows = .{
+pub const help_rows = .{
+    .{"mlt health"},
     .{"Checks each task to see if they are healthy and not corrupted."},
     .{"Run this when this tool breaks."},
     .{"Usage: mlt health"},
     .{""},
-    .{"For more, run `mlt help`"},
 };
 
 test "commands/health.zig" {

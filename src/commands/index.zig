@@ -12,6 +12,7 @@ const ls = @import("./ls.zig");
 const logs = @import("./logs.zig");
 const health = @import("./health.zig");
 const edit = @import("./edit.zig");
+const startup = @import("./startup.zig");
 
 const parse = @import("../lib/args/parse.zig");
 const util = @import("../lib/util.zig");
@@ -31,7 +32,7 @@ pub fn run_commands(argv: [][]u8) Errors!void {
         try start.run(argv[2..]);
     } else if (std.mem.eql(u8, command, "stop")) {
         try stop.run(argv[2..]);
-    } else if (std.mem.eql(u8, command, "restart")) {
+    } else if (std.mem.eql(u8, command, "restart") or std.mem.eql(u8, command, "r")) {
         try restart.run(argv[2..]);
     } else if (std.mem.eql(u8, command, "delete")) {
         try delete.run(argv[2..]);
@@ -41,8 +42,10 @@ pub fn run_commands(argv: [][]u8) Errors!void {
         try logs.run(argv[2..]);
     } else if (std.mem.eql(u8, command, "health")) {
         try health.run(argv[2..]);
-    } else if (std.mem.eql(u8, command, "edit")) {
+    } else if (std.mem.eql(u8, command, "edit") or std.mem.eql(u8, command, "e")) {
         try edit.run(argv[2..]);
+    } else if (std.mem.eql(u8, command, "startup")) {
+        try startup.run();
     } else {
         return error.MissingArgument;
     }

@@ -24,10 +24,16 @@ const parse = @import("../lib/args/parse.zig");
 const e = @import("../lib/error.zig");
 const Errors = e.Errors;
 
+const set_run_on_boot = @import("../lib/startup/index.zig").set_run_on_boot;
+
 pub const Flags = struct {
     namespace: ?[]const u8,
-    memory_limit: util.MemLimit,
-    cpu_limit: util.CpuLimit,
+    command: ?[]const u8,
+    memory_limit: ?util.MemLimit,
+    cpu_limit: ?util.CpuLimit,
+    persist: ?bool,
+    interactive: ?bool,
+    boot: ?bool,
     help: bool,
     args: util.TaskArgs,
     monitoring: ?Monitoring
@@ -50,6 +56,10 @@ pub fn run(argv: [][]u8) Errors!void {
     var tasks = try TaskManager.get_tasks();
     defer tasks.deinit();
 
+    if (flags.boot != null) {
+        try set_run_on_boot();
+    }
+
     for (flags.args.ids.?) |id| {
         // Files are closed in the forked process
         var new_task = Task.init(id);
@@ -57,14 +67,26 @@ pub fn run(argv: [][]u8) Errors!void {
         try TaskManager.get_task_from_id(
             &new_task
         );
-        if (flags.memory_limit != 0) {
-            new_task.stats.?.memory_limit = flags.memory_limit;
+        if (flags.memory_limit != null) {
+            new_task.stats.?.memory_limit = flags.memory_limit.?;
         }
-        if (flags.cpu_limit != 0) {
-            new_task.stats.?.cpu_limit = flags.cpu_limit;
+        if (flags.cpu_limit != null) {
+            new_task.stats.?.cpu_limit = flags.cpu_limit.?;
+        }
+        if (flags.interactive != null) {
+            new_task.stats.?.interactive = flags.interactive.?;
+        }
+        if (flags.persist != null) {
+            new_task.stats.?.persist = flags.persist.?;
         }
         if (flags.monitoring != null) {
             new_task.stats.?.monitoring = flags.monitoring.?;
+        }
+        if (flags.boot != null) {
+            new_task.stats.?.boot = flags.boot.?;
+        }
+        if (flags.command != null) {
+            new_task.stats.?.command = flags.command.?;
         }
         try new_task.files.?.write_file(Stats, new_task.stats.?);
 
@@ -136,14 +158,18 @@ fn swap_namespace(ns: *TNamespaces, task_id: TaskId, ns_name: []const u8) Errors
 
 fn parse_cmd_args(argv: [][]u8) Errors!Flags {
     var flags = Flags {
-        .memory_limit = 0,
-        .cpu_limit = 0,
-        .help = false,
+        .memory_limit = null,
+        .cpu_limit = null,
+        .persist = null,
+        .interactive = null,
         .namespace = null,
+        .command = null,
         .monitoring = null,
+        .boot = null,
+        .help = false,
         .args = undefined
     };
-    var pflags = util.gpa.alloc(parse.Flag, 6)
+    var pflags = util.gpa.alloc(parse.Flag, 13)
         catch |err| return e.verbose_error(err, error.ParsingCommandArgsFailed);
     defer util.gpa.free(pflags);
     pflags[0] = parse.Flag {
@@ -167,9 +193,45 @@ fn parse_cmd_args(argv: [][]u8) Errors!Flags {
         .type = .value
     };
     pflags[5] = parse.Flag {
-        .name = 'M',
-        .long_name = "monitor",
+        .name = 's',
+        .long_name = "search",
         .type = .value
+    };
+    pflags[6] = parse.Flag {
+        .name = 'i',
+        .type = .static,
+        .long_name = "interactive"
+    };
+    pflags[7] = parse.Flag {
+        .name = 'I',
+        .type = .static,
+        .long_name = "disable-interactive"
+    };
+    pflags[8] = parse.Flag {
+        .name = 'p',
+        .type = .static,
+        .long_name = "persist"
+    };
+    pflags[9] = parse.Flag {
+        .name = 'P',
+        .type = .static,
+        .long_name = "disable-persist",
+    };
+    pflags[10] = parse.Flag {
+        .name = 'b',
+        .long_name = "boot",
+        .type = .static,
+    };
+    pflags[11] = parse.Flag {
+        .name = 'B',
+        .long_name = "disable-boot",
+        .type = .static,
+    };
+    pflags[12] = parse.Flag {
+        .name = '1',
+        .long_name = "comm",
+        .type = .value,
+        .only_long_name = true
     };
 
     const vals = try parse.parse_args(argv, pflags);
@@ -181,17 +243,25 @@ fn parse_cmd_args(argv: [][]u8) Errors!Flags {
         }
         switch (flag.name) {
             'c' => {
-                flags.cpu_limit = std.fmt.parseInt(util.CpuLimit, flag.value.?, 10)
-                    catch return error.CpuLimitValueInvalid;
+                if (std.mem.eql(u8, flag.value.?, "none")) {
+                    flags.cpu_limit = 0;
+                } else {
+                    flags.cpu_limit = std.fmt.parseInt(util.CpuLimit, flag.value.?, 10)
+                        catch return error.CpuLimitValueInvalid;
+                }
             },
             'm' => {
-                flags.memory_limit = std.fmt.parseIntSizeSuffix(flag.value.?, 10)
-                    catch |err| switch (err) {
-                        error.InvalidCharacter => {
-                            return error.MemoryLimitValueInvalid;
-                        },
-                        else => return error.ParsingCommandArgsFailed
-                    };
+                if (std.mem.eql(u8, flag.value.?, "none")) {
+                    flags.memory_limit = 0;
+                } else {
+                    flags.memory_limit = std.fmt.parseIntSizeSuffix(flag.value.?, 10)
+                        catch |err| switch (err) {
+                            error.InvalidCharacter => {
+                                return error.MemoryLimitValueInvalid;
+                            },
+                            else => return error.ParsingCommandArgsFailed
+                        };
+                }
             },
             'n' => {
                 if (!util.is_alphabetic(flag.value.?)) {
@@ -204,7 +274,19 @@ fn parse_cmd_args(argv: [][]u8) Errors!Flags {
             },
             'h' => flags.help = true,
             'd' => log.enable_debug(),
-            'M' => flags.monitoring = try util.read_monitoring_from_string(flag.value.?),
+
+            'i' => flags.interactive = true,
+            'I' => flags.interactive = false,
+
+            'p' => flags.persist = true,
+            'P' => flags.persist = false,
+
+            'b' => flags.boot = true,
+            'B' => flags.boot = false,
+
+            's' => flags.monitoring = try util.read_monitoring_from_string(flag.value.?),
+
+            '1' => flags.command = flag.value.?,
             else => return error.InvalidOption
         }
     }
@@ -216,17 +298,27 @@ fn parse_cmd_args(argv: [][]u8) Errors!Flags {
     return flags;
 }
 
-const help_rows  = .{
+pub const help_rows  = .{
+    .{"mlt edit"},
     .{"Can change resource limits of tasks by task id or namespace"},
     .{"Usage: mlt edit -m 40M -c 20 -n ns_two 1 2"},
     .{"Flags:"},
-    .{"", "-m [num]", "Set maximum memory limit e.g 4GB"},
-    .{"", "-c [num]", "Set limit cpu usage by percentage e.g 20"},
-    .{"", "-n [text]", "Set namespace for the process"},
-    .{"", "-p", "", "Persist mode (will restart if the program exits)"},
-    .{"", "-M, --monitor", "How thorough looking for child processes will be, use \"deep\" for complex applications like GUIs although it can be a little more CPU intensive, \"shallow\" is the default."},
+    .{"", "-m [num]", "", "Set maximum memory limit e.g 4GB. Set to `none` to remove it."},
+    .{"", "-c [num]", "", "Set limit cpu usage by percentage e.g 20. Set to `none` to remove it."},
+
+    .{"", "-i", "", "", "Interactive mode (can use aliased commands on your environment)"},
+    .{"", "-I", "", "", "Disable interactive mode"},
+
+    .{"", "-p", "", "", "Persist mode (will restart if the program exits)"},
+    .{"", "-P", "", "", "Disable persist mode"},
+
+    .{"", "-b, --boot", "", "Run this task on startup."},
+    .{"", "-B, --disable-boot", "Stop running this task on startup."},
+
+    .{"", "-e", "", "", "Updates env variables with your current environment. You'll have to restart the process for this to take effect"},
+    .{"", "-s, --search [text]", "Makes this task look for child processes more thoroughly. Can either set to `deep` or `shallow`."},
+    .{"", "--comm [text]", "", "Set the command to run."},
     .{""},
-    .{"For more, run `mlt help`"},
 };
 
 test "commands/edit.zig" {

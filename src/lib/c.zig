@@ -10,6 +10,7 @@ pub const libc = @cImport({
         @cInclude("tlhelp32.h");
         @cInclude("tchar.h");
         @cInclude("processthreadsapi.h");
+        @cInclude("winreg.h");
     }
 
     if (builtin.target.os.tag != .windows) {

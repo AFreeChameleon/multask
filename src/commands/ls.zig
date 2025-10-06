@@ -20,7 +20,15 @@ const TaskArgs = util.TaskArgs;
 
 const log = @import("../lib/log.zig");
 const parse = @import("../lib/args/parse.zig");
-const Table = @import("../lib/table/index.zig").Table;
+
+const main = @import("../lib/table/main.zig");
+const MainTable = main.Table;
+const MainTableMethods = main.TableMethods;
+
+const stats = @import("../lib/table/stats.zig");
+const StatsTable = stats.Table;
+const StatsTableMethods = stats.TableMethods;
+
 const cpu = @import("../lib/linux/cpu.zig");
 const window = @import("../lib/window.zig");
 
@@ -31,6 +39,7 @@ pub const Flags = struct {
     watch: bool,
     all: bool,
     help: bool,
+    stats: bool,
     args: TaskArgs,
 };
 
@@ -43,72 +52,23 @@ pub fn run(argv: [][]u8) Errors!void {
         return;
     }
 
-    var table = try Table.init(flags.all);
-    defer table.deinit();
-    try table.append_header();
-
-    for (flags.args.ids.?) |task_id| {
-        var task = Task.init(task_id);
-        defer task.deinit();
-        TaskManager.get_task_from_id(&task) catch |err| {
-            try log.printdebug("{any}", .{err});
-            try table.add_corrupted_task(task_id);
-            continue;
-        };
-        task.resources.?.set_cpu_usage(&task) catch |err| {
-            try log.printdebug("{any}", .{err});
-            try table.add_corrupted_task(task_id);
-            continue;
-        };
-        const existing_rows = table.rows.items.len;
-        table.add_task(&task) catch |err| {
-            try log.printdebug("{any}", .{err});
-            const current_rows = table.rows.items.len;
-            if (current_rows > existing_rows) {
-                try table.remove_rows(current_rows - existing_rows);
-            }
-            try table.add_corrupted_task(task_id);
-            continue;
-        };
+    if (flags.stats) {
+        try output_stats_table(&flags);
+    } else {
+        try output_main_table(&flags);
     }
+}
+
+fn output_stats_table(flags: *Flags) Errors!void {
+    var table = try generate_stats_table(flags);
+    defer table.deinit();
     try table.print_table();
 
     if (!flags.watch) return;
 
     while (true) {
         std.Thread.sleep(1_000_000_000);
-        // Top & bottom border and separator of header
-        var new_table = try Table.init(flags.all);
-        try new_table.append_header();
-        const ids = try check_taskids(flags.args);
-        std.mem.sort(TaskId, ids, {}, comptime std.sort.asc(TaskId));
-        defer util.gpa.free(ids);
-
-        for (ids) |task_id| {
-            var task = Task.init(task_id);
-            defer task.deinit();
-            TaskManager.get_task_from_id(&task) catch |err| {
-                try log.printdebug("{any}", .{err});
-                try new_table.add_corrupted_task(task_id);
-                continue;
-            };
-            task.resources.?.set_cpu_usage(&task) catch |err| {
-                try log.printdebug("{any}", .{err});
-                try new_table.add_corrupted_task(task_id);
-                continue;
-            };
-            const existing_rows = new_table.rows.items.len;
-            new_table.add_task(&task) catch |err| {
-                try log.printdebug("{any}", .{err});
-                const current_rows = new_table.rows.items.len;
-                if (current_rows > existing_rows) {
-                    try new_table.remove_rows(current_rows - existing_rows);
-                }
-                try new_table.add_corrupted_task(task_id);
-                continue;
-            };
-        }
-
+        var new_table = try generate_stats_table(flags);
         try table.clear();
         try new_table.print_table();
         table.deinit();
@@ -119,6 +79,91 @@ pub fn run(argv: [][]u8) Errors!void {
         try log.printerr(error.CorruptedTask);
     }
     table.reset();
+}
+
+fn output_main_table(flags: *Flags) Errors!void {
+    var table = try generate_main_table(flags);
+    defer table.deinit();
+    try table.print_table();
+
+    if (!flags.watch) return;
+
+    while (true) {
+        std.Thread.sleep(1_000_000_000);
+        var new_table = try generate_main_table(flags);
+        try table.clear();
+        try new_table.print_table();
+        table.deinit();
+        table = new_table;
+    }
+
+    if (table.corrupted_rows) {
+        try log.printerr(error.CorruptedTask);
+    }
+    table.reset();
+}
+
+fn generate_stats_table(flags: *Flags) Errors!StatsTable {
+    var table = try StatsTable.init(flags.all);
+    try StatsTableMethods.append_header(&table);
+    const ids = try check_taskids(flags.args);
+    std.mem.sort(TaskId, ids, {}, comptime std.sort.asc(TaskId));
+    defer util.gpa.free(ids);
+
+    for (ids) |task_id| {
+        var task = Task.init(task_id);
+        defer task.deinit();
+        TaskManager.get_task_from_id(&task) catch |err| {
+            try log.printdebug("{any}", .{err});
+            try StatsTableMethods.add_corrupted_task(&table, task_id);
+            continue;
+        };
+        const existing_rows = table.rows.items.len;
+        StatsTableMethods.add_task(&table, &task) catch |err| {
+            try log.printdebug("{any}", .{err});
+            const current_rows = table.rows.items.len;
+            if (current_rows > existing_rows) {
+                try table.remove_rows(current_rows - existing_rows);
+            }
+            try StatsTableMethods.add_corrupted_task(&table, task_id);
+            continue;
+        };
+    }
+    return table;
+}
+
+fn generate_main_table(flags: *Flags) Errors!MainTable {
+    var table = try MainTable.init(flags.all);
+    try MainTableMethods.append_header(&table);
+    const ids = try check_taskids(flags.args);
+    std.mem.sort(TaskId, ids, {}, comptime std.sort.asc(TaskId));
+    defer util.gpa.free(ids);
+
+    for (ids) |task_id| {
+        var task = Task.init(task_id);
+        defer task.deinit();
+        TaskManager.get_task_from_id(&task) catch |err| {
+            try log.printdebug("{any}", .{err});
+            try MainTableMethods.add_corrupted_task(&table, task_id);
+            continue;
+        };
+        task.resources.?.set_cpu_usage(&task) catch |err| {
+            try log.printdebug("{any}", .{err});
+            try MainTableMethods.add_corrupted_task(&table, task_id);
+            continue;
+        };
+        const existing_rows = table.rows.items.len;
+        MainTableMethods.add_task(&table, &task) catch |err| {
+            try log.printdebug("{any}", .{err});
+            const current_rows = table.rows.items.len;
+            if (current_rows > existing_rows) {
+                try table.remove_rows(current_rows - existing_rows);
+            }
+            try MainTableMethods.add_corrupted_task(&table, task_id);
+            continue;
+        };
+    }
+    return table;
 }
 
 // Removes any old tasks
@@ -151,14 +196,16 @@ fn check_taskids(targs: TaskArgs) Errors![]TaskId {
 }
 
 fn parse_cmd_args(argv: [][]u8) Errors!Flags {
-    var flags = Flags{ .watch = false, .all = false, .help = false, .args = TaskArgs{} };
-    var pflags = util.gpa.alloc(parse.Flag, 5) catch |err| return e.verbose_error(err, error.ParsingCommandArgsFailed);
+    var flags = Flags{ .watch = false, .all = false, .help = false, .args = TaskArgs{}, .stats = false };
+    var pflags = util.gpa.alloc(parse.Flag, 6)
+        catch |err| return e.verbose_error(err, error.ParsingCommandArgsFailed);
     defer util.gpa.free(pflags);
     pflags[0] = parse.Flag{ .name = 'a', .type = .static };
     pflags[1] = parse.Flag{ .name = 'w', .type = .static };
     pflags[2] = parse.Flag{ .name = 'f', .type = .static };
     pflags[3] = parse.Flag{ .name = 'h', .type = .static };
     pflags[4] = parse.Flag{ .name = 'd', .type = .static };
+    pflags[5] = parse.Flag{ .name = 's', .type = .static, .long_name = "stats" };
 
     const vals = try parse.parse_args(argv, pflags);
     defer util.gpa.free(vals);
@@ -171,6 +218,7 @@ fn parse_cmd_args(argv: [][]u8) Errors!Flags {
             'w', 'f' => flags.watch = true,
             'a' => flags.all = true,
             'h' => flags.help = true,
+            's' => flags.stats = true,
             'd' => log.enable_debug(),
             else => continue,
         }
@@ -187,12 +235,14 @@ fn parse_cmd_args(argv: [][]u8) Errors!Flags {
     return flags;
 }
 
-const help_rows = .{
+pub const help_rows = .{
+    .{"mlt ls"},
     .{"Gets stats and resource usage of tasks"},
     .{"Usage: mlt ls -w -a [task ids or namespaces OPTIONAL]"},
-    .{"flags:"},
-    .{ "", "-w, -f", "Provides updating tables every 2 seconds" },
-    .{ "", "-a", "Show all child processes" },
+    .{"Flags:"},
+    .{ "", "-w, -f", "", "", "Updates tables every 2 seconds." },
+    .{ "", "-a", "", "", "Show all child processes under each task." },
+    .{ "", "-s", "", "", "Show stats for each task e.g resource limits and flags." },
     .{""},
     .{"A task's different states are:"},
     .{ "Running", "", "The process is running" },
@@ -200,7 +250,6 @@ const help_rows = .{
     .{ "Detached", "The main process in the task has stopped, but it has child processes that are still running." },
     .{ "Headless", "The main process is running, but the multask daemon is not. This is bad and the task should be restarted." },
     .{""},
-    .{"For more, run `mlt help`"},
 };
 
 test "commands/ls.zig" {
@@ -229,6 +278,10 @@ test "Parse ls command args" {
     defer util.gpa.free(debugf);
     try args.append(debugf);
 
+    const statsf = try std.fmt.allocPrint(util.gpa, "--stats", .{});
+    defer util.gpa.free(statsf);
+    try args.append(statsf);
+
     const test_tidv = try std.fmt.allocPrint(util.gpa, "1", .{});
     defer util.gpa.free(test_tidv);
     try args.append(test_tidv);
@@ -239,6 +292,7 @@ test "Parse ls command args" {
     try expect(flags.watch);
     try expect(flags.all);
     try expect(flags.help);
+    try expect(flags.stats);
     try expect(log.debug);
     try expect(flags.args.ids.?[0] == 1);
 }

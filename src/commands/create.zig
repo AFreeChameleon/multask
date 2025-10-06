@@ -14,6 +14,8 @@ const Lengths = util.Lengths;
 const log = @import("../lib/log.zig");
 const parse = @import("../lib/args/parse.zig");
 
+const set_run_on_boot = @import("../lib/startup/index.zig").set_run_on_boot;
+
 const e = @import("../lib/error.zig");
 const Errors = e.Errors;
 
@@ -25,7 +27,9 @@ pub const Flags = struct {
     namespace: ?[]const u8,
     help: bool,
     command: []const u8,
-    monitoring: Monitoring
+    monitoring: Monitoring,
+    boot: bool,
+    no_run: bool
 };
 
 pub fn run(argv: [][]u8) Errors!void {
@@ -36,6 +40,10 @@ pub fn run(argv: [][]u8) Errors!void {
         return;
     }
 
+    if (flags.boot) {
+        try set_run_on_boot();
+    }
+
     // Files are closed in the forked process
     var new_task = try TaskManager.add_task(
         flags.command,
@@ -43,8 +51,21 @@ pub fn run(argv: [][]u8) Errors!void {
         flags.memory_limit,
         flags.namespace,
         flags.persist,
-        flags.monitoring
+        flags.monitoring,
+        flags.boot,
+        flags.interactive
     );
+    defer {
+        if (flags.no_run) {
+            if (comptime builtin.target.os.tag != .windows) {
+                new_task.deinit();
+            }
+        }
+    }
+
+    if (flags.no_run) {
+        try log.printinfo("No run flag passed, not starting task.", .{});
+    }
 
     if (comptime builtin.target.os.tag != .windows) {
         const unix_fork = @import("../lib/unix/fork.zig");
@@ -54,6 +75,7 @@ pub fn run(argv: [][]u8) Errors!void {
             .interactive = flags.interactive,
             .persist = flags.persist,
             .update_envs = true,
+            .no_run = flags.no_run
         });
     } else {
         const windows_fork = @import("../lib/windows/fork.zig");
@@ -63,11 +85,12 @@ pub fn run(argv: [][]u8) Errors!void {
             .interactive = flags.interactive,
             .persist = flags.persist,
             .update_envs = true,
+            .no_run = flags.no_run
         });
         defer new_task.deinit();
     }
 
-    try log.printsucc("Task started with id {d}.", .{new_task.id});
+    try log.printsucc("Task created with id {d}.", .{new_task.id});
 }
 
 fn parse_cmd_args(argv: [][]u8) Errors!Flags {
@@ -77,11 +100,13 @@ fn parse_cmd_args(argv: [][]u8) Errors!Flags {
         .interactive = false,
         .persist = false,
         .help = false,
+        .no_run = false,
+        .boot = false,
         .monitoring = Monitoring.Shallow,
         .namespace = null,
         .command = undefined
     };
-    var pflags = util.gpa.alloc(parse.Flag, 8)
+    var pflags = util.gpa.alloc(parse.Flag, 10)
         catch |err| return e.verbose_error(err, error.ParsingCommandArgsFailed);
     defer util.gpa.free(pflags);
     pflags[0] = parse.Flag {
@@ -113,9 +138,20 @@ fn parse_cmd_args(argv: [][]u8) Errors!Flags {
         .type = .value
     };
     pflags[7] = parse.Flag {
-        .name = 'M',
-        .long_name = "monitor",
+        .name = 's',
+        .long_name = "search",
         .type = .value
+    };
+    pflags[8] = parse.Flag {
+        .name = 'b',
+        .long_name = "boot",
+        .type = .static,
+    };
+    pflags[9] = parse.Flag {
+        .name = '1',
+        .long_name = "no-run",
+        .type = .static,
+        .only_long_name = true,
     };
 
     const vals = try parse.parse_args(argv, pflags);
@@ -150,11 +186,15 @@ fn parse_cmd_args(argv: [][]u8) Errors!Flags {
                 flags.namespace = if (flag.value == null) null else
                     try util.strdup(flag.value.?, error.ParsingCommandArgsFailed);
             },
-            'i' => flags.interactive = true,
             'h' => flags.help = true,
-            'p' => flags.persist = true,
             'd' => log.enable_debug(),
-            'M' => flags.monitoring = try util.read_monitoring_from_string(flag.value.?),
+
+            'i' => flags.interactive = true,
+            'p' => flags.persist = true,
+            's' => flags.monitoring = try util.read_monitoring_from_string(flag.value.?),
+
+            'b' => flags.boot = true,
+            '1' => flags.no_run = true,
             else => return error.InvalidOption
         }
     }
@@ -166,18 +206,20 @@ fn parse_cmd_args(argv: [][]u8) Errors!Flags {
     return flags;
 }
 
-const help_rows = .{
+pub const help_rows = .{
+    .{"mlt create"},
     .{"Creates and starts a task by entering a command."},
     .{"Usage: mlt create -m 20M -c 50 -n ns_one -i -p \"ping google.com\""},
     .{"Flags:"},
-    .{"", "-m [num]", "Set maximum memory limit e.g 4GB"},
-    .{"", "-c [num]", "Set limit cpu usage by percentage e.g 20"},
-    .{"", "-n [text]", "Set namespace for the process"},
-    .{"", "-i", "", "Interactive mode (can use aliased commands on your environment)"},
-    .{"", "-p", "", "Persist mode (will restart if the program exits)"},
-    .{"", "-M, --monitor", "How thorough looking for child processes will be, use \"deep\" for complex applications like GUIs although it can be a little more CPU intensive, \"shallow\" is the default."},
+    .{"", "-m [num]", "", "Set maximum memory limit e.g 4GB"},
+    .{"", "-c [num]", "", "Set limit cpu usage by percentage e.g 20"},
+    .{"", "-n [text]", "", "Set namespace for the process"},
+    .{"", "-i", "", "", "Interactive mode (can use aliased commands on your environment)"},
+    .{"", "-p", "", "", "Persist mode (will restart if the program exits)"},
+    .{"", "-b, --boot", "", "Run this task on startup."},
+    .{"", "-s, --search [text]", "Makes this task look for child processes more thoroughly. Can either set to `deep` or `shallow`."},
+    .{"", "--no-run", "", "Don't run the task after creation."},
     .{""},
-    .{"For more, run `mlt help`"},
 };
 
 test "commands/create.zig" {
@@ -224,6 +266,10 @@ test "Parse create command args" {
     defer util.gpa.free(helpf);
     try args.append(helpf);
 
+    const bootf = try std.fmt.allocPrintZ(util.gpa, "-b", .{});
+    defer util.gpa.free(bootf);
+    try args.append(bootf);
+
     log.debug = false;
     const debugf = try std.fmt.allocPrintZ(util.gpa, "-d", .{});
     defer util.gpa.free(debugf);
@@ -246,6 +292,7 @@ test "Parse create command args" {
     try expect(flags.interactive);
     try expect(flags.persist);
     try expect(flags.help);
+    try expect(flags.boot);
     try expect(log.debug);
     try expect(std.mem.eql(u8, flags.command, "echo hi"));
 }

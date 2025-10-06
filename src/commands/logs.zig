@@ -119,14 +119,14 @@ fn parse_cmd_args(argv: [][]u8) Errors!Flags {
     return flags;
 }
 
-const help_rows = .{
+pub const help_rows = .{
+    .{"mlt logs"},
     .{"Reads logs of the task"},
     .{"Usage: mlt logs -l 1000 -w 1"},
-    .{"flags:"},
-    .{"", "-l [num]", "Get number of previous lines, default is 20"},
-    .{"", "-w, -f", "", "Listen to new logs coming in"},
+    .{"Flags:"},
+    .{"", "-l [num]", "", "Get number of previous lines, default is 20"},
+    .{"", "-w, -f", "", "", "Listen to new logs coming in"},
     .{""},
-    .{"For more, run `mlt help`"},
 };
 
 test "commands/logs.zig" {

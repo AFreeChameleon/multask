@@ -1,5 +1,7 @@
 # Installation
 
+To install Multask, run the command under your respective operating system.
+
 Bash & ZSH officially supported.
 
 ## Linux
@@ -70,3 +72,8 @@ The different options for the `-Doptimize` flag are:
 - `Debug`
 
 To understand what the different build modes mean, check it out [here](https://zig.guide/build-system/build-modes/)
+
+## Updating
+
+To update your Multask version, simply run the installation script with the version you want to update to and
+it will automatically migrate your data to the newer version.

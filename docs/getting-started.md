@@ -4,12 +4,12 @@ Multask is a program that organises running multiple commands complete with flex
 
 Available on Windows, Macos and Linux.
 
-## Commands
-
 To get more detail on a command, run:
 ```
 > mlt [command e.g create] -h
 ```
+
+## Commands
 
 Create a new task by typing:
 
@@ -77,51 +77,103 @@ For a more general list of all commands and their options, run `mlt help`.
 ```
 > mlt help
 Usage: mlt [option] [flags] [values]
+To see an individial command's options, run `mlt [command] -h`
 options:
-        create  Create a task and run it. [value] must be a command e.g "ping google.com"
-                -m [num]        Set maximum memory limit e.g 4GB
-                -c [num]        Set limit cpu usage by percentage e.g 20
-                -n [text]       Set namespace for the task
-                -i              Interactive mode (can use aliased commands on your environment)
-                -p              Persist mode (will restart if the program exits)
-                -M, --monitor   How thorough looking for child processes will be, use "deep" for complex applications like GUIs although it can be a little more CPU intensive, "shallow" is the default.
 
-        stop    Stops a task. [value] must be task ids or a namespace
+mlt create
+Creates and starts a task by entering a command.
+Usage: mlt create -m 20M -c 50 -n ns_one -i -p "ping google.com"
+Flags:
+        -m [num]                Set maximum memory limit e.g 4GB
+        -c [num]                Set limit cpu usage by percentage e.g 20
+        -n [text]               Set namespace for the process
+        -i                      Interactive mode (can use aliased commands on your environment)
+        -p                      Persist mode (will restart if the program exits)
+        -b, --boot              Run this task on startup.
+        -s, --search [text]     Makes this task look for child processes more thoroughly. Can either set to `deep` or `shallow`.
+        --no-run                Don't run the task after creation.
 
-        start   Starts a task. [value] must be task ids or a namespace
-                -m [num]        Set maximum memory limit e.g 4GB
-                -c [num]        Set limit cpu usage by percentage e.g 20
-                -i              Interactive mode (can use aliased commands on your environment)
-                -p              Persist mode (will restart if the program exits)
-                -e              Updates env variables with your current environment.
-                -M, --monitor   How thorough looking for child processes will be, use "deep" for complex applications like GUIs although it can be a little more CPU intensive, "shallow" is the default.
 
-        edit    Edits a task. [value] must be task ids or a namespace
-                -m [num]        Set maximum memory limit e.g 4GB
-                -c [num]        Set limit cpu usage by percentage e.g 20
-                -n [text]       Set namespace for the task
-                -p              Persist mode (will restart if the program exits)
-                -M, --monitor   How thorough looking for child processes will be, use "deep" for complex applications like GUIs although it can be a little more CPU intensive, "shallow" is the default.
+mlt stop
+Stops tasks by task id or namespace
+Usage: mlt stop all
 
-        restart Restarts a task. [value] must be task ids or a namespace
-                -m [num]        Set maximum memory limit e.g 4GB
-                -c [num]        Set limit cpu usage by percentage e.g 20
-                -i              Interactive mode (can use aliased commands on your environment)
-                -p              Persist mode (will restart if the program exits)
-                -e              Updates env variables with your current environment.
-                -M, --monitor   How thorough looking for child processes will be, use "deep" for complex applications like GUIs although it can be a little more CPU intensive, "shallow" is the default.
 
-        ls      Shows all taskes
-                -w, -f          Provides updating tables every 2 seconds
-                -a              Show all child taskes
+mlt start
+Starts tasks by task id or namespace
+Usage: mlt start -m 100M -c 50 -i -p all
+Flags:
+        -m [num]                Set maximum memory limit e.g 4GB. Set to `none` to remove it.
+        -c [num]                Set limit cpu usage by percentage e.g 20. Set to `none` to remove it.
+        -i                      Interactive mode (can use aliased commands on your environment)
+        -I                      Disable interactive mode
+        -p                      Persist mode (will restart if the program exits)
+        -P                      Disable persist mode
+        -e                      Updates env variables with your current environment.
+        -s, --search [text]     Makes this task look for child processes more thoroughly. Can either set to `deep` or `shallow`.
 
-        logs    Shows output from task. [value] must be a task id e.g 1
-                -l [num]        See number of previous lines default is 20
-                -w, -f          Listen to new logs coming in
 
-        delete  Deletes tasks. [value] must be a task id or a namespace e.g 1
+mlt edit
+Can change resource limits of tasks by task id or namespace
+Usage: mlt edit -m 40M -c 20 -n ns_two 1 2
+Flags:
+        -m [num]                Set maximum memory limit e.g 4GB. Set to `none` to remove it.
+        -c [num]                Set limit cpu usage by percentage e.g 20. Set to `none` to remove it.
+        -i                      Interactive mode (can use aliased commands on your environment)
+        -I                      Disable interactive mode
+        -p                      Persist mode (will restart if the program exits)
+        -P                      Disable persist mode
+        -b, --boot              Run this task on startup.
+        -B, --disable-boot      Stop running this task on startup.
+        -e                      Updates env variables with your current environment. You'll have to restart the process for this to take effect    
+        -s, --search [text]     Makes this task look for child processes more thoroughly. Can either set to `deep` or `shallow`.
+        --comm [text]           Set the command to run.
 
-        health  Checks state of multask, run this when multask is not working
 
-        help    Shows available options
+mlt restart
+Restarts tasks by task id or namespace
+Usage: mlt restart -m 100M -c 50 -i -p all
+Flags:
+        -m [num]                Set maximum memory limit e.g 4GB. Set to `none` to remove it.
+        -c [num]                Set limit cpu usage by percentage e.g 20. Set to `none` to remove it.
+        -i                      Interactive mode (can use aliased commands on your environment)
+        -I                      Disable interactive mode
+        -p                      Persist mode (will restart if the program exits)
+        -P                      Disable persist mode
+        -e                      Updates env variables with your current environment.
+        -s, --search [text]     Makes this task look for child processes more thoroughly. Can either set to `deep` or `shallow`.
+
+
+mlt ls
+Gets stats and resource usage of tasks
+Usage: mlt ls -w -a [task ids or namespaces OPTIONAL]
+Flags:
+        -w, -f                  Updates tables every 2 seconds.
+        -a                      Show all child processes under each task.
+        -s                      Show stats for each task e.g resource limits and flags.
+
+A task's different states are:
+Running         The process is running
+Stopped         The task is stopped
+Detached        The main process in the task has stopped, but it has child processes that are still running.
+Headless        The main process is running, but the multask daemon is not. This is bad and the task should be restarted.
+
+
+mlt logs
+Reads logs of the task
+Usage: mlt logs -l 1000 -w 1
+Flags:
+        -l [num]                Get number of previous lines, default is 20
+        -w, -f                  Listen to new logs coming in
+
+
+mlt delete
+Deletes tasks and kills any process that's running under them.
+Usage: mlt delete 1 2 ns_one
+
+
+mlt health
+Checks each task to see if they are healthy and not corrupted.
+Run this when this tool breaks.
+Usage: mlt health
 ```

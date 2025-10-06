@@ -40,6 +40,10 @@ pub fn run(argv: [][]u8) Errors!void {
 
     var tasks = try TaskManager.get_tasks();
     defer tasks.deinit();
+    if (flags.args.ids.?.len == 0) {
+        try log.printinfo("No tasks exist.", .{});
+        return;
+    }
     for (flags.args.ids.?) |id| {
         const task_idx = std.mem.indexOf(TaskId, tasks.task_ids, &[1]TaskId{id});
         if (task_idx == null) {
@@ -67,7 +71,6 @@ pub fn run(argv: [][]u8) Errors!void {
         try new_task.delete();
         try log.printsucc("Task deleted with id {d}.", .{new_task.id});
     }
-
 }
 
 pub fn parse_cmd_args(argv: [][]u8) Errors!Flags {
@@ -110,11 +113,11 @@ pub fn parse_cmd_args(argv: [][]u8) Errors!Flags {
     return flags;
 }
 
-const help_rows = .{
+pub const help_rows = .{
+    .{"mlt delete"},
     .{"Deletes tasks and kills any process that's running under them."},
     .{"Usage: mlt delete 1 2 ns_one"},
     .{""},
-    .{"For more, run `mlt help`"},
 };
 
 test "commands/delete.zig" {

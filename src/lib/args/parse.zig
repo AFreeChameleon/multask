@@ -14,7 +14,8 @@ pub const Flag = struct {
     value: ?[]const u8 = null,
     name: u8,
     long_name: ?[]const u8 = null,
-    exists: bool = false
+    exists: bool = false,
+    only_long_name: bool = false
 };
 
 const CaptureMode = enum(u2) {
@@ -56,8 +57,10 @@ pub fn parse_args(args: [][]u8, flags: []Flag) Errors![][]u8 {
             if (arg.len > 2 and arg[1] == '-') {
                 const res = try find_long_arg(arg[2..], flags);
                 if (res != null) {
-                    capture_mode = res.?.capture_mode;
-                    capturing = res.?.arg_char;
+                    if (res.?.capture_mode != .arg) {
+                        capture_mode = res.?.capture_mode;
+                        capturing = res.?.arg_char;
+                    }
                 } else {
                     values.append(arg)
                         catch |err| return e.verbose_error(err, error.ParsingCommandArgsFailed);
@@ -103,7 +106,7 @@ pub fn parse_args(args: [][]u8, flags: []Flag) Errors![][]u8 {
     return values.toOwnedSlice()
         catch |err| return e.verbose_error(err, error.ParsingCommandArgsFailed);
 }
-
+ 
 fn find_long_arg(arg: []u8, flags: []Flag) Errors!?ArgFound {
     for (flags) |*flag| {
         if (flag.long_name != null and std.mem.eql(u8, arg, flag.long_name.?)) {
@@ -115,7 +118,10 @@ fn find_long_arg(arg: []u8, flags: []Flag) Errors!?ArgFound {
                 };
             } else {
                 flag.exists = true;
-                return null;
+                return ArgFound {
+                    .capture_mode = .arg,
+                    .arg_char = flag.name
+                };
             }
         }
     }
@@ -126,7 +132,7 @@ fn find_short_args(arg_string: []u8, flags: []Flag) Errors!?ArgFound {
     for (arg_string, 0..) |char, i| {
         var found_arg = false;
         for (flags) |*flag| {
-            if (char == flag.name) {
+            if (!flag.only_long_name and char == flag.name) {
                 found_arg = true;
                 if (flag.type == .value) {
                     if (i != arg_string.len - 1) {
@@ -271,8 +277,78 @@ test "Parsing --arg-one with a value" {
     defer util.gpa.free(args2);
     try args.append(args2);
 
-    _ = try parse_args(args.items, flags);
+    const vals = try parse_args(args.items, flags);
+    defer util.gpa.free(vals);
     try expect(std.mem.eql(u8, flags[0].value.?, "testval"));
+    try expect(vals.len == 0);
+}
+
+test "Parsing only a long name --arg-one" {
+    std.debug.print("Parsing only a long name --arg-one\n", .{});
+    var flags = try util.gpa.alloc(Flag, 1);
+    defer util.gpa.free(flags);
+    flags[0] = Flag {
+        .type = .static,
+        .name = 'a',
+        .long_name = "arg-one",
+        .only_long_name = true
+    };
+
+    var args = std.ArrayList([]u8).init(util.gpa);
+    defer args.deinit();
+    const args1 = try std.fmt.allocPrint(util.gpa, "--arg-one", .{});
+    defer util.gpa.free(args1);
+    try args.append(args1);
+
+    const vals = try parse_args(args.items, flags);
+    defer util.gpa.free(vals);
+    try expect(flags[0].exists);
+    try expect(vals.len == 0);
+}
+
+test "Long arg that doesn't exist" {
+    std.debug.print("Long arg that doesn't exist\n", .{});
+    var flags = try util.gpa.alloc(Flag, 1);
+    defer util.gpa.free(flags);
+    flags[0] = Flag {
+        .type = .static,
+        .name = 'a',
+        .long_name = "arg-one",
+        .only_long_name = true
+    };
+
+    var args = std.ArrayList([]u8).init(util.gpa);
+    defer args.deinit();
+    const args1 = try std.fmt.allocPrint(util.gpa, "--arg-two", .{});
+    defer util.gpa.free(args1);
+    try args.append(args1);
+
+    const vals = try parse_args(args.items, flags);
+    defer util.gpa.free(vals);
+    try expect(!flags[0].exists);
+    try expect(vals.len == 1);
+}
+
+test "Parsing only a long name -a" {
+    std.debug.print("Parsing only a long name -a\n", .{});
+    var flags = try util.gpa.alloc(Flag, 1);
+    defer util.gpa.free(flags);
+    flags[0] = Flag {
+        .type = .static,
+        .name = 'a',
+        .long_name = "arg-one",
+        .only_long_name = true
+    };
+
+    var args = std.ArrayList([]u8).init(util.gpa);
+    defer args.deinit();
+    const args1 = try std.fmt.allocPrint(util.gpa, "-a", .{});
+    defer util.gpa.free(args1);
+    try args.append(args1);
+
+    _ = parse_args(args.items, flags)
+        catch |err| return try expect(err == error.InvalidOption);
+    try expect(false);
 }
 
 test "Parsing -ab with a value" {
@@ -299,7 +375,8 @@ test "Parsing -ab with a value" {
     defer util.gpa.free(args2);
     try args.append(args2);
 
-    _ = try parse_args(args.items, flags);
+    const vals = try parse_args(args.items, flags);
+    defer util.gpa.free(vals);
     try expect(flags[0].exists);
     try expect(std.mem.eql(u8, flags[1].value.?, "testval"));
 }

@@ -1,7 +1,7 @@
 .{
     .name = .multask,
 
-    .version = "0.4.2",
+    .version = "0.5.0",
 
     .fingerprint = 0x31af05cbf4f60c8,
 

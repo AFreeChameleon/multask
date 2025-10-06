@@ -45,22 +45,13 @@ pub fn run(argv: [][]u8) Errors!void {
         try TaskManager.get_task_from_id(
             &new_task
         );
-        if (new_task.process == null and !new_task.process.?.proc_exists()) {
+        const task_running = try TaskManager.kill_task(&new_task);
+        if (!task_running) {
             try log.printinfo("Task {d} is not running.", .{id});
             continue;
-        }
-
-        if (try taskproc.any_procs_exist(&new_task.process.?)) {
-            if (new_task.daemon != null and new_task.daemon.?.proc_exists()) {
-                try new_task.daemon.?.kill();
-            }
-            try taskproc.kill_all(&new_task.process.?);
         } else {
-            try log.printinfo("Task {d} is not running.", .{id});
-            continue;
+            try log.printsucc("Task stopped with id {d}.", .{new_task.id});
         }
-
-        try log.printsucc("Task stopped with id {d}.", .{new_task.id});
     }
 }
 
@@ -105,11 +96,11 @@ pub fn parse_cmd_args(argv: [][]u8) Errors!Flags {
     return flags;
 }
 
-const help_rows = .{
+pub const help_rows = .{
+    .{"mlt stop"},
     .{"Stops tasks by task id or namespace"},
     .{"Usage: mlt stop all"},
     .{""},
-    .{"For more, run `mlt help`"},
 };
 
 test "commands/stop.zig" {
