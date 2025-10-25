@@ -114,7 +114,7 @@ pub const LinuxCpu = struct {
             util.gpa.free(cpu_stats);
         }
         const new_time_total = get_cpu_time_total(cpu_stats);
-        var cpu_usage: f64 = @as(f64, @floatFromInt(libc.sysconf(libc._SC_NPROCESSORS_ONLN)))
+        const cpu_usage: f64 = @as(f64, @floatFromInt(libc.sysconf(libc._SC_NPROCESSORS_ONLN)))
             * 100.0
             * (
                 (@as(f64, @floatFromInt(proc_times)) - @as(f64, @floatFromInt(old_proc_times))) /
@@ -129,9 +129,6 @@ pub const LinuxCpu = struct {
 
         if (cpu_usage == std.math.inf(@TypeOf(cpu_usage))) {
             return error.FailedToGetCpuUsage;
-        }
-        if (cpu_usage > 100.0) {
-            cpu_usage = 100.0;
         }
         return cpu_usage;
     }

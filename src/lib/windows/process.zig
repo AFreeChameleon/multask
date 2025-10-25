@@ -4,7 +4,6 @@ const util = @import("../util.zig");
 const winutil = @import("./util.zig");
 const Pid = util.Pid;
 const Lengths = util.Lengths;
-const FileStrings = util.FileStrings;
 const e = @import("../error.zig");
 const Errors = e.Errors;
 

@@ -9,7 +9,9 @@ const Task = t.Task;
 const p = @import("../lib/task/process.zig");
 const Process = p.Process;
 
-const TaskManager = @import("../lib/task/manager.zig").TaskManager;
+const tm = @import("../lib/task/manager.zig");
+const TaskManager = tm.TaskManager;
+const Tasks = tm.Tasks;
 
 const ReadProcess = @import("../lib/task/file.zig").ReadProcess;
 
@@ -44,7 +46,9 @@ pub const Flags = struct {
 };
 
 pub fn run(argv: [][]u8) Errors!void {
-    var flags = try parse_cmd_args(argv);
+    var tasks = try TaskManager.get_tasks();
+    defer tasks.deinit();
+    var flags = try parse_cmd_args(argv, &tasks);
     defer flags.args.deinit();
 
     if (flags.help) {
@@ -195,7 +199,7 @@ fn check_taskids(targs: TaskArgs) Errors![]TaskId {
     return owned_new_ids;
 }
 
-fn parse_cmd_args(argv: [][]u8) Errors!Flags {
+fn parse_cmd_args(argv: [][]u8, tasks: *Tasks) Errors!Flags {
     var flags = Flags{ .watch = false, .all = false, .help = false, .args = TaskArgs{}, .stats = false };
     var pflags = util.gpa.alloc(parse.Flag, 6)
         catch |err| return e.verbose_error(err, error.ParsingCommandArgsFailed);
@@ -224,13 +228,11 @@ fn parse_cmd_args(argv: [][]u8) Errors!Flags {
         }
     }
     if (vals.len == 0) {
-        var tasks = try TaskManager.get_tasks();
-        defer tasks.deinit();
         flags.args.ids = util.gpa.dupe(TaskId, tasks.task_ids) catch |err| return e.verbose_error(err, error.ParsingCommandArgsFailed);
         std.mem.sort(TaskId, flags.args.ids.?, {}, comptime std.sort.asc(TaskId));
         return flags;
     }
-    const parsed_args = try util.parse_cmd_vals(vals);
+    const parsed_args = try util.parse_cmd_vals(vals, tasks);
     flags.args = parsed_args;
     return flags;
 }
@@ -286,7 +288,16 @@ test "Parse ls command args" {
     defer util.gpa.free(test_tidv);
     try args.append(test_tidv);
 
-    var flags = try parse_cmd_args(args.items);
+    var ns: tm.TNamespaces = std.StringHashMap([]TaskId).init(util.gpa);
+    defer ns.deinit();
+
+    var all_task_ids = [_]TaskId{1, 2, 3, 4};
+    var tasks = Tasks {
+        .namespaces = ns,
+        .task_ids = &all_task_ids
+    };
+
+    var flags = try parse_cmd_args(args.items, &tasks);
     defer flags.args.deinit();
 
     try expect(flags.watch);

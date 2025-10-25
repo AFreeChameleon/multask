@@ -6,17 +6,17 @@ Bash & ZSH officially supported.
 
 ## Linux
 ```
-curl -s "https://raw.githubusercontent.com/AFreeChameleon/multask/refs/heads/master/docs/_install/linux.sh" | bash
+curl -s "https://raw.githubusercontent.com/AFreeChameleon/multask/refs/heads/master/docs/_install/v0.5.0/linux.sh" | bash
 ```
 
 ## Mac
 ```
-curl -s "https://raw.githubusercontent.com/AFreeChameleon/multask/refs/heads/master/docs/_install/macos.sh" | bash
+curl -s "https://raw.githubusercontent.com/AFreeChameleon/multask/refs/heads/master/docs/_install/v0.5.0/macos.sh" | bash
 ```
 
 ## Windows
 ```
-powershell -c "irm https://raw.githubusercontent.com/AFreeChameleon/multask/refs/heads/master/docs/_install/win.ps1|iex"
+powershell -c "irm https://raw.githubusercontent.com/AFreeChameleon/multask/refs/heads/master/docs/_install/v0.5.0/win.ps1|iex"
 ```
 
 ## FreeBSD (outdated)
@@ -33,30 +33,30 @@ To build from source, you need:
 ### Creating folders
 **Unix:** If you don't have the `~/.local/bin` directory, create it and add it to the `$PATH` in your .rc file:
 ```
-> mkdir -p $HOME/.local/bin
+mkdir -p $HOME/.local/bin
 ```
 
 **Windows:** Create a `.multi-tasker` folder in your %USERPROFILE% and create a `bin` folder inside of it:
 ```
-> powershell -c 'New-Item "$env:USERPROFILE\.multi-tasker\bin\ " -ItemType Directory -Force | Out-Null'
+powershell -c 'New-Item "$env:USERPROFILE\.multi-tasker\bin\ " -ItemType Directory -Force | Out-Null'
 ```
 
 ### Installing the executable
 Next, clone the repo and go inside it:
 ```
-> git clone https://github.com/AFreeChameleon/multask && cd multask
+git clone https://github.com/AFreeChameleon/multask && cd multask
 ```
 
 And to build it, just run:
 
 **Unix**
 ```
-> zig build -Doptimize=ReleaseSmall --prefix-exe-dir $HOME/.local/bin/
+zig build -Doptimize=ReleaseSmall --prefix-exe-dir $HOME/.local/bin/
 ```
 
 **Windows**
 ```
-> powershell -c 'zig build -Doptimize=ReleaseSmall --prefix-exe-dir "$env:USERPROFILE\.multi-tasker\bin\ "'
+powershell -c 'zig build -Doptimize=ReleaseSmall --prefix-exe-dir "$env:USERPROFILE\.multi-tasker\bin\ "'
 ```
 And you also need to add `%USERPROFILE%\.multi-tasker\bin` to the Path environment variable.
 
@@ -77,3 +77,41 @@ To understand what the different build modes mean, check it out [here](https://z
 
 To update your Multask version, simply run the installation script with the version you want to update to and
 it will automatically migrate your data to the newer version.
+
+Except for Windows, you'll have to run this manually:
+
+```
+powershell -c "irm https://raw.githubusercontent.com/AFreeChameleon/multask/refs/tags/v0.5.0/docs/_install/migration/v0.5.0/win.ps1 | iex"
+```
+
+This is because of a bug where multask can't be run in the background, it's been fixed for future releases.
+
+## Migrations
+
+While updating through major versions, formats of task data might be changed, while this is dealt with in an automatic process when running the install script,
+to automatically check and run migrations up to a certain version you can run:
+
+Windows
+```
+# Set the "v0.5.0" to whichever version you want to migrate to
+powershell -c "Set-Variable -Value v0.5.0 -Name ver; irm https://raw.githubusercontent.com/AFreeChameleon/multask/refs/tags/$ver/docs/_install/migration/check_migrations.ps1 | iex"
+```
+
+Unix
+```
+# Set the "v0.5.0" to whichever version you want to migrate to
+export MULTASK_VERSION=v0.5.0
+curl -L "https://raw.githubusercontent.com/AFreeChameleon/multask/refs/tags/$MULTASK_VERSION/docs/_install/migration/check_migrations.sh" -s | /bin/bash
+```
+
+To manually migrate your data you can run these lines:
+
+### v0.4.2 to v0.5.0
+Windows:
+```
+powershell -c "irm https://raw.githubusercontent.com/AFreeChameleon/multask/refs/tags/v0.5.0/docs/_install/migration/v0.5.0/win.ps1 | iex"
+```
+Unix:
+```
+curl -L "https://raw.githubusercontent.com/AFreeChameleon/multask/refs/tags/v0.5.0/docs/_install/migration/v0.5.0/linux.sh" -s | /bin/bash
+```

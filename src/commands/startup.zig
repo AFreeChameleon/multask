@@ -37,6 +37,10 @@ pub fn run() Errors!void {
         defer task.deinit();
         try TaskManager.get_task_from_id(&task);
 
+        if (task.stats == null or !task.stats.?.boot) {
+            continue;
+        }
+
         if (try TaskManager.task_running(&task)) {
             try log.printdebug("Task with id: {d} already running.", .{task_id});
             continue;

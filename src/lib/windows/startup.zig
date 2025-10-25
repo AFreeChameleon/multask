@@ -75,6 +75,7 @@ fn CalcStartupCommandLen() usize {
 
 fn get_mlt_startup_command_w() Errors![:0]u16 {
     const exe_path = try util.get_mlt_exe_path();
+    defer util.gpa.free(exe_path);
     const exe_dir = std.fs.path.dirname(exe_path);
     const bg_exe = "mlt_bg.exe";
     const bg_exe_path = std.fs.path.join(util.gpa, &.{
@@ -86,10 +87,8 @@ fn get_mlt_startup_command_w() Errors![:0]u16 {
     const startup = std.fmt.allocPrint(util.gpa, "\"{s}\" startup", .{bg_exe_path})
         catch |err| return e.verbose_error(err, error.FailedToSetStartupDetails);
     defer util.gpa.free(startup);
-    
     const startup_w = std.unicode.utf8ToUtf16LeAllocZ(util.gpa, startup)
         catch |err| return e.verbose_error(err, error.FailedToSetStartupDetails);
-
     return startup_w;
 }
 

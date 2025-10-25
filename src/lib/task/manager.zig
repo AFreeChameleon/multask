@@ -211,12 +211,16 @@ pub const TaskManager = struct {
     /// Kills daemon and any processes it finds. Returns false if there aren't any processes
     /// returns true if there is.
     pub fn kill_task(task: *Task) Errors!bool {
+        const running = try task_running(task);
+        if (!running) {
+            return false;
+        }
         var proc_exists = task.process != null and task.process.?.proc_exists();
         const daemon_exists = task.daemon != null and task.daemon.?.proc_exists();
         if (!proc_exists and !daemon_exists and !try taskproc.any_procs_exist(&task.process.?)) {
             return false;
         }
-        if (task.process != null and !try taskproc.any_procs_exist(&task.process.?)) {
+        if (task.process != null and try taskproc.any_procs_exist(&task.process.?)) {
             proc_exists = true;
         }
 

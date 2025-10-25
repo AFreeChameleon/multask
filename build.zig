@@ -2,21 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 pub fn build(b: *std.Build) void {
-    if (
-        b.graph.host.result.os.tag != .linux and 
-        b.graph.host.result.os.tag != .macos and
-        b.graph.host.result.os.tag != .windows
-    ) {
-        std.debug.print("Unsupported OS. Valid operating systems are: Linux, Macos and Windows\n", .{});
-        return;
-    }
-    const target_opts = b.standardTargetOptions(.{
-        .whitelist = &.{
-            .{ .os_tag = .linux },
-            .{ .os_tag = .macos },
-            .{ .os_tag = .windows },
-        }
-    });
+    const target_opts = b.standardTargetOptions(.{});
     const optimise_opts = b.standardOptimizeOption(.{});
     const exe = b.addExecutable(.{
         .name = "mlt",

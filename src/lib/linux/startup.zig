@@ -35,17 +35,11 @@ fn get_crontab() Errors![]u8 {
         catch |err| return e.verbose_error(err, error.FailedToGetStartupDetails);
 }
 
-fn CalcStartupCommandLen() usize {
-    return std.fs.max_path_bytes + "@reboot ".len + " startup".len + 1;
-}
-
 fn get_mlt_startup_crontab() Errors![]u8 {
     const exe_path = try util.get_mlt_exe_path();
+    defer util.gpa.free(exe_path);
 
-    const buf_len = comptime CalcStartupCommandLen();
-    var buf: [buf_len]u8 = std.mem.zeroes([buf_len]u8);
-
-    const startup = std.fmt.bufPrint(&buf, "@reboot {s} startup\n", .{exe_path})
+    const startup = std.fmt.allocPrint(util.gpa, "@reboot {s} startup\n", .{exe_path})
         catch |err| return e.verbose_error(err, error.FailedToSetStartupDetails);
     return startup;
 }
@@ -91,6 +85,7 @@ pub fn set_run_on_boot() Errors!void {
     defer util.gpa.free(cron);
 
     const startup_cmd = try get_mlt_startup_crontab();
+    defer util.gpa.free(startup_cmd);
 
     if (std.mem.indexOf(u8, cron, startup_cmd) != null) {
         return;

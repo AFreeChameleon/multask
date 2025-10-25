@@ -242,7 +242,7 @@ pub fn get_error_msg(e_type: Errors) Errors![]const u8 {
             result = "File failed validation.";
         },
         error.SpawnExeNotFound => {
-            result = "Mult spawn executable not found.";
+            result = "Multask spawn executable not found.";
         },
         error.FailedToEditNamespace => {
             result = "Failed to edit namespace.";

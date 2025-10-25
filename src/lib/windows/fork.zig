@@ -8,6 +8,8 @@ const Errors = e.Errors;
 const util = @import("../util.zig");
 const ForkFlags = util.ForkFlags;
 
+const win_util = @import("./util.zig");
+
 const MainFiles = @import("../file.zig").MainFiles;
 
 const t = @import("../task/index.zig");
@@ -39,6 +41,7 @@ pub fn run_daemon(task: *Task, flags: ForkFlags) Errors!void {
     defer util.gpa.free(exe_path);
     const opt_exe_dir = std.fs.path.dirname(exe_path);
     if (opt_exe_dir == null) {
+        std.debug.print("could not find the exe path properly: {s}\n", .{exe_path});
         return error.SpawnExeNotFound;
     }
 
@@ -50,9 +53,15 @@ pub fn run_daemon(task: *Task, flags: ForkFlags) Errors!void {
     var si: libc.STARTUPINFOEXA = std.mem.zeroes(libc.STARTUPINFOEXA);
     si.StartupInfo.cb = @sizeOf(libc.STARTUPINFOEXA);
 
-    const res = libc.CreateProcessA(null, proc_string.ptr, null, null, 0, libc.CREATE_NO_WINDOW | libc.CREATE_BREAKAWAY_FROM_JOB, null, null, @as([*c]libc.STARTUPINFOA, @ptrCast(&si.StartupInfo)), @as([*c]libc.PROCESS_INFORMATION, @ptrCast(&proc_info)));
+    var create_proc_flags: c_ulong = libc.CREATE_NO_WINDOW;
+    if (win_util.can_breakaway()) {
+        create_proc_flags |= libc.CREATE_BREAKAWAY_FROM_JOB;
+    }
+
+    const res = libc.CreateProcessA(null, proc_string.ptr, null, null, 0, create_proc_flags, null, null, @as([*c]libc.STARTUPINFOA, @ptrCast(&si.StartupInfo)), @as([*c]libc.PROCESS_INFORMATION, @ptrCast(&proc_info)));
     if (res == 0) {
         try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
+        std.debug.print("Windows error code WHY DOES SPAWNING FAIL: {d}", .{std.os.windows.GetLastError()});
         return error.SpawnExeNotFound;
     }
 }

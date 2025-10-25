@@ -16,6 +16,7 @@ const plist = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLI
 
 fn get_multask_launch_file_content() Errors![]u8 {
     const exe_path = try util.get_mlt_exe_path();
+    defer util.gpa.free(exe_path);
     const content = std.fmt.allocPrint(util.gpa, plist, .{exe_path})
         catch |err| return e.verbose_error(err, error.FailedToSetStartupDetails);
     return content;

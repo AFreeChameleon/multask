@@ -8,7 +8,9 @@ const Task = t.Task;
 
 const Monitoring = @import("../lib/task/process.zig").Monitoring;
 
-const TaskManager = @import("../lib/task/manager.zig").TaskManager;
+const tm = @import("../lib/task/manager.zig");
+const TaskManager = tm.TaskManager;
+const Tasks = tm.Tasks;
 
 const file = @import("../lib/file.zig");
 
@@ -34,8 +36,11 @@ pub const Flags = struct {
 };
 
 pub fn run(argv: [][]u8) Errors!void {
-    var flags = try parse_cmd_args(argv);
+    var tasks = try TaskManager.get_tasks();
+    defer tasks.deinit();
+    var flags = try parse_cmd_args(argv, &tasks);
     defer flags.args.deinit();
+
     if (flags.help) {
         try log.print_help(help_rows);
         return;
@@ -101,7 +106,7 @@ pub fn run(argv: [][]u8) Errors!void {
     }
 }
 
-fn parse_cmd_args(argv: [][]u8) Errors!Flags {
+fn parse_cmd_args(argv: [][]u8, tasks: *Tasks) Errors!Flags {
     var flags = Flags {
         .memory_limit = null,
         .cpu_limit = null,
@@ -205,7 +210,7 @@ fn parse_cmd_args(argv: [][]u8) Errors!Flags {
             else => continue
         }
     }
-    const parsed_args = try util.parse_cmd_vals(vals);
+    const parsed_args = try util.parse_cmd_vals(vals, tasks);
     flags.args = parsed_args;
     if (vals.len == 0 and !flags.help) {
         flags.args.deinit();
@@ -277,7 +282,16 @@ test "Parse start command args" {
     defer util.gpa.free(test_tidv);
     try args.append(test_tidv);
 
-    var flags = try parse_cmd_args(args.items);
+    var ns: tm.TNamespaces = std.StringHashMap([]TaskId).init(util.gpa);
+    defer ns.deinit();
+
+    var all_task_ids = [_]TaskId{1, 2, 3, 4};
+    var tasks = Tasks {
+        .namespaces = ns,
+        .task_ids = &all_task_ids
+    };
+
+    var flags = try parse_cmd_args(args.items, &tasks);
     defer flags.args.deinit();
 
     try expect(flags.cpu_limit.? == 50);
@@ -294,7 +308,16 @@ test "No id passed" {
     const args = try util.gpa.alloc([]u8, 0);
     defer util.gpa.free(args);
 
-    const flags = parse_cmd_args(args);
+    var ns: tm.TNamespaces = std.StringHashMap([]TaskId).init(util.gpa);
+    defer ns.deinit();
+
+    var all_task_ids = [_]TaskId{1, 2, 3, 4};
+    var tasks = Tasks {
+        .namespaces = ns,
+        .task_ids = &all_task_ids
+    };
+
+    const flags = parse_cmd_args(args, &tasks);
 
     try expect(flags == error.MissingTaskId);
 }
