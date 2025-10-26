@@ -30,6 +30,8 @@ See the [documentation]() for more details.
 
 ## Running tests
 
+NOTE: DO NOT RUN THESE TESTS LOCALLY - they delete your tasks at the moment, this will be fixed in the next release but for now this is just meant to be run from the github actions.
+
 To run the zig unit tests, you need zig version 0.14.0 and run `zig build test --summary all`.
 
 To run the simulation tests in ruby, you'll need ruby version 3.4.4 and run:
