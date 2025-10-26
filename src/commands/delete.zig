@@ -5,7 +5,9 @@ const task = @import("../lib/task/index.zig");
 const Task = task.Task;
 const TaskId = task.TaskId;
 
-const TaskManager = @import("../lib/task/manager.zig").TaskManager;
+const tm = @import("../lib/task/manager.zig");
+const TaskManager = tm.TaskManager;
+const Tasks = tm.Tasks;
 
 const Files = @import("../lib/task/file.zig").Files;
 
@@ -31,15 +33,18 @@ pub const Flags = struct {
 };
 
 pub fn run(argv: [][]u8) Errors!void {
-    var flags = try parse_cmd_args(argv);
+    var tasks = try TaskManager.get_tasks();
+    var flags = try parse_cmd_args(argv, &tasks);
     defer flags.args.deinit();
     if (flags.help) {
         try log.print_help(help_rows);
         return;
     }
 
-    var tasks = try TaskManager.get_tasks();
-    defer tasks.deinit();
+    if (flags.args.ids.?.len == 0) {
+        try log.printinfo("No tasks exist.", .{});
+        return;
+    }
     for (flags.args.ids.?) |id| {
         const task_idx = std.mem.indexOf(TaskId, tasks.task_ids, &[1]TaskId{id});
         if (task_idx == null) {
@@ -67,10 +72,9 @@ pub fn run(argv: [][]u8) Errors!void {
         try new_task.delete();
         try log.printsucc("Task deleted with id {d}.", .{new_task.id});
     }
-
 }
 
-pub fn parse_cmd_args(argv: [][]u8) Errors!Flags {
+pub fn parse_cmd_args(argv: [][]u8, tasks: *Tasks) Errors!Flags {
     var flags = Flags {
         .help = false,
         .args = undefined
@@ -101,7 +105,7 @@ pub fn parse_cmd_args(argv: [][]u8) Errors!Flags {
         }
     }
 
-    const parsed_args = try util.parse_cmd_vals(vals);
+    const parsed_args = try util.parse_cmd_vals(vals, tasks);
     flags.args = parsed_args;
     if (vals.len == 0) {
         flags.args.deinit();
@@ -110,11 +114,11 @@ pub fn parse_cmd_args(argv: [][]u8) Errors!Flags {
     return flags;
 }
 
-const help_rows = .{
+pub const help_rows = .{
+    .{"mlt delete"},
     .{"Deletes tasks and kills any process that's running under them."},
     .{"Usage: mlt delete 1 2 ns_one"},
     .{""},
-    .{"For more, run `mlt help`"},
 };
 
 test "commands/delete.zig" {
@@ -138,7 +142,16 @@ test "Parse delete command args" {
     defer util.gpa.free(test_tidv);
     try args.append(test_tidv);
 
-    var flags = try parse_cmd_args(args.items);
+    var ns: tm.TNamespaces = std.StringHashMap([]TaskId).init(util.gpa);
+    defer ns.deinit();
+
+    var all_task_ids = [_]TaskId{1, 2, 3, 4};
+    var tasks = Tasks {
+        .namespaces = ns,
+        .task_ids = &all_task_ids
+    };
+
+    var flags = try parse_cmd_args(args.items, &tasks);
     defer flags.args.deinit();
 
     try expect(flags.help);
@@ -151,7 +164,16 @@ test "No id passed" {
     const args = try util.gpa.alloc([]u8, 0);
     defer util.gpa.free(args);
 
-    const flags = parse_cmd_args(args);
+    var ns: tm.TNamespaces = std.StringHashMap([]TaskId).init(util.gpa);
+    defer ns.deinit();
+
+    var all_task_ids = [_]TaskId{1, 2, 3, 4};
+    var tasks = Tasks {
+        .namespaces = ns,
+        .task_ids = &all_task_ids
+    };
+
+    const flags = parse_cmd_args(args, &tasks);
 
     try expect(flags == error.MissingTaskId);
 }

@@ -1,6 +1,7 @@
 const libc = @import("./c.zig").libc;
 const builtin = @import("builtin");
 const std = @import("std");
+const expect = std.testing.expect;
 const util = @import("./util.zig");
 const taskproc = @import("./task/process.zig");
 const Monitoring = taskproc.Monitoring;
@@ -10,7 +11,9 @@ const log = @import("./log.zig");
 const t = @import("./task/index.zig");
 const TaskId = t.TaskId;
 
-const TaskManager  = @import("./task/manager.zig").TaskManager;
+const tm = @import("./task/manager.zig");
+const TaskManager = tm.TaskManager;
+const Tasks = tm.Tasks;
 const Stats = @import("./task/stats.zig").Stats;
 
 const e = @import("./error.zig");
@@ -56,22 +59,19 @@ pub const Lengths = struct {
     pub const HUGE: usize = 4096;
     pub const HUGER: usize = 10240;
 
+    pub const STARTUP_FILE_MAX: usize = 8388608;
+
     pub const TASK_LIMIT: usize = 256;
 };
 pub const MemLimit = usize;
 pub const CpuLimit = usize;
 pub const ForkFlags = struct {
-    memory_limit: MemLimit,
-    cpu_limit: CpuLimit,
-    interactive: bool,
-    persist: bool,
+    memory_limit: ?MemLimit,
+    cpu_limit: ?CpuLimit,
+    interactive: ?bool,
+    persist: ?bool,
     update_envs: bool,
-};
-
-/// Strings to be put into process' files
-pub const FileStrings = struct {
-    processes: [Lengths.LARGE]u8,
-    usage: [Lengths.LARGE]u8,
+    no_run: bool = false
 };
 
 pub fn file_exists(file: std.fs.File) bool {
@@ -118,8 +118,8 @@ pub fn get_readable_runtime(secs: u64) Errors![]const u8 {
 
 // binary memory is 1024
 // file memory is 1000
-const SUFFIX: [9][]const u8 = .{"B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB"};
-const UNIT: f64 = 1024.0;
+const SUFFIX: [9][]const u8 = .{"B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"};
+const UNIT: f64 = 1000.0;
 /// Convert memory in bytes to human readable format
 pub fn get_readable_memory(bytes: u64) Errors![]const u8 {
     if (bytes == 0) {
@@ -275,18 +275,19 @@ pub const TaskArgs = struct {
     }
 };
 
-pub fn parse_cmd_vals(vals: [][]u8) Errors!TaskArgs {
+pub fn parse_cmd_vals(vals: [][]u8, tasks: *Tasks) Errors!TaskArgs {
     var ns = std.ArrayList([]u8).init(gpa);
     defer ns.deinit();
     var ids = std.ArrayList(TaskId).init(gpa);
     defer ids.deinit();
-    var tasks = try TaskManager.get_tasks();
-    defer tasks.deinit();
 
     for (vals) |arg| {
         if (is_number(arg)) {
             const id = std.fmt.parseInt(TaskId, arg, 10)
                 catch |err| return e.verbose_error(err, error.ParsingCommandArgsFailed);
+            if (std.mem.indexOfScalar(TaskId, tasks.task_ids, id) == null) {
+                return error.TaskNotExists;
+            }
             ids.append(id)
                 catch |err| return e.verbose_error(err, error.ParsingCommandArgsFailed);
         } else if (std.mem.eql(u8, arg, "all")) {
@@ -295,8 +296,20 @@ pub fn parse_cmd_vals(vals: [][]u8) Errors!TaskArgs {
         } else {
             const ns_ids = tasks.namespaces.get(arg);
             if (ns_ids == null) return error.NamespaceNotExists;
-            ns.append(arg)
-                catch |err| return e.verbose_error(err, error.ParsingCommandArgsFailed);
+
+            // checking if namespace is already parsed
+            var exists = false;
+            for (ns.items) |val| {
+                if (std.mem.eql(u8, val, arg)) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (!exists) {
+                ns.append(arg)
+                    catch |err| return e.verbose_error(err, error.ParsingCommandArgsFailed);
+            }
+
             for (ns_ids.?) |id| {
                 if (count_occurrences(TaskId, &ids.items, id) == 0) {
                     ids.append(id)
@@ -423,18 +436,23 @@ pub fn remove_id_from_namespace(
 }
 
 const ValidateFlags = struct {
-    memory_limit: MemLimit,
-    cpu_limit: CpuLimit,
+    memory_limit: ?MemLimit,
+    cpu_limit: ?CpuLimit,
 };
 pub fn validate_flags(flags: ValidateFlags) Errors!void {
-    if (flags.cpu_limit != 0 and (flags.cpu_limit < 1 or flags.cpu_limit > 99)) {
-        return error.CpuLimitValueInvalid;
+    if (flags.cpu_limit != null) {
+        if (flags.cpu_limit.? != 0 and (flags.cpu_limit.? < 1 or flags.cpu_limit.? > 99)) {
+            return error.CpuLimitValueInvalid;
+        }
     }
-    if (flags.memory_limit != 0 and flags.memory_limit < 0) {
-        return error.MemoryLimitValueInvalid;
+    if (flags.memory_limit != null) {
+        if (flags.memory_limit.? != 0 and flags.memory_limit.? < 0) {
+            return error.MemoryLimitValueInvalid;
+        }
     }
 }
 
+/// FREE THIS
 pub fn unique_array(comptime T: type, arr: []T) Errors![]T {
     var unique = std.ArrayList(T).init(gpa);
     defer unique.deinit();
@@ -455,23 +473,22 @@ pub fn save_stats(task: *t.Task, flags: *const ForkFlags) Errors!void {
     });
 
     // Have to refresh stats
-    task.stats.?.cpu_limit = flags.cpu_limit;
-    task.stats.?.memory_limit = flags.memory_limit;
-    task.stats.?.persist = flags.persist;
+    if (flags.cpu_limit != null) {
+        task.stats.?.cpu_limit = flags.cpu_limit.?;
+    }
+    if (flags.memory_limit != null) {
+        task.stats.?.memory_limit = flags.memory_limit.?;
+    }
+    if (flags.persist != null) {
+        task.stats.?.persist = flags.persist.?;
+    }
+    if (flags.interactive != null) {
+        task.stats.?.interactive = flags.interactive.?;
+    }
+
     var stats_clone = try task.stats.?.clone();
     defer stats_clone.deinit();
     try task.files.?.write_file(Stats, stats_clone);
-}
-
-pub fn deinit_hashmap(comptime T: type, hash: T) void {
-    var key_itr = hash.keyIterator();
-    while (key_itr.next()) |key| {
-        gpa.free(key);
-    }
-    var val_itr = hash.valueIterator();
-    while (val_itr.next()) |val| {
-        gpa.free(val);
-    }
 }
 
 pub fn read_monitoring_from_string(val: []const u8) Errors!Monitoring {
@@ -484,6 +501,13 @@ pub fn read_monitoring_from_string(val: []const u8) Errors!Monitoring {
     return error.InvalidArgument;
 }
 
+pub fn get_mlt_exe_path() Errors![]u8 {
+    const exe_path = std.fs.selfExePathAlloc(util.gpa)
+        catch |err| return e.verbose_error(err, error.FailedToGetStartupDetails);
+
+    return exe_path;
+}
+
 test "lib/util.zig" {
     std.debug.print("\n--- lib/util.zig ---\n", .{});
 }
@@ -491,7 +515,7 @@ test "lib/util.zig" {
 test "Save stats" {
     std.debug.print("Save stats\n", .{});
     const cmd = try std.fmt.allocPrint(util.gpa, "save stats", .{});
-    var task = try TaskManager.add_task(cmd, 0, 0, null, false, .Shallow);
+    var task = try TaskManager.add_task(cmd, 0, 0, null, false, .Shallow, false, false);
     defer task.deinit();
     try save_stats(&task, &ForkFlags { .cpu_limit = 0, .memory_limit = 0, .interactive = false, .persist = false, .update_envs = false });
     try task.delete();
@@ -506,14 +530,169 @@ test "Readable memory: Parse 1 to 1 B" {
 
 test "Readable memory: Parse 1024 to 1 KiB" {
     std.debug.print("Readable memory: Parse 1024 to 1 KiB\n", .{});
-    const res = try util.get_readable_memory(1024);
+    const res = try util.get_readable_memory(1000);
     defer util.gpa.free(res);
-    try std.testing.expect(std.mem.eql(u8, res, "1 KiB"));
+    try std.testing.expect(std.mem.eql(u8, res, "1 KB"));
 }
 
 test "Readable memory: Parse 1500 to 1.5 KiB" {
     std.debug.print("Readable memory: Parse 1500 to 1.5 KiB\n", .{});
     const res = try util.get_readable_memory(1500);
     defer util.gpa.free(res);
-    try std.testing.expect(std.mem.eql(u8, res, "1.5 KiB"));
+    try std.testing.expect(std.mem.eql(u8, res, "1.5 KB"));
+}
+
+test "Read monitoring `deep` from string" {
+    std.debug.print("Read monitoring `deep` from string\n", .{});
+    const deep = "deep";
+    const m = try read_monitoring_from_string(deep);
+    try expect(m == Monitoring.Deep);
+}
+
+test "Read monitoring `shallow` from string" {
+    std.debug.print("Read monitoring `shallow` from string\n", .{});
+    const shallow = "shallow";
+    const m = try read_monitoring_from_string(shallow);
+    try expect(m == Monitoring.Shallow);
+}
+
+test "Read monitoring error from string" {
+    std.debug.print("Read monitoring error from string\n", .{});
+    const err = "err";
+    const m = read_monitoring_from_string(err);
+    try expect(m == error.InvalidArgument);
+}
+
+test "Remove id from namespace" {
+    std.debug.print("Remove id from namespace\n", .{});
+    var ns: std.StringHashMap([]TaskId) = std.StringHashMap([]TaskId).init(util.gpa);
+    const ns_name = "testns";
+    defer {
+        const v = ns.get(ns_name);
+        util.gpa.free(v.?);
+        ns.deinit();
+    }
+    var task_ids = try util.gpa.alloc(TaskId, 2);
+
+    task_ids[0] = 1;
+    task_ids[1] = 2;
+
+    try ns.put(ns_name, task_ids[0..]);
+    try remove_id_from_namespace(1, &ns);
+    try expect(ns.get(ns_name).?[0] == 2);
+}
+
+test "Parse cmd values with id and namespace" {
+    std.debug.print("Parse cmd values with id and namespace\n", .{});
+    var ns: tm.TNamespaces = std.StringHashMap([]TaskId).init(util.gpa);
+    defer ns.deinit();
+
+    var nsone_task_ids = [_]TaskId{3, 4};
+    try ns.put("nsone", &nsone_task_ids);
+
+    var id1 = [_]u8{'1'};
+    var id2 = [_]u8{'2'};
+    var ns1 = [_]u8{'n', 's', 'o', 'n', 'e'};
+    var values = [_][]u8{&id1, &id2, &ns1};
+
+    var all_task_ids = [_]TaskId{1, 2, 3, 4};
+    var tasks = Tasks {
+        .namespaces = ns,
+        .task_ids = &all_task_ids
+    };
+
+
+    var args = try parse_cmd_vals(&values, &tasks);
+    defer args.deinit();
+    try expect(args.ids.?[0] == 1);
+    try expect(args.ids.?[1] == 2);
+    try expect(std.mem.eql(u8, args.namespaces.?[0], "nsone"));
+}
+
+test "Parse cmd values with missing id" {
+    std.debug.print("Parse cmd values with missing id\n", .{});
+    var ns: tm.TNamespaces = std.StringHashMap([]TaskId).init(util.gpa);
+    defer ns.deinit();
+
+    var id1 = [_]u8{'1'};
+    var values = [_][]u8{&id1};
+
+    var all_task_ids = [_]TaskId{2, 3, 4};
+    var tasks = Tasks {
+        .namespaces = ns,
+        .task_ids = &all_task_ids
+    };
+
+
+    const res = parse_cmd_vals(&values, &tasks);
+    try expect(res == error.TaskNotExists);
+}
+
+test "Parse cmd values with missing namespace" {
+    std.debug.print("Parse cmd values with missing namespace\n", .{});
+    var ns: tm.TNamespaces = std.StringHashMap([]TaskId).init(util.gpa);
+    defer ns.deinit();
+
+    var nsone = [_]u8{'n', 's', 'o', 'n', 'e'};
+    var values = [_][]u8{&nsone};
+
+    var all_task_ids = [_]TaskId{};
+    var tasks = Tasks {
+        .namespaces = ns,
+        .task_ids = &all_task_ids
+    };
+
+
+    const res = parse_cmd_vals(&values, &tasks);
+    try expect(res == error.NamespaceNotExists);
+}
+
+test "Parse cmd values with duplicate ids" {
+    std.debug.print("Parse cmd values with duplicate ids\n", .{});
+    var ns: tm.TNamespaces = std.StringHashMap([]TaskId).init(util.gpa);
+    defer ns.deinit();
+
+    var id1 = [_]u8{'1'};
+    var id1again = [_]u8{'1'};
+    var id1againagain = [_]u8{'1'};
+    var values = [_][]u8{&id1, &id1again, &id1againagain};
+
+    var all_task_ids = [_]TaskId{1};
+    var tasks = Tasks {
+        .namespaces = ns,
+        .task_ids = &all_task_ids
+    };
+
+    var res = try parse_cmd_vals(&values, &tasks);
+    defer res.deinit();
+    try expect(res.ids.?.len == 1);
+    try expect(res.ids.?[0] == 1);
+}
+
+test "Parse cmd values with duplicate namespace" {
+    std.debug.print("Parse cmd values with duplicate namespace\n", .{});
+    var ns: tm.TNamespaces = std.StringHashMap([]TaskId).init(util.gpa);
+    defer ns.deinit();
+
+    var nsone_task_ids = [_]TaskId{3, 4};
+    try ns.put("nsone", &nsone_task_ids);
+
+    var nsone = [_]u8{'n', 's', 'o', 'n', 'e'};
+    var nsoneagain = [_]u8{'n', 's', 'o', 'n', 'e'};
+    var values = [_][]u8{&nsone, &nsoneagain};
+
+
+    var all_task_ids = [_]TaskId{1, 2, 3, 4};
+    var tasks = Tasks {
+        .namespaces = ns,
+        .task_ids = &all_task_ids
+    };
+
+
+    var res = try parse_cmd_vals(&values, &tasks);
+    defer res.deinit();
+
+    try expect(res.namespaces.?.len == 1);
+    try expect(std.mem.eql(u8, res.namespaces.?[0], "nsone"));
+    try expect(res.ids.?.len == 2);
 }

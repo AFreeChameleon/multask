@@ -8,7 +8,9 @@ const Task = t.Task;
 
 const Monitoring = @import("../lib/task/process.zig").Monitoring;
 
-const TaskManager = @import("../lib/task/manager.zig").TaskManager;
+const tm = @import("../lib/task/manager.zig");
+const TaskManager = tm.TaskManager;
+const Tasks = tm.Tasks;
 
 const file = @import("../lib/file.zig");
 
@@ -23,10 +25,10 @@ const e = @import("../lib/error.zig");
 const Errors = e.Errors;
 
 pub const Flags = struct {
-    memory_limit: util.MemLimit,
-    cpu_limit: util.CpuLimit,
-    persist: bool,
-    interactive: bool,
+    memory_limit: ?util.MemLimit,
+    cpu_limit: ?util.CpuLimit,
+    persist: ?bool,
+    interactive: ?bool,
     help: bool,
     update_envs: bool,
     args: util.TaskArgs,
@@ -34,8 +36,11 @@ pub const Flags = struct {
 };
 
 pub fn run(argv: [][]u8) Errors!void {
-    var flags = try parse_cmd_args(argv);
+    var tasks = try TaskManager.get_tasks();
+    defer tasks.deinit();
+    var flags = try parse_cmd_args(argv, &tasks);
     defer flags.args.deinit();
+
     if (flags.help) {
         try log.print_help(help_rows);
         return;
@@ -56,11 +61,23 @@ pub fn run(argv: [][]u8) Errors!void {
         try TaskManager.get_task_from_id(
             &new_task
         );
+        if (flags.memory_limit != null) {
+            new_task.stats.?.memory_limit = flags.memory_limit.?;
+        }
+        if (flags.cpu_limit != null) {
+            new_task.stats.?.cpu_limit = flags.cpu_limit.?;
+        }
+        if (flags.interactive != null) {
+            new_task.stats.?.interactive = flags.interactive.?;
+        }
+        if (flags.persist != null) {
+            new_task.stats.?.persist = flags.persist.?;
+        }
         if (flags.monitoring != null) {
             new_task.stats.?.monitoring = flags.monitoring.?;
         }
 
-        if (new_task.process != null and new_task.process.?.proc_exists()) {
+        if (try TaskManager.task_running(&new_task)) {
             try log.printinfo("Task {d} is already running.", .{id});
             continue;
         }
@@ -89,18 +106,18 @@ pub fn run(argv: [][]u8) Errors!void {
     }
 }
 
-fn parse_cmd_args(argv: [][]u8) Errors!Flags {
+fn parse_cmd_args(argv: [][]u8, tasks: *Tasks) Errors!Flags {
     var flags = Flags {
-        .memory_limit = 0,
-        .cpu_limit = 0,
-        .interactive = false,
-        .persist = false,
+        .memory_limit = null,
+        .cpu_limit = null,
+        .persist = null,
+        .interactive = null,
         .help = false,
         .args = undefined,
         .update_envs = false,
         .monitoring = null
     };
-    var pflags = util.gpa.alloc(parse.Flag, 8)
+    var pflags = util.gpa.alloc(parse.Flag, 10)
         catch |err| return e.verbose_error(err, error.ParsingCommandArgsFailed);
     defer util.gpa.free(pflags);
     pflags[0] = parse.Flag {
@@ -113,27 +130,40 @@ fn parse_cmd_args(argv: [][]u8) Errors!Flags {
     };
     pflags[2] = parse.Flag {
         .name = 'i',
-        .type = .static
+        .type = .static,
+        .long_name = "interactive"
     };
     pflags[3] = parse.Flag {
-        .name = 'p',
-        .type = .static
+        .name = 'I',
+        .type = .static,
+        .long_name = "disable-interactive"
     };
     pflags[4] = parse.Flag {
+        .name = 'p',
+        .type = .static,
+        .long_name = "persist"
+    };
+    pflags[5] = parse.Flag {
+        .name = 'P',
+        .type = .static,
+        .long_name = "disable-persist",
+    };
+    pflags[6] = parse.Flag {
         .name = 'd',
         .type = .static
     };
-    pflags[5] = parse.Flag {
+    pflags[7] = parse.Flag {
         .name = 'h',
         .type = .static
     };
-    pflags[6] = parse.Flag {
+    pflags[8] = parse.Flag {
         .name = 'e',
+        .long_name = "update-env",
         .type = .static
     };
-    pflags[7] = parse.Flag {
-        .name = 'M',
-        .long_name = "monitor",
+    pflags[9] = parse.Flag {
+        .name = 's',
+        .long_name = "search",
         .type = .value
     };
 
@@ -146,28 +176,41 @@ fn parse_cmd_args(argv: [][]u8) Errors!Flags {
         }
         switch (flag.name) {
             'c' => {
-                flags.cpu_limit = std.fmt.parseInt(util.CpuLimit, flag.value.?, 10)
-                    catch return error.CpuLimitValueInvalid;
+                if (std.mem.eql(u8, flag.value.?, "none")) {
+                    flags.cpu_limit = 0;
+                } else {
+                    flags.cpu_limit = std.fmt.parseInt(util.CpuLimit, flag.value.?, 10)
+                        catch return error.CpuLimitValueInvalid;
+                }
             },
             'm' => {
-                flags.memory_limit = std.fmt.parseIntSizeSuffix(flag.value.?, 10)
-                    catch |err| switch (err) {
-                        error.InvalidCharacter => {
-                            return error.MemoryLimitValueInvalid;
-                        },
-                        else => return error.ParsingCommandArgsFailed
-                    };
+                if (std.mem.eql(u8, flag.value.?, "none")) {
+                    flags.memory_limit = 0;
+                } else {
+                    flags.memory_limit = std.fmt.parseIntSizeSuffix(flag.value.?, 10)
+                        catch |err| switch (err) {
+                            error.InvalidCharacter => {
+                                return error.MemoryLimitValueInvalid;
+                            },
+                            else => return error.ParsingCommandArgsFailed
+                        };
+                }
             },
-            'i' => flags.interactive = true,
-            'h' => flags.help = true,
-            'p' => flags.persist = true,
-            'e' => flags.update_envs = true,
             'd' => log.enable_debug(),
-            'M' => flags.monitoring = try util.read_monitoring_from_string(flag.value.?),
+            'h' => flags.help = true,
+
+            'i' => flags.interactive = true,
+            'I' => flags.interactive = false,
+
+            'p' => flags.persist = true,
+            'P' => flags.persist = false,
+
+            'e' => flags.update_envs = true,
+            's' => flags.monitoring = try util.read_monitoring_from_string(flag.value.?),
             else => continue
         }
     }
-    const parsed_args = try util.parse_cmd_vals(vals);
+    const parsed_args = try util.parse_cmd_vals(vals, tasks);
     flags.args = parsed_args;
     if (vals.len == 0 and !flags.help) {
         flags.args.deinit();
@@ -176,18 +219,23 @@ fn parse_cmd_args(argv: [][]u8) Errors!Flags {
     return flags;
 }
 
-const help_rows = .{
+pub const help_rows = .{
+    .{"mlt start"},
     .{"Starts tasks by task id or namespace"},
     .{"Usage: mlt start -m 100M -c 50 -i -p all"},
     .{"Flags:"},
-    .{"", "-m [num]", "Set maximum memory limit e.g 4GB"},
-    .{"", "-c [num]", "Set limit cpu usage by percentage e.g 20"},
-    .{"", "-i", "", "Interactive mode (can use aliased commands on your environment)"},
-    .{"", "-p", "", "Persist mode (will restart if the program exits)"},
-    .{"", "-e", "", "Updates env variables with your current environment."},
-    .{"", "-M, --monitor", "How thorough looking for child processes will be, use \"deep\" for complex applications like GUIs although it can be a little more CPU intensive, \"shallow\" is the default."},
+    .{"", "-m [num]", "", "Set maximum memory limit e.g 4GB. Set to `none` to remove it."},
+    .{"", "-c [num]", "", "Set limit cpu usage by percentage e.g 20. Set to `none` to remove it."},
+
+    .{"", "-i", "", "", "Interactive mode (can use aliased commands on your environment)"},
+    .{"", "-I", "", "", "Disable interactive mode"},
+
+    .{"", "-p", "", "", "Persist mode (will restart if the program exits)"},
+    .{"", "-P", "", "", "Disable persist mode"},
+
+    .{"", "-e", "", "", "Updates env variables with your current environment."},
+    .{"", "-s, --search [text]", "Makes this task look for child processes more thoroughly. Can either set to `deep` or `shallow`."},
     .{""},
-    .{"For more, run `mlt help`"},
 };
 
 test "commands/start.zig" {
@@ -234,13 +282,22 @@ test "Parse start command args" {
     defer util.gpa.free(test_tidv);
     try args.append(test_tidv);
 
-    var flags = try parse_cmd_args(args.items);
+    var ns: tm.TNamespaces = std.StringHashMap([]TaskId).init(util.gpa);
+    defer ns.deinit();
+
+    var all_task_ids = [_]TaskId{1, 2, 3, 4};
+    var tasks = Tasks {
+        .namespaces = ns,
+        .task_ids = &all_task_ids
+    };
+
+    var flags = try parse_cmd_args(args.items, &tasks);
     defer flags.args.deinit();
 
-    try expect(flags.cpu_limit == 50);
-    try expect(flags.memory_limit == 20_000);
-    try expect(flags.interactive);
-    try expect(flags.persist);
+    try expect(flags.cpu_limit.? == 50);
+    try expect(flags.memory_limit.? == 20_000);
+    try expect(flags.interactive.?);
+    try expect(flags.persist.?);
     try expect(flags.help);
     try expect(log.debug);
     try expect(flags.args.ids.?[0] == 1);
@@ -251,7 +308,16 @@ test "No id passed" {
     const args = try util.gpa.alloc([]u8, 0);
     defer util.gpa.free(args);
 
-    const flags = parse_cmd_args(args);
+    var ns: tm.TNamespaces = std.StringHashMap([]TaskId).init(util.gpa);
+    defer ns.deinit();
+
+    var all_task_ids = [_]TaskId{1, 2, 3, 4};
+    var tasks = Tasks {
+        .namespaces = ns,
+        .task_ids = &all_task_ids
+    };
+
+    const flags = parse_cmd_args(args, &tasks);
 
     try expect(flags == error.MissingTaskId);
 }

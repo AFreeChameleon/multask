@@ -15,6 +15,8 @@ const Pid = util.Pid;
 const e = @import("./error.zig");
 const Errors = e.Errors;
 
+const Startup = @import("./startup/index.zig").Startup;
+
 pub const MAIN_DIR: []const u8 = if (builtin.is_test) ".multi-tasker-test" else ".multi-tasker";
 
 pub const MainFiles = struct {
@@ -89,12 +91,17 @@ pub const MainFiles = struct {
         defer tasks_dir.close();
         try log.printinfo("Creating tasks file...", .{});
 
-        const tasks_file = tasks_dir.createFile("tasks.json", .{.read = true})
+        const file = tasks_dir.createFile("tasks.json", .{.read = true})
             catch return error.TasksIdsFileFailedCreate;
         const placeholder = try Tasks.json_empty();
         defer util.gpa.free(placeholder.task_ids);
-        std.json.stringify(placeholder, .{}, tasks_file.writer())
-            catch |err| return e.verbose_error(err, error.MainFileFailedWrite);
+        std.json.stringify(placeholder, .{}, file .writer())
+            catch |err| return e.verbose_error(err, error.TasksIdsFileFailedWrite);
+        file.close();
+
+        const tasks_file = tasks_dir.openFile("tasks.json", .{.mode = .read_write})
+            catch return error.TasksIdsFileFailedCreate;
+
         return tasks_file;
     }
 

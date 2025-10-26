@@ -8,4 +8,9 @@ build/
 build-*/
 docgen_tmp/
 
+# Ruby
+.ruby-lsp/
+bin/
+.bundle/
+
 .DS_Store

@@ -14,8 +14,7 @@ This creates a task from your specified command and runs it.
 - `-n [text]` Set namespace for the task. can only include alphabetical characters
 - `-i` Interactive mode (can use aliased commands on your environment)
 - `-p` Persist mode (will restart after 2 seconds if the program exits)
-- `-M, --monitor` How thorough looking for child processes will be, use `deep` for complex 
-applications like GUIs although it can be a little more CPU intensive, `shallow` is the default
+- `-s, --search` Makes this task look for child processes more thoroughly. Can either set to `deep` or `shallow`.
 
 ## start
 Usage:
@@ -31,8 +30,7 @@ This runs existing tasks by their task ids or namespaces.
 - `-c [num]` Set maximum cpu limit by percentage, must be a number from 1 to 99
 - `-i` Interactive mode (can use aliased commands on your environment)
 - `-p` Persist mode (will restart after 2 seconds if the program exits)
-- `-M, --monitor` How thorough looking for child processes will be, use `deep` for complex 
-applications like GUIs although it can be a little more CPU intensive, `shallow` is the default
+- `-s, --search` Makes this task look for child processes more thoroughly. Can either set to `deep` or `shallow`.
 
 ## stop
 Usage:
@@ -53,8 +51,8 @@ Edits task details by their task ids or namespaces.
 - `-c [num]` Set maximum cpu limit by percentage, must be a number from 1 to 99
 - `-n [text]` Set namespace for the task. can only include alphabetical characters
 - `-p` Persist mode (will restart after 2 seconds if the program exits)
-- `-M, --monitor` How thorough looking for child processes will be, use `deep` for complex 
-applications like GUIs although it can be a little more CPU intensive, `shallow` is the default
+- `-s, --search [text]` Makes this task look for child processes more thoroughly. Can either set to `deep` or `shallow`.
+- `--comm [text]` Set the command to run.
 
 ## restart
 Usage:
@@ -69,8 +67,7 @@ This stops and starts existing tasks by their task ids or namespaces.
 - `-c [num]` Set maximum cpu limit by percentage, must be a number from 1 to 99
 - `-i` Interactive mode (can use aliased commands on your environment)
 - `-p` Persist mode (will restart after 2 seconds if the program exits)
-- `-M, --monitor` How thorough looking for child processes will be, use `deep` for complex 
-applications like GUIs although it can be a little more CPU intensive, `shallow` is the default
+- `-s, --search` Makes this task look for child processes more thoroughly. Can either set to `deep` or `shallow`.
 
 ## ls
 Usage:

@@ -65,28 +65,37 @@ pub fn run_daemon(task: *Task, flags: ForkFlags) e.Errors!void {
 
     var envs = try taskproc.get_envs(task, flags.update_envs);
     defer envs.deinit();
+    if (flags.no_run) {
+        return;
+    }
     try taskenv.add_multask_taskid_to_map(&envs, task.id);
 
     task.resources.?.meta = Cpu.init();
     task.daemon = try Process.init(task, util.get_pid(), null);
 
     while (true) {
-        var child = try run_command(task.stats.?.command, task.stats.?.cwd, flags.interactive, envs);
+        var child = try run_command(task.stats.?.command, task.stats.?.cwd, task.stats.?.interactive, envs);
         errdefer _ = child.kill() catch {
             std.process.exit(1);
         };
 
         task.process = try Process.init(task, child.id, null);
-        if (flags.memory_limit > 0) {
-            try task.process.?.limit_memory(flags.memory_limit);
+        if (task.stats.?.memory_limit > 0) {
+            try task.process.?.limit_memory(task.stats.?.memory_limit);
         }
-        try monitor_process(&child, task, flags.cpu_limit);
+        try monitor_process(&child, task, task.stats.?.cpu_limit);
         try taskproc.kill_all(&task.process.?);
-        if (!flags.persist) {
+        if (!task.stats.?.persist) {
             break;
         }
         // Persisting with a timeout of 2 seconds
         std.time.sleep(2_000_000_000);
+        const new_stats = try task.files.?.read_file(Stats);
+        if (new_stats == null) {
+            break;
+        }
+        task.stats.?.deinit();
+        task.stats = new_stats;
     }
 }
 

@@ -1,48 +1,101 @@
 # Advanced Features
+
 ## Environment variables
 
-Multask creates tasks with the environment variables in your terminal's current
-session. If you want to update an existing task with new environment variables
-in your session, include the -e flag in either the start or restart commands.
+A lot of commands and programs rely on your session's environment variables.
+
+Whenever a new task is ran, Multask takes a snapshot of your current session's environment variables
+and plugs them into the command that is about to be ran. And every time that task is ran through `start` or `restart`,
+it keeps the same environment variables.
+
+To update the environment variables being given to the task, when writing out
+the `start` or `restart` commands, include the `-e` flag which takes another
+snapshot of your environment and plugs that into the task, replacing the previous snapshot.
 
 ```
 > mlt start 1 -e
 ```
 
-## Process monitoring
-Some commands you want to run may be quite complex such as ones that spawn GUIs,
-and Multask's default way of searching for processes belonging to a task may
-not be able to pick it up, thinking the task has finished while it's still running.
+## Aliased/Custom commands
 
-To fix this Multask has a mode that uses a tiny bit more CPU for a more thorough
-search for processes created by a task. It's the `-M` flag you can set to either
-`deep` or `shallow`.
-
-The default is `shallow`.
+In Unix, some commands you want to run are actually ones that only exist after your `.rc`
+file has been parsed for example:
 
 ```
-> mlt start 1 -M deep
+In your .bashrc file:
+
+test_function() {
+    echo "This is a test function"
+    echo "that only exists after source .bashrc"
+    echo "has been run"
+}
+
+alias tf="test_function"
 ```
 
-## Interactive mode (UNIX)
-When running a task in either Macos or Linux, it uses a basic shell which means
-you can't use aliased commands in your .rc files. This is for performance, but
-passing in the -i flag runs your .rc files before running the command. Making it
-so the task will recognise any aliased commands set in your .rc files when you
-open your session.
+By default, being able to run these functions or aliased commands are disabled
+because the overhead of parsing .rc files can get quite large, so to enable it, either in the
+`create`, `start`, `restart` or `edit` commands, you can add a `-i` flag which reads your .rc files
+and allows you to run those commands.
 
 ```
 > mlt start 1 -i
 ```
 
-## Resource limiting
-I mentioned this earlier in the documentation, but for very intensive processes
-spawned from tasks, you can allocate how much CPU and memory each process is
-allowed to take up by passing in the -c or -m flags respectfully.
+To disable this, use the `-I` flag instead.
 
-In this command, I'm setting it so each process spawned can only use 20% of the
-CPU and 2 gigabytes of memory.
+## Autorestart tasks
+
+Some tasks may need to keep restarting such as web servers that need to connect
+to a database that may take a while to start.
+
+Autorestarting just restarts the task after the process finishes (but stops completely if
+using `mlt stop`). To make your task autorestart, use the `-p` flag in the `create`, `start`, `restart` or `edit`
+commands.
 
 ```
-> mlt start 1 -c 20 -m 2G
+> mlt start 1 -p
 ```
+
+After the task stops, it will retry after 2 seconds.
+
+To disable autorestarting, use the `-P` flag instead.
+
+## Namespaces
+
+While you can refer to tasks by their task id:
+
+```
+> mlt start 1 2 3 4
+```
+
+Or if you want to start every task, you can just put `all`:
+
+```
+> mlt start all
+```
+
+You can refer to multiple tasks by using a namespace. To do this, in the `create`
+or `edit` commands, add the `-n` flag with a value that is letters only:
+
+```
+> mlt edit 1 2 -n web
+```
+
+And now you can refer to tasks 1 and 2 by their namespace:
+
+```
+> mlt start web
+```
+
+## Run on startup
+
+Tasks can be ran on startup, to do this either in the `create` or `edit` commands by add the `-b` flag.
+
+```
+> mlt edit 1 -b
+```
+
+And now after booting up the machine, it'll automatically run that task.
+
+To disable starting up on boot, use the `-B` flag.

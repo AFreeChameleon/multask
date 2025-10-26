@@ -11,6 +11,8 @@ pub const Stats = struct {
     cpu_limit: util.CpuLimit,
     persist: bool,
     monitoring: Monitoring,
+    boot: bool,
+    interactive: bool,
 
     pub fn deinit(self: *Self) void {
         util.gpa.free(self.command);
@@ -24,7 +26,9 @@ pub const Stats = struct {
             .memory_limit = self.memory_limit,
             .cpu_limit = self.cpu_limit,
             .persist = self.persist,
-            .monitoring = self.monitoring
+            .monitoring = self.monitoring,
+            .boot = self.boot,
+            .interactive = self.interactive
         };
         return stats;
     }

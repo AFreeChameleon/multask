@@ -4,57 +4,49 @@ const e = @import("../lib/error.zig");
 const util = @import("../lib/util.zig");
 const Lengths = util.Lengths;
 
+const create_help_rows = @import("./create.zig").help_rows;
+const stop_help_rows = @import("./stop.zig").help_rows;
+const start_help_rows = @import("./start.zig").help_rows;
+const edit_help_rows = @import("./edit.zig").help_rows;
+const restart_help_rows = @import("./restart.zig").help_rows;
+const ls_help_rows = @import("./ls.zig").help_rows;
+const logs_help_rows = @import("./logs.zig").help_rows;
+const delete_help_rows = @import("./delete.zig").help_rows;
+const health_help_rows = @import("./health.zig").help_rows;
+
 pub fn run() e.Errors!void {
-    try log.print_help(rows);
+    try log.print_help(intro_rows);
+
+    try log.print("\n", .{});
+    try log.print_help(create_help_rows);
+
+    try log.print("\n", .{});
+    try log.print_help(stop_help_rows);
+
+    try log.print("\n", .{});
+    try log.print_help(start_help_rows);
+
+    try log.print("\n", .{});
+    try log.print_help(edit_help_rows);
+
+    try log.print("\n", .{});
+    try log.print_help(restart_help_rows);
+
+    try log.print("\n", .{});
+    try log.print_help(ls_help_rows);
+
+    try log.print("\n", .{});
+    try log.print_help(logs_help_rows);
+
+    try log.print("\n", .{});
+    try log.print_help(delete_help_rows);
+
+    try log.print("\n", .{});
+    try log.print_help(health_help_rows);
 }
 
-const rows = .{
+const intro_rows = .{
     .{"Usage: mlt [option] [flags] [values]"},
+    .{"To see an individial command's options, run `mlt [command] -h`"},
     .{"options:"},
-    .{ "", "create", "Create a task and run it. [value] must be a command e.g \"ping google.com\"" },
-    .{ "", "", "-m [num]", "Set maximum memory limit e.g 4GB" },
-    .{ "", "", "-c [num]", "Set limit cpu usage by percentage e.g 20" },
-    .{ "", "", "-n [text]", "Set namespace for the task" },
-    .{ "", "", "-i", "", "Interactive mode (can use aliased commands on your environment)" },
-    .{ "", "", "-p", "", "Persist mode (will restart if the program exits)" },
-    .{ "", "", "-M, --monitor", "How thorough looking for child processes will be, use \"deep\" for complex applications like GUIs although it can be a little more CPU intensive, \"shallow\" is the default." },
-    .{""},
-    .{ "", "stop", "Stops a task. [value] must be task ids or a namespace" },
-    .{""},
-    .{ "", "start", "Starts a task. [value] must be task ids or a namespace" },
-    .{ "", "", "-m [num]", "Set maximum memory limit e.g 4GB" },
-    .{ "", "", "-c [num]", "Set limit cpu usage by percentage e.g 20" },
-    .{ "", "", "-i", "", "Interactive mode (can use aliased commands on your environment)" },
-    .{ "", "", "-p", "", "Persist mode (will restart if the program exits)" },
-    .{ "", "", "-e", "", "Updates env variables with your current environment." },
-    .{ "", "", "-M, --monitor", "How thorough looking for child processes will be, use \"deep\" for complex applications like GUIs although it can be a little more CPU intensive, \"shallow\" is the default." },
-    .{""},
-    .{ "", "edit", "Edits a task. [value] must be task ids or a namespace" },
-    .{ "", "", "-m [num]", "Set maximum memory limit e.g 4GB" },
-    .{ "", "", "-c [num]", "Set limit cpu usage by percentage e.g 20" },
-    .{ "", "", "-n [text]", "Set namespace for the task" },
-    .{ "", "", "-p", "", "Persist mode (will restart if the program exits)" },
-    .{ "", "", "-M, --monitor", "How thorough looking for child processes will be, use \"deep\" for complex applications like GUIs although it can be a little more CPU intensive, \"shallow\" is the default." },
-    .{""},
-    .{ "", "restart", "Restarts a task. [value] must be task ids or a namespace" },
-    .{ "", "", "-m [num]", "Set maximum memory limit e.g 4GB" },
-    .{ "", "", "-c [num]", "Set limit cpu usage by percentage e.g 20" },
-    .{ "", "", "-i", "", "Interactive mode (can use aliased commands on your environment)" },
-    .{ "", "", "-p", "", "Persist mode (will restart if the program exits)" },
-    .{ "", "", "-e", "", "Updates env variables with your current environment." },
-    .{ "", "", "-M, --monitor", "How thorough looking for child processes will be, use \"deep\" for complex applications like GUIs although it can be a little more CPU intensive, \"shallow\" is the default." },
-    .{""},
-    .{ "", "ls", "Shows all tasks" },
-    .{ "", "", "-w, -f", "Provides updating tables every 2 seconds" },
-    .{ "", "", "-a", "Show all child processes" },
-    .{""},
-    .{ "", "logs", "Shows output from task. [value] must be a task id e.g 1" },
-    .{ "", "", "-l [num]", "See number of previous lines default is 20" },
-    .{ "", "", "-w, -f", "", "Listen to new logs coming in" },
-    .{""},
-    .{ "", "delete", "Deletes tasks. [value] must be a task id or a namespace e.g 1" },
-    .{""},
-    .{ "", "health", "Checks state of multask, run this when multask is not working" },
-    .{""},
-    .{ "", "help", "Shows available options" },
 };

@@ -1,0 +1,40 @@
+name: "Setup Zig"
+description: "Download and install the Zig compiler on any platform"
+inputs:
+  version:
+    description: "Zig version to install"
+    required: true
+    default: "0.14.1"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install Zig on Linux or macOS
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        ZIG_VERSION="${{ inputs.version }}"
+        case "${{ runner.os }}" in
+          Linux)
+            ARCHIVE="zig-x86_64-linux-$ZIG_VERSION.tar.xz"
+            ;;
+          macOS)
+            ARCHIVE="zig-x86_64-macos-$ZIG_VERSION.tar.xz"
+            ;;
+        esac
+        curl -L -o zig.tar.xz "https://ziglang.org/download/$ZIG_VERSION/$ARCHIVE"
+        tar -xf zig.tar.xz
+        mv zig-* zig
+        echo "$(pwd)/zig" >> $GITHUB_PATH
+
+    - name: Install Zig on Windows
+      if: runner.os == 'Windows'
+      shell: powershell
+      run: |
+        $ZigVersion = "${{ inputs.version }}"
+        $Archive = "zig-x86_64-windows-$ZigVersion.zip"
+        Invoke-WebRequest "https://ziglang.org/download/$ZigVersion/$Archive" -OutFile "zig.zip"
+        Expand-Archive zig.zip -DestinationPath .
+        Rename-Item "zig-x86_64-windows-$ZigVersion" "zig"
+        Add-Content $env:GITHUB_PATH "$(Get-Location)\zig"
+

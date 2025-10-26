@@ -28,6 +28,16 @@
 
 See the [documentation]() for more details.
 
+## Running tests
+
+To run the zig unit tests, you need zig version 0.14.0 and run `zig build test --summary all`.
+
+To run the simulation tests in ruby, you'll need ruby version 3.4.4 and run:
+```
+bundle install
+bundle exec rspec
+```
+
 ## License
 
 Licensed under the MIT License. See the [LICENSE](https://github.com/AFreeChameleon/multask/blob/master/LICENSE) for more details.

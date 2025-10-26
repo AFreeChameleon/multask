@@ -6,16 +6,19 @@ const Lengths = util.Lengths;
 const file = @import("./file.zig");
 
 pub var debug = false;
+pub var enabled_logging = true;
 pub var is_forked = false;
 
 pub var stdout_file: std.fs.File = undefined;
 
 pub fn init() e.Errors!void {
-    if (comptime builtin.target.os.tag == .windows) {
-        const win_log = @import("./windows/log.zig");
-        try win_log.enable_virtual_terminal();
+    if (enabled_logging) {
+        if (comptime builtin.target.os.tag == .windows) {
+            const win_log = @import("./windows/log.zig");
+            try win_log.enable_virtual_terminal();
+        }
+        stdout_file = std.io.getStdOut();
     }
-    stdout_file = std.io.getStdOut();
 }
 
 pub fn print(comptime text: []const u8, args: anytype) e.Errors!void {
@@ -31,7 +34,7 @@ pub fn printsucc(comptime text: []const u8, args: anytype) e.Errors!void {
         "[SUCCESS]", 0, 204, 102
     );
     defer util.gpa.free(success_str);
-    if (!builtin.is_test) {
+    if (!builtin.is_test and enabled_logging) {
         stdout.print("{s}", .{success_str})
             catch return error.InternalLoggingFailed;
         stdout.print(" " ++ text ++ "\n", args)
@@ -57,7 +60,7 @@ pub fn printdebug(comptime text: []const u8, args: anytype) e.Errors!void {
         write_to_debug_log_file(line)
             catch return error.InternalLoggingFailed;
     }
-    if (debug and !is_forked and !builtin.is_test) {
+    if (debug and !is_forked and !builtin.is_test and enabled_logging) {
         const stdout = stdout_file.writer();
         stdout.print("{s}", .{colour_str})
             catch return error.InternalLoggingFailed;
@@ -72,7 +75,7 @@ pub fn printinfo(comptime text: []const u8, args: anytype) e.Errors!void {
         "[INFO]", 0, 51, 255
     );
     defer util.gpa.free(colour_str);
-    if (!builtin.is_test) {
+    if (!builtin.is_test and enabled_logging) {
         stdout.print("{s}", .{colour_str})
             catch return error.InternalLoggingFailed;
         stdout.print(" " ++ text ++ "\n", args)
@@ -86,10 +89,12 @@ pub fn printwarn(comptime text: []const u8, args: anytype) e.Errors!void {
         "[WARNING]", 204, 102, 0
     );
     defer util.gpa.free(colour_str);
-    stdout.print("{s}", .{colour_str})
-        catch return error.InternalLoggingFailed;
-    stdout.print(" " ++ text ++ "\n", args)
-        catch return error.InternalLoggingFailed;
+    if (enabled_logging) {
+        stdout.print("{s}", .{colour_str})
+            catch return error.InternalLoggingFailed;
+        stdout.print(" " ++ text ++ "\n", args)
+            catch return error.InternalLoggingFailed;
+    }
 }
 
 pub fn print_custom_err(comptime text: []const u8, args: anytype) e.Errors!void {
@@ -123,17 +128,21 @@ pub fn printstderr(comptime text: []const u8, args: anytype) e.Errors!void {
     const colour_str = try util.colour_string(
         "[STDERR]", 204, 0, 0
     );
-    stdout.print("{s}", .{colour_str})
-        catch return error.InternalLoggingFailed;
-    stdout.print(" " ++ text, args)
-        catch return error.InternalLoggingFailed;
+    if (enabled_logging) {
+        stdout.print("{s}", .{colour_str})
+            catch return error.InternalLoggingFailed;
+        stdout.print(" " ++ text, args)
+            catch return error.InternalLoggingFailed;
+    }
 }
 
 pub fn printerr(e_type: e.Errors) e.Errors!void {
     const stderr = std.io.getStdErr().writer();
     const message = try e.get_error_msg(e_type);
-    stderr.print("\x1B[38;2;204;0;0m[ERROR]\x1B[0m {s}\n", .{message})
-        catch return error.InternalLoggingFailed;
+    if (enabled_logging) {
+        stderr.print("\x1B[38;2;204;0;0m[ERROR]\x1B[0m {s}\n", .{message})
+            catch return error.InternalLoggingFailed;
+    }
     if (debug) {
         const content = std.fmt.allocPrint(
             util.gpa,

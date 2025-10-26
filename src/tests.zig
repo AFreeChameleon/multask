@@ -7,6 +7,8 @@ test "Main" {
     _ = @import("lib/util.zig");
     _ = @import("lib/args/parse.zig");
     _ = @import("lib/table/index.zig");
+    _ = @import("lib/table/main.zig");
+    _ = @import("lib/table/stats.zig");
     _ = @import("lib/task/manager.zig");
     _ = @import("lib/task/env.zig");
     if (comptime builtin.target.os.tag == .linux) {

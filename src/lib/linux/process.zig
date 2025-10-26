@@ -6,7 +6,6 @@ const Pid = util.Pid;
 const Sid = util.Sid;
 const Pgrp = util.Pgrp;
 const Lengths = util.Lengths;
-const FileStrings = util.FileStrings;
 const e = @import("../error.zig");
 const Errors = e.Errors;
 const Find = @import("../file.zig").Find;

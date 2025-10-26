@@ -1,0 +1,60 @@
+name: Multask tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  build-and-run-unit-tests:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Zig
+        uses: ./.github/actions/setup-zig
+        with:
+          version: 0.14.1
+
+      - name: Verify Zig version
+        run: zig/zig version
+
+      - name: Run tests
+        run: zig/zig build test --summary all
+
+  build-and-run-simulation-tests:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    needs: build-and-run-unit-tests  # waits for the first job to succeed
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Zig
+        uses: ./.github/actions/setup-zig
+        with:
+          version: 0.14.1
+
+      - name: Verify Zig version
+        run: zig/zig version
+
+      - name: Build project
+        run: zig/zig build -Doptimize=ReleaseSmall
+
+      - name: Set up Ruby 3.4.4
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 3.4.4
+          bundler-cache: true
+
+      - name: Run RSpec
+        run: bundle exec rspec

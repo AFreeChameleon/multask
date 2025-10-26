@@ -2,25 +2,13 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 pub fn build(b: *std.Build) void {
-    if (
-        b.graph.host.result.os.tag != .linux and 
-        b.graph.host.result.os.tag != .macos and
-        b.graph.host.result.os.tag != .windows
-    ) {
-        std.debug.print("Unsupported OS. Valid operating systems are: Linux, Macos and Windows\n", .{});
-        return;
-    }
+    const target_opts = b.standardTargetOptions(.{});
+    const optimise_opts = b.standardOptimizeOption(.{});
     const exe = b.addExecutable(.{
         .name = "mlt",
         .root_source_file = b.path("src/main.zig"),
-        .target = b.standardTargetOptions(.{
-            .whitelist = &.{
-                .{ .os_tag = .linux },
-                .{ .os_tag = .macos },
-                .{ .os_tag = .windows },
-            }
-        }),
-        .optimize = b.standardOptimizeOption(.{}),
+        .target = target_opts,
+        .optimize = optimise_opts,
     });
 
     b.installArtifact(exe);
@@ -34,13 +22,25 @@ pub fn build(b: *std.Build) void {
     exe.linkLibC();
 
     if (comptime builtin.target.os.tag == .windows) {
+        const mlt_bg_exe = b.addExecutable(.{
+            .name = "mlt_bg",
+            .root_source_file = b.path("src/main.zig"),
+            .target = target_opts,
+            .optimize = optimise_opts,
+        });
+        b.installArtifact(mlt_bg_exe);
+        mlt_bg_exe.root_module.addImport("build_zon", zon_module);
+        mlt_bg_exe.subsystem = .Windows;
+        mlt_bg_exe.linkLibC();
+
         const win_spawn_exe = b.addExecutable(.{
             .name = "spawn",
             .root_source_file = b.path("src/win_spawn.zig"),
-            .target = b.graph.host,
-            .optimize = .ReleaseSmall,
+            .target = target_opts,
+            .optimize = optimise_opts,
         });
         b.installArtifact(win_spawn_exe);
+        win_spawn_exe.root_module.addImport("build_zon", zon_module);
         win_spawn_exe.linkLibC();
     }
 

@@ -18,7 +18,7 @@ const Files = f.Files;
 const ReadProcess = f.ReadProcess;
 const TaskReadProcess = f.TaskReadProcess;
 
-const MainFiles  = @import("../file.zig").MainFiles;
+const MainFiles = @import("../file.zig").MainFiles;
 
 const e = @import("../error.zig");
 const Errors = e.Errors;
@@ -26,6 +26,9 @@ const Errors = e.Errors;
 const t = @import("./index.zig");
 const TaskId = t.TaskId;
 const Task = t.Task;
+
+const s = @import("../startup/index.zig");
+const Startup = s.Startup;
 
 const JSON_TNamespaces = struct {
     name: []const u8,
@@ -189,6 +192,47 @@ pub const TaskManager = struct {
             catch |err| return e.verbose_error(err, error.NamespaceValueMissing);
     }
 
+    pub fn task_running(task: *Task) Errors!bool {
+        const proc_exists = task.process != null and task.process.?.proc_exists();
+        const daemon_exists = task.daemon != null and task.daemon.?.proc_exists();
+        if (proc_exists or daemon_exists) {
+            return true;
+        }
+        if (
+            task.process != null and
+            try taskproc.any_procs_exist(&task.process.?)
+        ) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /// Kills daemon and any processes it finds. Returns false if there aren't any processes
+    /// returns true if there is.
+    pub fn kill_task(task: *Task) Errors!bool {
+        const running = try task_running(task);
+        if (!running) {
+            return false;
+        }
+        var proc_exists = task.process != null and task.process.?.proc_exists();
+        const daemon_exists = task.daemon != null and task.daemon.?.proc_exists();
+        if (!proc_exists and !daemon_exists and !try taskproc.any_procs_exist(&task.process.?)) {
+            return false;
+        }
+        if (task.process != null and try taskproc.any_procs_exist(&task.process.?)) {
+            proc_exists = true;
+        }
+
+        if (daemon_exists) {
+            try task.daemon.?.kill();
+        }
+        if (proc_exists) {
+            try taskproc.kill_all(&task.process.?);
+        }
+        return true;
+    }
+
     fn find_new_task_id(task_ids: []TaskId) TaskId {
         if (task_ids.len == 0) {
             return 1;
@@ -207,7 +251,9 @@ pub const TaskManager = struct {
         memory_limit: util.MemLimit,
         namespace: ?[]const u8,
         persist: bool,
-        monitoring: Monitoring
+        monitoring: Monitoring,
+        boot: bool,
+        interactive: bool
     ) Errors!Task {
         var tasks = try get_tasks();
         defer tasks.deinit();
@@ -244,7 +290,9 @@ pub const TaskManager = struct {
                 .memory_limit = memory_limit,
                 .cpu_limit = cpu_limit,
                 .persist = persist,
-                .monitoring = monitoring
+                .monitoring = monitoring,
+                .boot = boot,
+                .interactive = interactive
             },
             .files = try Files.init(new_id),
             .resources = Resources.init(),
@@ -354,7 +402,9 @@ test "Creating task with namespace" {
         20_000,
         ns,
         false,
-        .Shallow
+        .Shallow,
+        false,
+        false
     );
     try expect(new_task.id == 1);
     try expect(std.mem.eql(u8, new_task.namespace.?, "ns"));
@@ -377,7 +427,9 @@ test "Reading saved task with namespace" {
         20_000,
         ns,
         false,
-        .Shallow
+        .Shallow,
+        false,
+        false
     );
     new_task.deinit();
     var task = Task.init(1);
@@ -403,7 +455,9 @@ test "Creating task with no namespace" {
         20_000,
         null,
         false,
-        .Shallow
+        .Shallow,
+        false,
+        false
     );
     defer new_task.deinit();
 
@@ -420,7 +474,9 @@ test "Reading saved task with no namespace" {
         20_000,
         null,
         false,
-        .Shallow
+        .Shallow,
+        false,
+        false
     );
     new_task.deinit();
     var task = Task.init(1);

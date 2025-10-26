@@ -13,8 +13,10 @@ pub fn main() !void {
         }
         util.gpa.free(argv);
     }
+    if (argv.len > 1 and !std.mem.eql(u8, argv[1], "startup")) {
+        try log.init();
+    }
 
-    try log.init();
     if (argv.len <= 1) {
         try log.printerr(error.NoArgs);
         return;
