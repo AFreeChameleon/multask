@@ -2,7 +2,7 @@
 # irm "https://raw.githubusercontent.com/AFreeChameleon/multask-zig/refs/heads/develop-2/docs/_install/migration/check_migrations.ps1?token=GHSAT0AAAAAADGHQRJ52NNOOK7NYGSYKTTI2HFVYUQ" | iex
 
 # Downloading the exes
-curl https://github.com/AFreeChameleon/multask/releases/download/v0.5.0/multask-windows.zip -o "$env:USERPROFILE\mlt-win.zip" | Out-Null
+curl https://github.com/AFreeChameleon/multask/releases/download/v0.5.0/multask-windows_x86_64.zip -o "$env:USERPROFILE\mlt-win.zip" | Out-Null
 $multaskBinDir = "$env:USERPROFILE\.multi-tasker\bin"
 New-Item $multaskBinDir -ItemType Directory -Force | Out-Null
 Expand-Archive -Force "$env:USERPROFILE\mlt-win.zip" $multaskBinDir

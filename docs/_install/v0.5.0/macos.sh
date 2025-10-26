@@ -5,9 +5,12 @@ curl -L "https://raw.githubusercontent.com/AFreeChameleon/multask/refs/tags/v0.5
 mkdir -p $HOME/.multi-tasker/bin
 
 if [ "$(uname -m)" = "x86_64" ]; then
-    curl -L https://github.com/AFreeChameleon/multask/releases/download/v0.5.0/multask-macos_x86.tar.gz -s -o $PWD/mlt.tar.gz
+    curl -L https://github.com/AFreeChameleon/multask/releases/download/v0.5.0/multask-macos_x86_64.tar.gz -s -o $PWD/mlt.tar.gz
 elif [ "$(uname -m)" = "arm64" ]; then
-    curl -L https://github.com/AFreeChameleon/multask/releases/download/v0.5.0/multask-macos_arm.tar.gz -s -o $PWD/mlt.tar.gz
+    curl -L https://github.com/AFreeChameleon/multask/releases/download/v0.5.0/multask-macos_arm64.tar.gz -s -o $PWD/mlt.tar.gz
+else
+    echo "Architecture not supported."
+    exit 1
 fi
 tar xvfz $PWD/mlt.tar.gz > /dev/null
 mkdir -p $HOME/.local/bin
