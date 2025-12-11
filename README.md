@@ -26,7 +26,7 @@
 
 ## Installation & Functions
 
-See the [documentation]() for more details.
+See the [documentation](https://afreechameleon.github.io/multask/#/installation) for more details.
 
 ## Running tests
 
@@ -42,4 +42,6 @@ bundle exec rspec
 
 ## License
 
-Licensed under the MIT License. See the [LICENSE](https://github.com/AFreeChameleon/multask/blob/master/LICENSE) for more details.
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+
+Flute is under the GPL v3 license.
