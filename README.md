@@ -6,12 +6,10 @@
   <h1 align="center">Multask</h1>
 
   <p align="center">
-    A process manager for Linux, Mac, Windows & FreeBSD to simplify your developer environment.
+    A process manager for Linux, Mac, Windows to simplify your developer environment.
   </p>
   <p align="center">
-    See the
-    <a href="https://afreechameleon.github.io/multask/#/">documentation</a>
-    for more details.
+    <a href="https://afreechameleon.github.io/multask/#/">DOCUMENTATION</a>
   </p>
   <p align="center">
     Designed to organise projects which need processes running at the same time with flexible resource limits for scaling.
@@ -26,7 +24,7 @@
 
 ## Installation & Functions
 
-See the [documentation](https://afreechameleon.github.io/multask/#/installation) for more details.
+See the [documentation](https://afreechameleon.github.io/multask/#/installation) for more details on how to install.
 
 ## Running tests
 
@@ -43,5 +41,3 @@ bundle exec rspec
 ## License
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-
-Flute is under the GPL v3 license.
