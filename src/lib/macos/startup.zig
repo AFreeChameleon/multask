@@ -2,7 +2,6 @@ const std = @import("std");
 
 const log = @import("../log.zig");
 const util = @import("../util.zig");
-const Lengths = util.Lengths;
 const TaskId = @import("../task/index.zig").TaskId;
 const TaskManager = @import("../task/manager.zig").TaskManager;
 const MainFiles = @import("../file.zig").MainFiles;

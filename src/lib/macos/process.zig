@@ -302,6 +302,20 @@ pub const MacosProcess = struct {
         }
     }
 
+    /// Buffer should be at least 16 chars long
+    pub fn get_exe_buf(self: *Self, buf: []u8) Errors![]const u8 {
+        const stats = try procstats.get_process_stats(self.pid);
+        const comm = procstats.get_exe(&stats);
+
+        if (comm.len > buf.len) {
+            @memcpy(buf[0..buf.len], comm[0..buf.len]);
+            return buf[0..buf.len];
+        } else {
+            @memcpy(buf[0..comm.len], comm[0..comm.len]);
+            return buf[0..comm.len];
+        }
+    }
+
     pub fn get_exe(self: *Self) Errors![]const u8 {
         const stats = try procstats.get_process_stats(self.pid);
         const comm = procstats.get_exe(&stats);

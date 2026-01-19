@@ -3,6 +3,7 @@ const log = @import("./log.zig");
 const util = @import("./util.zig");
 
 pub const Errors = error {
+    FailedToWatchFile,
     InvalidOs,
     ForkFailed,
     StdHandleCloseFailed,
@@ -138,6 +139,15 @@ pub const Errors = error {
 
     FailedToGetStartupDetails,
     FailedToSetStartupDetails,
+
+    FailedToSpawnThread,
+    FailedToSignalLogger,
+
+    WindowsLogWatcherAlreadyRunning,
+
+    // TESTING ERRORS
+    TestFunctionCalled,
+    TestExpectFailed,
 };
 
 pub fn verbose_error(og_err: anytype, mult_err: Errors) Errors {
@@ -149,345 +159,123 @@ pub fn verbose_error(og_err: anytype, mult_err: Errors) Errors {
 }
 
 pub fn get_error_msg(e_type: Errors) Errors![]const u8 {
-    var result: []const u8 = undefined;
-    switch (e_type) {
-        error.FailedToSetStartupDetails => {
-            result = "Failed to set startup details.";
-        },
-        error.FailedToGetStartupDetails => {
-            result = "Failed to get startup details.";
-        },
-        error.FailedToGetJob => {
-            result = "Failed to get group of processes.";
-        },
-        error.CorruptTaskIdEnvVariable => {
-            result = "MULTASK_TASK_ID env variable's value is corrupted.";
-        },
-        error.FailedToGetLoadavg => {
-            result = "Failed to get the most recent process from /proc/loadavg.";
-        },
-        error.FailedToGetEnvs => {
-            result = "Failed to get OS envs.";
-        },
-        error.InvalidOs => {
-            result = "Invalid OS. Only Macos, Linux and Windows supported right now.";
-        },
-        error.FailedToGetProcessPpid => {
-            result = "Failed to get process parent id.";
-        },
-        error.FailedToGetProcessSid => {
-            result = "Failed to get process sid.";
-        },
-        error.FailedToGetSystemUptime => {
-            result = "Failed to get system uptime.";
-        },
-        error.InvalidFileType => {
-            result = "Invalid file type.";
-        },
-        error.FailedToGetRootStats => {
-            result = "Failed to get the computer's stats.";
-        },
-        error.FailedToFilterDupeProcesses => {
-            result = "Could not get unique processes.";
-        },
-        error.ProcessFileNotFound => {
-            result = "Process file not found.";
-        },
-        error.TaskFileNotFound => {
-            result = "Task file not found.";
-        },
-        error.DebugLogFileFailedOpen => {
-            result = "Failed to open debug log file.";
-        },
-        error.DebugLogFileFailedWrite => {
-            result = "Failed to write to debug log file.";
-        },
-        error.FailedToGetRelatedProcs => {
-            result = "Failed to get /proc dir.";
-        },
-        error.FailedToGetProcDir => {
-            result = "Failed to get /proc dir.";
-        },
-        error.FailedToGetAllProcesses => {
-            result = "Failed to get all processes.";
-        },
-        error.CommandNotExists => {
-            result = "Command is missing.";
-        },
-        error.MissingTaskId => {
-            result = "Missing task id.";
-        },
-        error.OnlyOneTaskId => {
-            result = "Only one task id allowed.";
-        },
-        error.TaskFileFailedRead => {
-            result = "Failed to read task file.";
-        },
-        error.MainFileFailedRead => {
-            result = "Failed to read main file.";
-        },
-        error.MainFileFailedWrite => {
-            result = "Failed to save main file.";
-        },
-        error.InternalUtilError => {
-            result = "Internal utility function failed.";
-        },
-        error.InvalidFile => {
-            result = "Invalid file.";
-        },
-        error.FailedToCloseFiles => {
-            result = "File failed validation.";
-        },
-        error.FileFailedValidation => {
-            result = "File failed validation.";
-        },
-        error.SpawnExeNotFound => {
-            result = "Multask spawn executable not found.";
-        },
-        error.FailedToEditNamespace => {
-            result = "Failed to edit namespace.";
-        },
-        error.UnkownItemInTaskDir => {
-            result = "Unknown file/directory in task directory.";
-        },
-        error.UnkownItemInTasksDir => {
-            result = "Unknown file/directory in tasks directory.";
-        },
-        error.InvalidShell => {
-            result = "Shell is not recognised. Supported shells are zsh and bash at the moment.";
-        },
-        error.FailedSetProcessFileCache => {
-            result = "Failed to set process file cache.";
-        },
-        error.FailedSetTaskCache => {
-            result = "Failed to set task file cache.";
-        },
-        error.ProcessFileFailedCreate => {
-            result = "Failed to create processes file.";
-        },
-        error.FailedToKillProcess => {
-            result = "Failed to kill process.";
-        },
-        error.FailedToKillAllProcesses => {
-            result = "Failed to kill all processes.";
-        },
-        error.FailedToPrintTable => {
-            result = "Failed to print table.";
-        },
-        error.ProcessNotExists => {
-            result = "Process does not exist.";
-        },
-        error.FailedToSetProcessStatus => {
-            result = "Failed to set process status.";
-        },
-        error.FailedToDeleteTask => {
-            result = "Failed to delete task.";
-        },
-        error.FailedToGetProcessStarttime => {
-            result = "Failed to get process start time.";
-        },
-        error.FailedToGetProcessName => {
-            result = "Failed to get process name.";
-        },
-        error.FailedToGetProcessComm => {
-            result = "Failed to get process executable.";
-        },
-        error.FailedToSetCpuUsage => {
-            result = "Failed to set process cpu usage.";
-        },
-        error.FailedToGetCpuUsage => {
-            result = "Failed to get process cpu usage.";
-        },
-        error.FailedToGetProcessRuntime => {
-            result = "Failed to get process runtime.";
-        },
-        error.FailedToGetProcessMemory => {
-            result = "Failed to get process memory.";
-        },
-        error.FailedAppendTableRow => {
-            result = "Failed to add table row.";
-        },
-        error.FailedToGetTaskStats => {
-            result = "Failed to get task stats.";
-        },
-        error.FailedToSaveStats => {
-            result = "Failed to save task stats.";
-        },
-        error.CommandTooLarge => {
-            result = "Command is too large.";
-        },
-        error.FailedToReadTaskPid => {
-            result = "Failed to read task's pid.";
-        },
-        error.FailedToSaveProcesses => {
-            result = "Failed to save processes.";
-        },
-        error.FailedToGetCpuStats => {
-            result = "Failed to get CPU stats.";
-        },
-        error.FailedToGetProcess => {
-            result = "Failed to find process.";
-        },
-        error.FailedToGetProcessChildren => {
-            result = "Failed to get process children.";
-        },
-        error.FailedToGetProcesses => {
-            result = "Failed to get processes.";
-        },
-        error.FailedToGetProcessState => {
-            result = "Failed to get state of process.";
-        },
-        error.FailedToGetProcessStats => {
-            result = "Failed to get stats of process.";
-        },
-        error.FailedToSetWindowCols => {
-            result = "Failed to find size of window.";
-        },
-        error.TaskLogsFailedToRead => {
-            result = "Failed to read task's logs.";
-        },
-        error.TasksDirNotFound => {
-            result = "Tasks directory not found.";
-        },
-        error.PathNotFound => {
-            result = "Could not find specified path.";
-        },
-        error.ForkFailed => {
-            result = "Failed to create a subshell. Maybe this is a terminal I don't recognise?";
-        },
-        error.StdHandleCloseFailed => {
-            result = "Failed to close stdout/err handles.";
-        },
-        error.SetSidFailed => {
-            result = "Failed to set the sid of the subshell.";
-        },
-        error.MissingCwd => {
-            result = "Missing current working working directory.";
-        },
-        error.CommandFailed => {
-            result = "Command failed to execute.";
-        },
-        error.MainDirNotFound => {
-            result = "Main directory doesn't exist.";
-        },
-        error.TasksFileMissingOrCorrupt => {
-            result = "Tasks file is missing or corrupt.";
-        },
+    return switch (e_type) {
+        error.WindowsLogWatcherAlreadyRunning => "There is already a log watcher on this task running.",
+        error.FailedToSignalLogger => "Failed to signal the log watcher.",
+        error.FailedToWatchFile => "Failed to watch file.",
+        error.FailedToSpawnThread => "Failed to spawn thread for monitoring or watching logs.",
+        error.FailedToSetStartupDetails => "Failed to set startup details.",
+        error.FailedToGetStartupDetails => "Failed to get startup details.",
+        error.FailedToGetJob => "Failed to get group of processes.",
+        error.CorruptTaskIdEnvVariable => "MULTASK_TASK_ID env variable's value is corrupted.",
+        error.FailedToGetLoadavg => "Failed to get the most recent process from /proc/loadavg.",
+        error.FailedToGetEnvs => "Failed to get OS envs.",
+        error.InvalidOs => "Invalid OS. Only Macos, Linux and Windows supported right now.",
+        error.FailedToGetProcessPpid => "Failed to get process parent id.",
+        error.FailedToGetProcessSid => "Failed to get process sid.",
+        error.FailedToGetSystemUptime => "Failed to get system uptime.",
+        error.InvalidFileType => "Invalid file type.",
+        error.FailedToGetRootStats => "Failed to get the computer's stats.",
+        error.FailedToFilterDupeProcesses => "Could not get unique processes.",
+        error.ProcessFileNotFound => "Process file not found.",
+        error.TaskFileNotFound => "Task file not found.",
+        error.DebugLogFileFailedOpen => "Failed to open debug log file.",
+        error.DebugLogFileFailedWrite => "Failed to write to debug log file.",
+        error.FailedToGetRelatedProcs => "Failed to get /proc dir.",
+        error.FailedToGetProcDir => "Failed to get /proc dir.",
+        error.FailedToGetAllProcesses => "Failed to get all processes.",
+        error.CommandNotExists => "Command is missing.",
+        error.MissingTaskId => "Missing task id.",
+        error.OnlyOneTaskId => "Only one task id allowed.",
+        error.TaskFileFailedRead => "Failed to read task file.",
+        error.MainFileFailedRead => "Failed to read main file.",
+        error.MainFileFailedWrite => "Failed to save main file.",
+        error.InternalUtilError => "Internal utility function failed.",
+        error.InvalidFile => "Invalid file.",
+        error.FailedToCloseFiles => "File failed validation.",
+        error.FileFailedValidation => "File failed validation.",
+        error.SpawnExeNotFound => "Multask spawn executable not found.",
+        error.FailedToEditNamespace => "Failed to edit namespace.",
+        error.UnkownItemInTaskDir => "Unknown file/directory in task directory.",
+        error.UnkownItemInTasksDir => "Unknown file/directory in tasks directory.",
+        error.InvalidShell => "Shell is not recognised. Supported shells are zsh and bash at the moment.",
+        error.FailedSetProcessFileCache => "Failed to set process file cache.",
+        error.FailedSetTaskCache => "Failed to set task file cache.",
+        error.ProcessFileFailedCreate => "Failed to create processes file.",
+        error.FailedToKillProcess => "Failed to kill process.",
+        error.FailedToKillAllProcesses => "Failed to kill all processes.",
+        error.FailedToPrintTable => "Failed to print table.",
+        error.ProcessNotExists => "Process does not exist.",
+        error.FailedToSetProcessStatus => "Failed to set process status.",
+        error.FailedToDeleteTask => "Failed to delete task.",
+        error.FailedToGetProcessStarttime => "Failed to get process start time.",
+        error.FailedToGetProcessName => "Failed to get process name.",
+        error.FailedToGetProcessComm => "Failed to get process executable.",
+        error.FailedToSetCpuUsage => "Failed to set process cpu usage.",
+        error.FailedToGetCpuUsage => "Failed to get process cpu usage.",
+        error.FailedToGetProcessRuntime => "Failed to get process runtime.",
+        error.FailedToGetProcessMemory => "Failed to get process memory.",
+        error.FailedAppendTableRow => "Failed to add table row.",
+        error.FailedToGetTaskStats => "Failed to get task stats.",
+        error.FailedToSaveStats => "Failed to save task stats.",
+        error.CommandTooLarge => "Command is too large.",
+        error.FailedToReadTaskPid => "Failed to read task's pid.",
+        error.FailedToSaveProcesses => "Failed to save processes.",
+        error.FailedToGetCpuStats => "Failed to get CPU stats.",
+        error.FailedToGetProcess => "Failed to find process.",
+        error.FailedToGetProcessChildren => "Failed to get process children.",
+        error.FailedToGetProcesses => "Failed to get processes.",
+        error.FailedToGetProcessState => "Failed to get state of process.",
+        error.FailedToGetProcessStats => "Failed to get stats of process.",
+        error.FailedToSetWindowCols => "Failed to find size of window.",
+        error.TaskLogsFailedToRead => "Failed to read task's logs.",
+        error.TasksDirNotFound => "Tasks directory not found.",
+        error.PathNotFound => "Could not find specified path.",
+        error.ForkFailed => "Failed to create a subshell. Maybe this is a terminal I don't recognise?",
+        error.StdHandleCloseFailed => "Failed to close stdout/err handles.",
+        error.SetSidFailed => "Failed to set the sid of the subshell.",
+        error.MissingCwd => "Missing current working working directory.",
+        error.CommandFailed => "Command failed to execute.",
+        error.MainDirNotFound => "Main directory doesn't exist.",
+        error.TasksFileMissingOrCorrupt => "Tasks file is missing or corrupt.",
 
-        error.StartupFileEmpty => {
-            result = "Startup file is empty. Please run mlt health";
-        },
-        error.StartupFileFailedCreate => {
-            result = "Failed to create startup file.";
-        },
-        error.StartupFileFailedRead => {
-            result = "Failed to read startup file.";
-        },
-        error.StartupFileFailedWrite => {
-            result = "Failed to write to startup file.";
-        },
-        error.StartupFileNotExists => {
-            result = "Startup file does not exist.";
-        },
+        error.StartupFileEmpty => "Startup file is empty. Please run mlt health",
+        error.StartupFileFailedCreate => "Failed to create startup file.",
+        error.StartupFileFailedRead => "Failed to read startup file.",
+        error.StartupFileFailedWrite => "Failed to write to startup file.",
+        error.StartupFileNotExists => "Startup file does not exist.",
 
-        error.TasksIdsFileFailedCreate => {
-            result = "Failed to create task ids file.";
-        },
-        error.TasksIdsFileFailedRead => {
-            result = "Failed to read task ids file.";
-        },
-        error.TasksIdsFileFailedWrite => {
-            result = "Failed to write to task ids file.";
-        },
-        error.TasksIdsFileNotExists => {
-            result = "Task ids file does not exist.";
-        },
-        error.TasksNamespacesFileNotExists => {
-            result = "Task namespaces file does not exist.";
-        },
-        error.TasksNamespacesFileFailedCreate => {
-            result = "Failed to create task namespaces file.";
-        },
-        error.TasksNamespacesFileFailedRead => {
-            result = "Failed to read task namespaces file.";
-        },
-        error.TasksNamespacesFileFailedDelete => {
-            result = "Failed to delete task namespaces file.";
-        },
-        error.TaskFileFailedWrite => {
-            result = "Task output failed to write.";
-        },
-        error.MissingHomeDirectory => {
-            result = "Missing home directory.";
-        },
-        error.MainDirFailedCreate => {
-            result = "Main directory failed to create.";
-        },
-        error.TaskFileFailedCreate => {
-            result = "Task file failed to create.";
-        },
-        error.TasksDirFailedCreate => {
-            result = "Tasks directory failed to create.";
-        },
-        error.ParsingCommandArgsFailed => {
-            result = "Command failed to parse arguments.";
-        },
-        error.NoArgs => {
-            result = "No arguments passed in.";
-        },
-        error.TaskNotExists => {
-            result = "Task does not exist.";
-        },
-        error.NamespaceNotExists => {
-            result = "Namespace does not exist.";
-        },
-        error.TaskAlreadyRunning => {
-            result = "Task is already running.";
-        },
-        error.TaskNotRunning => {
-            result = "Task is not running.";
-        },
-        error.MissingArgumentValue => {
-            result = "One or more arguments are missing its value. Run mlt help for more info.";
-        },
-        error.InvalidArgument => {
-            result = "One or more arguments are invalid. Run mlt help for more info.";
-        },
-        error.InvalidOption => {
-            result = "One or more options are invalid. Run mlt help for more info.";
-        },
-        error.MissingArgument => {
-            result = "Missing option. Run mlt help for more info.";
-        },
-        error.CorruptedTask => {
-            result = "One or more tasks are corrupted. Run `mlt health` to troubleshoot";
-        },
-        error.CpuLimitValueInvalid => {
-            result = "Cpu limit value invalid. Must be a number in between 1 and 99.";
-        },
-        error.CpuLimitValueMissing => {
-            result = "Cpu limit needs to have a value.";
-        },
-        error.MemoryLimitValueInvalid => {
-            result = "Memory must have be a valid number with a suffix e.g 10(B, K, M ...).";
-        },
-        error.MemoryLimitValueMissing => {
-            result = "Memory limit needs to have a value.";
-        },
-        error.NamespaceValueMissing => {
-            result = "Namespace flag needs to have a value.";
-        },
-        error.NamespaceValueInvalid => {
-            result = "Namespace flag can only have letters in its value.";
-        },
-        error.NamespaceValueCantBeAll => {
-            result = "Namespace name cannot be 'all'.";
-        },
-        else => {
-            var buf: [util.Lengths.MEDIUM]u8 = undefined;
-            result = std.fmt.bufPrint(&buf, "Unknown error occurred, code: {any}", .{e_type})
-                catch return error.InternalLoggingFailed;
-        }
-    }
-    return result;
+        error.TasksIdsFileFailedCreate => "Failed to create task ids file.",
+        error.TasksIdsFileFailedRead => "Failed to read task ids file.",
+        error.TasksIdsFileFailedWrite => "Failed to write to task ids file.",
+        error.TasksIdsFileNotExists => "Task ids file does not exist.",
+        error.TasksNamespacesFileNotExists => "Task namespaces file does not exist.",
+        error.TasksNamespacesFileFailedCreate => "Failed to create task namespaces file.",
+        error.TasksNamespacesFileFailedRead => "Failed to read task namespaces file.",
+        error.TasksNamespacesFileFailedDelete => "Failed to delete task namespaces file.",
+        error.TaskFileFailedWrite => "Task output failed to write.",
+        error.MissingHomeDirectory => "Missing home directory.",
+        error.MainDirFailedCreate => "Main directory failed to create.",
+        error.TaskFileFailedCreate => "Task file failed to create.",
+        error.TasksDirFailedCreate => "Tasks directory failed to create.",
+        error.ParsingCommandArgsFailed => "Command failed to parse arguments.",
+        error.NoArgs => "No arguments passed in.",
+        error.TaskNotExists => "Task does not exist.",
+        error.NamespaceNotExists => "Namespace does not exist.",
+        error.TaskAlreadyRunning => "Task is already running.",
+        error.TaskNotRunning => "Task is not running.",
+        error.MissingArgumentValue => "One or more arguments are missing its value. Run mlt help for more info.",
+        error.InvalidArgument => "One or more arguments are invalid. Run mlt help for more info.",
+        error.InvalidOption => "One or more options are invalid. Run mlt help for more info.",
+        error.MissingArgument => "Missing option. Run mlt help for more info.",
+        error.CorruptedTask => "One or more tasks are corrupted. Run `mlt health` to troubleshoot",
+        error.CpuLimitValueInvalid => "Cpu limit value invalid. Must be a number in between 1 and 99.",
+        error.CpuLimitValueMissing => "Cpu limit needs to have a value.",
+        error.MemoryLimitValueInvalid => "Memory must have be a valid number with a suffix e.g 10(B, K, M ...).",
+        error.MemoryLimitValueMissing => "Memory limit needs to have a value.",
+        error.NamespaceValueMissing => "Namespace flag needs to have a value.",
+        error.NamespaceValueInvalid => "Namespace flag can only have letters in its value.",
+        error.NamespaceValueCantBeAll => "Namespace name cannot be 'all'.",
+        else => "Unknown error occurred, code",
+    };
 }

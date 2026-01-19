@@ -29,8 +29,16 @@ module FileHelpers
     output
   end
 
+  def self.convert_os_path path
+    if not self.is_unix
+      return path.tr('/', '\\')
+    end
+    return path
+  end
+
   def self.reset
-    dir = Pathname.new(File.join(get_home, ".multi-tasker")).cleanpath.to_path.tr('/', '\\')
+    path = self.convert_os_path Pathname.new(File.join(get_home, ".multi-tasker")).cleanpath.to_path
+    dir = path
     if File.directory? dir.to_s
       sleep 0.1
       FileUtils.rm_rf dir, :secure => true
@@ -47,7 +55,6 @@ module FileHelpers
       end
       sleep 0.5
     end
-    nil
   end
 
   def self.read_task_stats id

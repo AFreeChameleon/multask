@@ -15,7 +15,6 @@ const Tasks = tm.Tasks;
 const file = @import("../lib/file.zig");
 
 const util = @import("../lib/util.zig");
-const Lengths = util.Lengths;
 
 const log = @import("../lib/log.zig");
 

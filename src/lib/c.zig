@@ -6,6 +6,7 @@ pub const libc = @cImport({
     if (builtin.target.os.tag == .windows) {
         @cInclude("windows.h");
         @cInclude("winbase.h");
+        @cInclude("minwinbase.h");
         @cInclude("psapi.h");
         @cInclude("tlhelp32.h");
         @cInclude("tchar.h");

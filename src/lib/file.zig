@@ -1,4 +1,5 @@
 const std = @import("std");
+const expect = std.testing.expect;
 const builtin = @import("builtin");
 const log = @import("./log.zig");
 const task = @import("./task/index.zig");
@@ -9,7 +10,6 @@ const Tasks = m.Tasks;
 const TaskManager = m.TaskManager;
 
 const util = @import("./util.zig");
-const Lengths = util.Lengths;
 const Pid = util.Pid;
 
 const e = @import("./error.zig");
@@ -18,45 +18,97 @@ const Errors = e.Errors;
 const Startup = @import("./startup/index.zig").Startup;
 
 pub const MAIN_DIR: []const u8 = if (builtin.is_test) ".multi-tasker-test" else ".multi-tasker";
+const TEST_HOME_DIR = "/test/home";
 
-pub const MainFiles = struct {
-    /// CLOSE THIS
-    pub fn get_or_create_main_dir() Errors!std.fs.Dir {
-        const home_var = std.process.getEnvVarOwned(util.gpa, "HOME")
+pub const PathBuilder = struct {
+    pub const SEPARATOR = if (builtin.os.tag == .windows) '\\' else '/';
+
+    pub fn add_main_dir(bw_writer: anytype) Errors!void {
+        bw_writer.writeByte(SEPARATOR)
+            catch |err| return e.verbose_error(err, error.TasksIdsFileFailedRead);
+        bw_writer.print("{s}", .{MAIN_DIR})
+            catch |err| return e.verbose_error(err, error.TasksIdsFileFailedRead);
+    }
+
+    pub fn add_home_dir(bw_writer: anytype) Errors!void {
+        if (builtin.is_test) {
+            bw_writer.print(TEST_HOME_DIR, .{})
+                catch |err| return e.verbose_error(err, error.TasksIdsFileFailedRead);
+            return;
+        }
+        const home_var: []const u8 = std.process.getEnvVarOwned(util.gpa, "HOME")
             catch std.process.getEnvVarOwned(util.gpa, "USERPROFILE")
                 catch return error.MissingHomeDirectory;
         defer util.gpa.free(home_var);
 
-        const dir_str = std.fmt.allocPrint(util.gpa, "{s}/{s}", .{home_var, MAIN_DIR})
-            catch |err| return e.verbose_error(err, error.MainDirFailedCreate);
-        defer util.gpa.free(dir_str);
+        _ = bw_writer.write(home_var)
+            catch |err| return e.verbose_error(err, error.TasksIdsFileFailedRead);
+    }
 
-        std.fs.accessAbsolute(dir_str, .{.mode = .read_write}) catch {
-            try log.printinfo("Creating main directory...", .{});
-            std.fs.makeDirAbsolute(dir_str)
-                catch |err| return e.verbose_error(err, error.MainDirFailedCreate);
+    pub fn add_tasks_dir(bw_writer: anytype) Errors!void {
+        bw_writer.writeByte(SEPARATOR)
+            catch |err| return e.verbose_error(err, error.TasksIdsFileFailedRead);
+        bw_writer.print("tasks", .{})
+            catch |err| return e.verbose_error(err, error.TasksIdsFileFailedRead);
+    }
+
+    pub fn add_task_dir(bw_writer: anytype, task_id: TaskId) Errors!void {
+        bw_writer.writeByte(SEPARATOR)
+            catch |err| return e.verbose_error(err, error.TasksIdsFileFailedRead);
+        bw_writer.print("{d}", .{task_id})
+            catch |err| return e.verbose_error(err, error.TasksIdsFileFailedRead);
+    }
+
+    pub fn add_task_file(bw_writer: anytype, filename: []const u8) Errors!void {
+        bw_writer.writeByte(SEPARATOR)
+            catch |err| return e.verbose_error(err, error.TasksIdsFileFailedRead);
+        bw_writer.print("{s}", .{filename})
+            catch |err| return e.verbose_error(err, error.TasksIdsFileFailedRead);
+    }
+
+    pub fn add_terminator(bw_writer: anytype) Errors!void {
+        bw_writer.writeByte(0)
+            catch |err| return e.verbose_error(err, error.TasksIdsFileFailedRead);
+    }
+};
+
+
+pub const MainFiles = struct {
+    /// CLOSE THIS
+    pub fn get_or_create_main_dir() Errors!std.fs.Dir {
+        var buffer: [std.fs.max_path_bytes]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(&buffer);
+        var bw = std.io.bufferedWriter(fbs.writer());
+        const bw_writer = &bw.writer();
+
+        try PathBuilder.add_home_dir(bw_writer);
+        try PathBuilder.add_main_dir(bw_writer);
+        bw.flush()
+            catch |err| return e.verbose_error(err, error.TasksIdsFileFailedRead);
+        const dir_str = fbs.getWritten();
+
+        const dir = std.fs.openDirAbsolute(dir_str, .{}) catch |err| switch (err) {
+            error.FileNotFound => {
+                std.fs.makeDirAbsolute(dir_str)
+                    catch |inner_err| return e.verbose_error(inner_err, error.MainDirFailedCreate);
+                return std.fs.openDirAbsolute(dir_str, .{})
+                    catch |inner_err| return e.verbose_error(inner_err, error.MainDirFailedCreate);
+            },
+            else => return error.MainDirFailedCreate
         };
-        const dir = std.fs.openDirAbsolute(dir_str , .{})
-            catch |err| return e.verbose_error(err, error.MainDirFailedCreate);
+
         return dir;
     }
 
     // CLOSE THIS
-    pub fn get_or_create_tasks_file() Errors!std.fs.File {
+    pub fn get_or_create_tasks_file_lock() Errors!std.fs.File {
         var tasks_dir = try get_or_create_tasks_dir();
         defer tasks_dir.close();
         const file = tasks_dir.openFile("tasks.json", .{ .mode = .read_write })
-            catch return try create_tasks_file();
+            catch try create_tasks_file();
+        file.lock(.exclusive)
+            catch |err| return e.verbose_error(err, error.MainFileFailedRead);
         return file;
-    }
-
-    pub fn clear_main_file() Errors!void {
-        var file = try get_or_create_tasks_file();
-        defer file.close();
-        file.setEndPos(0)
-            catch |err| return e.verbose_error(err, error.TasksIdsFileFailedWrite);
-        file.seekTo(0)
-            catch |err| return e.verbose_error(err, error.TasksIdsFileFailedWrite);
     }
 
     pub fn get_debug_log_file() Errors!std.fs.File {
@@ -110,9 +162,9 @@ pub const MainFiles = struct {
         var tasks_dir = try get_or_create_tasks_dir();
         defer tasks_dir.close();
 
-        const task_path = std.fmt.allocPrint(util.gpa, "{d}", .{task_id})
+        var buf: [32]u8 = undefined;
+        const task_path = std.fmt.bufPrint(&buf, "{d}", .{task_id})
             catch |err| return e.verbose_error(err, error.TaskFileFailedCreate);
-        defer util.gpa.free(task_path);
 
         var task_dir = tasks_dir.makeOpenPath(task_path, .{})
             catch |err| return e.verbose_error(err, error.TaskFileFailedCreate);
@@ -121,18 +173,23 @@ pub const MainFiles = struct {
         const stdout = task_dir.createFile("stdout", .{})
             catch |err| return e.verbose_error(err, error.TaskFileFailedCreate);
         defer stdout.close();
+
         const stderr = task_dir.createFile("stderr", .{})
             catch |err| return e.verbose_error(err, error.TaskFileFailedCreate);
         defer stderr.close();
+
         const processes = task_dir.createFile("processes.json", .{})
             catch |err| return e.verbose_error(err, error.TaskFileFailedCreate);
         defer processes.close();
+
         const stats = task_dir.createFile("stats.json", .{})
             catch |err| return e.verbose_error(err, error.TaskFileFailedCreate);
         defer stats.close();
+
         const resources = task_dir.createFile("resources.json", .{})
             catch |err| return e.verbose_error(err, error.TaskFileFailedCreate);
         defer resources.close();
+
         const env = task_dir.createFile("env.json", .{})
             catch |err| return e.verbose_error(err, error.TaskFileFailedCreate);
         defer env.close();
@@ -140,24 +197,34 @@ pub const MainFiles = struct {
     
     /// FREE THIS
     pub fn build_main_dir_str() Errors![]const u8 {
-        const home_var = std.process.getEnvVarOwned(util.gpa, "HOME")
-            catch std.process.getEnvVarOwned(util.gpa, "USERPROFILE")
-                catch return error.MissingHomeDirectory;
-        defer util.gpa.free(home_var);
+        var buffer: [std.fs.max_path_bytes]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(&buffer);
+        var bw = std.io.bufferedWriter(fbs.writer());
+        const bw_writer = &bw.writer();
 
-        const dir_str = std.fmt.allocPrint(util.gpa, "{s}/{s}", .{home_var, MAIN_DIR})
-            catch |err| return e.verbose_error(err, error.MainDirNotFound);
+        try PathBuilder.add_home_dir(bw_writer);
+        try PathBuilder.add_main_dir(bw_writer);
+        bw.flush()
+            catch |err| return e.verbose_error(err, error.TasksIdsFileFailedRead);
+        const dir_str = fbs.getWritten();
 
         return dir_str;
     }
 
     /// FREE THIS
     pub fn build_tasks_dir_str() Errors![]const u8 {
-        const main_dir_str = try build_main_dir_str();
-        defer util.gpa.free(main_dir_str);
+        var buffer: [std.fs.max_path_bytes]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(&buffer);
+        var bw = std.io.bufferedWriter(fbs.writer());
+        const bw_writer = &bw.writer();
 
-        const dir_str = std.fmt.allocPrint(util.gpa, "{s}/tasks", .{main_dir_str})
-            catch |err| return e.verbose_error(err, error.TasksDirNotFound);
+        try PathBuilder.add_home_dir(bw_writer);
+        try PathBuilder.add_main_dir(bw_writer);
+        try PathBuilder.add_tasks_dir(bw_writer);
+        bw.flush()
+            catch |err| return e.verbose_error(err, error.TasksIdsFileFailedRead);
+
+        const dir_str = fbs.getWritten();
 
         return dir_str;
     }
@@ -173,7 +240,6 @@ pub const CheckFiles = struct {
 
     fn check_main_dir() Errors!void {
         const main_dir_str = try MainFiles.build_main_dir_str();
-        defer util.gpa.free(main_dir_str);
         var main_dir = std.fs.openDirAbsolute(main_dir_str, .{})
             catch |err| return e.verbose_error(err, error.MainDirNotFound);
         defer main_dir.close();
@@ -184,7 +250,6 @@ pub const CheckFiles = struct {
 
     fn check_tasks_dir() Errors!void {
         const tasks_dir_str = try MainFiles.build_main_dir_str();
-        defer util.gpa.free(tasks_dir_str);
         var tasks_dir = std.fs.openDirAbsolute(tasks_dir_str, .{})
             catch |err| return e.verbose_error(err, error.TasksDirNotFound);
         defer tasks_dir.close();
@@ -195,7 +260,6 @@ pub const CheckFiles = struct {
 
     fn check_main_file() Errors!void {
         const tasks_dir_str = try MainFiles.build_tasks_dir_str();
-        defer util.gpa.free(tasks_dir_str);
         const file_str = std.fmt.allocPrint(util.gpa, "{s}/tasks.json", .{tasks_dir_str})
             catch |err| return e.verbose_error(err, error.TasksIdsFileNotExists);
         defer util.gpa.free(file_str);
@@ -209,7 +273,6 @@ pub const CheckFiles = struct {
 
     fn check_tasks() Errors!void {
         const tasks_dir_str = try MainFiles.build_tasks_dir_str();
-        defer util.gpa.free(tasks_dir_str);
         var tasks_dir = std.fs.openDirAbsolute(tasks_dir_str, .{.iterate = true})
             catch |err| return e.verbose_error(err, error.TasksDirNotFound);
         defer tasks_dir.close();
@@ -308,3 +371,30 @@ pub const CheckFiles = struct {
     }
 };
 
+test "lib/file.zig" {
+    std.debug.print("\n--- lib/file.zig ---\n", .{});
+}
+
+test "PathBuilder build to task file" {
+    std.debug.print("PathBuilder build to task file\n", .{});
+    var buffer: [std.fs.max_path_bytes]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buffer);
+    var bw = std.io.bufferedWriter(fbs.writer());
+    const bw_writer = &bw.writer();
+
+    try PathBuilder.add_main_dir(bw_writer);
+    try PathBuilder.add_tasks_dir(bw_writer);
+    try PathBuilder.add_task_dir(bw_writer, 1);
+    try PathBuilder.add_task_file(bw_writer, "stdout");
+    const end = bw.end;
+    try bw.flush();
+
+    var buf: [128]u8 = undefined;
+    const res = try std.fmt.bufPrint(
+        &buf,
+        "{c}.multi-tasker-test{c}tasks{c}1{c}stdout",
+        .{PathBuilder.SEPARATOR, PathBuilder.SEPARATOR, PathBuilder.SEPARATOR, PathBuilder.SEPARATOR}
+    );
+
+    try expect(std.mem.eql(u8, buffer[0..end], res));
+}

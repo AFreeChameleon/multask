@@ -1,27 +1,25 @@
 const std = @import("std");
-const builtin = @import("builtin");
-const expect = std.testing.expect;
-const TaskManager = @import("../task/manager.zig").TaskManager;
+const flute = @import("flute");
 
-const taskproc = @import("../task/process.zig");
-const Process = taskproc.Process;
+const e = @import("../error.zig");
+const Errors = e.Errors;
+
+const log = @import("../log.zig");
+
+const util = @import("../util.zig");
+const Pid = util.Pid;
+const TaskArgs = util.TaskArgs;
 
 const t = @import("../task/index.zig");
 const Task = t.Task;
 const TaskId = t.TaskId;
 
-const e = @import("../error.zig");
-const Errors = e.Errors;
+const taskproc = @import("../task/process.zig");
+const Process = taskproc.Process;
 
-const util = @import("../util.zig");
-const Lengths = util.Lengths;
+const TaskManager = @import("../task/manager.zig").TaskManager;
 
-const log = @import("../log.zig");
-const Pid = util.Pid;
-
-const window = @import("../window.zig");
-const root = @import("./index.zig");
-const GenerateTableType = root.GenerateTableType;
+const helper = @import("./helper.zig");
 
 const ProcStatus = enum {
     Headless,
@@ -31,413 +29,544 @@ const ProcStatus = enum {
     Stopped
 };
 
-pub const Row = struct {
-    id: []const u8,
-    namespace: []const u8,
-    command: []const u8,
-    location: []const u8,
-    pid: []const u8,
-    status: []const u8,
-    memory: []const u8,
-    cpu: []const u8,
-    runtime: []const u8,
-    child: bool,
-    header: bool,
-    table: *Table,
+const MAX_COL_LEN = 32;
 
-    pub fn init(table: *Table) Row {
-        return Row {
-            .id = "",
-            .namespace = "",
-            .command = "",
-            .location = "",
-            .pid = "",
-            .status = "",
-            .memory = "",
-            .cpu = "",
-            .runtime = "",
-            .child = false,
-            .header = false,
-            .table = table,
+const MainRow = struct {
+    id: []u8,
+    namespace: []u8,
+    command: []u8,
+    location: []u8,
+    pid: []u8,
+    status: []u8,
+    memory: []u8,
+    cpu: []u8,
+    runtime: []u8,
+
+    pub fn alloc() Errors!MainRow {
+        const val = MainRow {
+            .id = util.gpa.alloc(u8, MAX_COL_LEN)
+                catch |err| return e.verbose_error(err, error.FailedAppendTableRow),
+            .namespace = util.gpa.alloc(u8, MAX_COL_LEN)
+                catch |err| return e.verbose_error(err, error.FailedAppendTableRow),
+            .command = util.gpa.alloc(u8, MAX_COL_LEN)
+                catch |err| return e.verbose_error(err, error.FailedAppendTableRow),
+            .location = util.gpa.alloc(u8, MAX_COL_LEN)
+                catch |err| return e.verbose_error(err, error.FailedAppendTableRow),
+            .pid = util.gpa.alloc(u8, MAX_COL_LEN)
+                catch |err| return e.verbose_error(err, error.FailedAppendTableRow),
+            .status = util.gpa.alloc(u8, MAX_COL_LEN)
+                catch |err| return e.verbose_error(err, error.FailedAppendTableRow),
+            .memory = util.gpa.alloc(u8, MAX_COL_LEN)
+                catch |err| return e.verbose_error(err, error.FailedAppendTableRow),
+            .cpu = util.gpa.alloc(u8, MAX_COL_LEN)
+                catch |err| return e.verbose_error(err, error.FailedAppendTableRow),
+            .runtime = util.gpa.alloc(u8, MAX_COL_LEN)
+                catch |err| return e.verbose_error(err, error.FailedAppendTableRow),
         };
+        @memset(val.id, 0);
+        @memset(val.namespace, 0);
+        @memset(val.command, 0);
+        @memset(val.location, 0);
+        @memset(val.pid, 0);
+        @memset(val.status, 0);
+        @memset(val.memory, 0);
+        @memset(val.cpu, 0);
+        @memset(val.runtime, 0);
+        return val;
     }
 
-    pub fn deinit(self: *Row) void {
-        if (self.header) {
-            return;
-        }
-        util.gpa.free(self.id);
-        util.gpa.free(self.namespace);
-        util.gpa.free(self.command);
-        util.gpa.free(self.location);
-        util.gpa.free(self.pid);
-        util.gpa.free(self.status);
-        util.gpa.free(self.memory);
-        util.gpa.free(self.cpu);
-        util.gpa.free(self.runtime);
+    pub fn deinit(row: *const MainRow) void {
+        util.gpa.free(row.id);
+        util.gpa.free(row.namespace);
+        util.gpa.free(row.command);
+        util.gpa.free(row.location);
+        util.gpa.free(row.pid);
+        util.gpa.free(row.status);
+        util.gpa.free(row.memory);
+        util.gpa.free(row.cpu);
+        util.gpa.free(row.runtime);
     }
 };
 
-const RowWidths = struct {
-    id: usize = 0,
-    namespace: usize = 0,
-    command: usize = 0,
-    location: usize = 0,
-    pid: usize = 0,
-    status: usize = 0,
-    memory: usize = 0,
-    cpu: usize = 0,
-    runtime: usize = 0,
-};
+const Table = flute.table.GenerateTableType(MainRow);
 
-pub const Table = GenerateTableType(Row, RowWidths);
+pub fn init_table() Errors!Table {
+    const table = try Table.init(util.gpa);
+    return table;
+}
 
-pub const TableMethods = struct {
-    fn get_enum_proc_status(task: *Task, some_proc: ?*Process) Errors!ProcStatus {
-        if (some_proc != null) {
-            var proc = some_proc.?;
-            // Does inner process exist
-            if (proc.proc_exists()) {
-                if (task.daemon == null or !task.daemon.?.proc_exists()) {
-                    return ProcStatus.Headless;
-                }
-                return ProcStatus.Running;
+pub fn set_main_table(table: *Table, task_ids: []TaskId, show_all: bool) Errors!bool {
+    const header = try create_header();
+    table.addRow(header)
+        catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+    var is_corrupted = false;
+
+    for (task_ids) |task_id| {
+        var task = Task.init(task_id);
+        defer task.deinit();
+        TaskManager.get_task_from_id(&task) catch |err| {
+            try log.printdebug("{any}", .{err});
+            const corrupted = try create_corrupted_task(task_id);
+            table.addRow(corrupted)
+                catch |inner_err| return e.verbose_error(inner_err, error.FailedAppendTableRow);
+            is_corrupted = true;
+            continue;
+        };
+        task.resources.?.set_cpu_usage(&task) catch |err| {
+            try log.printdebug("{any}", .{err});
+            const corrupted = try create_corrupted_task(task_id);
+            table.addRow(corrupted)
+                catch |inner_err| return e.verbose_error(inner_err, error.FailedAppendTableRow);
+            is_corrupted = true;
+            continue;
+        };
+        add_task(table, &task, show_all) catch |err| {
+            try log.printdebug("{any}", .{err});
+            const corrupted = try create_corrupted_task(task_id);
+            table.addRow(corrupted)
+                catch |inner_err| return e.verbose_error(inner_err, error.FailedAppendTableRow);
+            is_corrupted = true;
+            continue;
+        };
+    }
+    return is_corrupted;
+}
+
+pub fn print_table(table: *Table, writer: anytype) Errors!void {
+    try helper.print_table(Table, table, writer);
+}
+
+pub fn reset_table(table: *Table) Errors!void {
+    try helper.reset_table(Table, table);
+}
+
+pub fn free_table_rows(table: *Table) void {
+    helper.free_table_rows(Table, table);
+}
+
+pub fn create_header() Errors!MainRow {
+    var row = try MainRow.alloc();
+    helper.apply_header_val(MainRow, &row, "id");
+    helper.apply_header_val(MainRow, &row, "namespace");
+    helper.apply_header_val(MainRow, &row, "command");
+    helper.apply_header_val(MainRow, &row, "location");
+    helper.apply_header_val(MainRow, &row, "pid");
+    helper.apply_header_val(MainRow, &row, "status");
+    helper.apply_header_val(MainRow, &row, "memory");
+    helper.apply_header_val(MainRow, &row, "cpu");
+    helper.apply_header_val(MainRow, &row, "runtime");
+    return row;
+}
+
+/// Taking a task and converting it into adding table rows
+/// main row with the task, and secondary rows with each process
+pub fn add_task(table: *Table, task: *Task, show_all: bool) Errors!void {
+    const row = try create_main_row(task);
+    table.addRow(row)
+        catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+
+    if (task.process == null) {
+        return;
+    }
+
+    if (!task.process.?.proc_exists()) {
+        const proc_rows = try create_saved_task_process_rows(task, show_all);
+        if (proc_rows != null) {
+            table.addRows(proc_rows.?)
+                catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+        }
+    } else {
+        const proc_rows = try create_task_process_rows(task, show_all);
+        defer util.gpa.free(proc_rows);
+        table.addRows(proc_rows)
+            catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+    }
+}
+
+/// Inserting an erroneous row for when a task is missing some things
+/// likely due to corruption
+pub fn create_corrupted_task(task_id: TaskId) Errors!MainRow {
+    var row = try MainRow.alloc();
+
+    _ = std.fmt.bufPrint(row.id, "{d}", .{task_id})
+        catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+    helper.apply_key_val(MainRow, &row, "command", "Error");
+    helper.apply_key_val(MainRow, &row, "location", "N/A");
+    helper.apply_key_val(MainRow, &row, "pid", "N/A");
+    helper.apply_key_val(MainRow, &row, "status", flute.format.string.colorStringComptime(.{148, 0, 211}, "Corrupted"));
+    helper.apply_key_val(MainRow, &row, "memory", "N/A");
+    helper.apply_key_val(MainRow, &row, "cpu", "N/A");
+    helper.apply_key_val(MainRow, &row, "runtime", "N/A");
+
+    return row;
+}
+
+/// Sets the exe column to the process' name
+fn set_child_process_columns(row: *MainRow, some_proc: ?*Process) Errors!void {
+    var cmd_buf: [33]u8 = undefined;
+    const exe = try some_proc.?.get_exe_buf(&cmd_buf);
+    if (exe.len > MAX_COL_LEN) {
+        _ = std.fmt.bufPrint(row.command, "{s}...", .{exe[0..MAX_COL_LEN - 3]})
+            catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+    } else {
+        _ = std.fmt.bufPrint(row.command, "{s}", .{exe})
+            catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+    }
+}
+
+/// Sets the id, namespace & command columns
+fn set_parent_process_columns(row: *MainRow, task: *Task) Errors!void {
+    _ = std.fmt.bufPrint(row.id, "{d}", .{task.id})
+        catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+
+    if (task.namespace == null) {
+        @memcpy(row.namespace[0..3], "N/A");
+    } else {
+        if (task.namespace.?.len > MAX_COL_LEN) {
+            _ = std.fmt.bufPrint(row.namespace, "{s}...", .{task.namespace.?[0..MAX_COL_LEN - 3]})
+                catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+        } else {
+            _ = std.fmt.bufPrint(row.namespace, "{s}", .{task.namespace.?})
+                catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+        }
+    }
+
+    if (task.stats.?.command.len > MAX_COL_LEN) {
+        _ = std.fmt.bufPrint(row.command, "{s}...", .{task.stats.?.command[0..MAX_COL_LEN - 3]})
+            catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+    } else {
+        _ = std.fmt.bufPrint(row.command, "{s}", .{task.stats.?.command})
+            catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+    }
+}
+
+fn set_killed_process_columns(row: *MainRow) void {
+    helper.apply_key_val(MainRow, row, "pid", "N/A");
+    helper.apply_key_val(MainRow, row, "status", get_proc_status_string(ProcStatus.Stopped));
+    helper.apply_key_val(MainRow, row, "memory", "N/A");
+    helper.apply_key_val(MainRow, row, "cpu", "N/A");
+    helper.apply_key_val(MainRow, row, "runtime", "N/A");
+}
+
+fn set_alive_process_columns(row: *MainRow, task: *Task, some_proc: ?*Process) Errors!void {
+    var proc = some_proc.?;
+    _ = std.fmt.bufPrint(row.pid, "{d}", .{proc.pid})
+        catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+
+    const status = try get_proc_status(task, proc);
+    _ = std.fmt.bufPrint(row.status, "{s}", .{status})
+        catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+
+    var memory_buf: [128]u8 = undefined;
+    const memory_str = try util.get_readable_memory(&memory_buf, try proc.get_memory());
+    if (memory_str.len > MAX_COL_LEN) {
+        _ = std.fmt.bufPrint(row.memory, "{s}...", .{memory_str[0..MAX_COL_LEN - 3]})
+            catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+    } else {
+        _ = std.fmt.bufPrint(row.memory, "{s}", .{memory_str})
+            catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+    }
+
+    const cpu_int = task.resources.?.cpu.get(proc.pid);
+    if (cpu_int == null) {
+        @memcpy(row.cpu[0..3], "N/A");
+    } else {
+        var cpu_buf: [128]u8 = undefined;
+        const cpu_perc_str = try util.get_readable_cpu_usage(&cpu_buf, cpu_int.?);
+        if (cpu_perc_str.len > MAX_COL_LEN) {
+            _ = std.fmt.bufPrint(row.cpu, "{s}...", .{cpu_perc_str[0..MAX_COL_LEN - 3]})
+                catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+        } else {
+            _ = std.fmt.bufPrint(row.cpu, "{s}", .{cpu_perc_str})
+                catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+        }
+    }
+
+    var runtime_buf: [128]u8 = undefined;
+    const runtime_str = try util.get_readable_runtime(&runtime_buf, try proc.get_runtime());
+    if (runtime_str.len > MAX_COL_LEN) {
+        _ = std.fmt.bufPrint(row.runtime, "{s}...", .{runtime_str[0..MAX_COL_LEN - 3]})
+            catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+    } else {
+        _ = std.fmt.bufPrint(row.runtime, "{s}", .{runtime_str})
+            catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+    }
+}
+
+fn get_enum_proc_status(task: *Task, some_proc: ?*Process) Errors!ProcStatus {
+    if (some_proc != null) {
+        var proc = some_proc.?;
+        // Does inner process exist
+        if (proc.proc_exists()) {
+            if (task.daemon == null or !task.daemon.?.proc_exists()) {
+                return ProcStatus.Headless;
             }
-            if (task.daemon != null) {
-                const daemon_exists = task.daemon.?.proc_exists();
-                if (daemon_exists and task.stats.?.persist) {
-                    // The child command hasn't been run but the parent task proc is waiting
-                    return ProcStatus.Restarting;
-                } else if (daemon_exists) {
-                    const saved_procs = try taskproc.get_running_saved_procs(proc);
-                    defer util.gpa.free(saved_procs);
-                    if (saved_procs.len != 0) {
-                        return ProcStatus.Detached;
-                    }
+            return ProcStatus.Running;
+        }
+        if (task.daemon != null) {
+            const daemon_exists = task.daemon.?.proc_exists();
+            if (daemon_exists and task.stats.?.persist) {
+                // The child command hasn't been run but the parent task proc is waiting
+                return ProcStatus.Restarting;
+            } else if (daemon_exists) {
+                const saved_procs = try taskproc.get_running_saved_procs(proc);
+                defer util.gpa.free(saved_procs);
+                if (saved_procs.len != 0) {
+                    return ProcStatus.Detached;
                 }
             }
         }
-        return ProcStatus.Stopped;
+    }
+    return ProcStatus.Stopped;
+}
+
+fn get_proc_status_string(status: ProcStatus) []const u8 {
+    return switch (status) {
+        ProcStatus.Headless => flute.format.string.colorStringComptime([3]u8{204, 0, 0}, "Headless"),
+        ProcStatus.Running => flute.format.string.colorStringComptime([3]u8{0, 204, 102}, "Running"),
+        ProcStatus.Restarting => flute.format.string.colorStringComptime([3]u8{204, 102, 0}, "Restarting"),
+        ProcStatus.Detached => flute.format.string.colorStringComptime([3]u8{204, 102, 0}, "Detached"),
+        ProcStatus.Stopped => flute.format.string.colorStringComptime([3]u8{204, 0, 0}, "Stopped"),
+    };
+}
+
+fn get_proc_status(task: *Task, some_proc: ?*Process) Errors![]const u8 {
+    const status = try get_enum_proc_status(task, some_proc);
+
+    return get_proc_status_string(status);
+}
+
+/// Setting task row
+fn create_main_row(
+    task: *Task
+) Errors!MainRow {
+    var row = try MainRow.alloc();
+    const some_proc = if (task.process == null) null else &task.process.?;
+    try set_parent_process_columns(&row, task);
+
+    if (task.stats.?.cwd.len > MAX_COL_LEN) {
+        const concat_str = task.stats.?.cwd[
+            (task.stats.?.cwd.len - (MAX_COL_LEN - 3))..(task.stats.?.cwd.len)
+        ];
+        @memcpy(row.location[0..concat_str.len], concat_str);
+    } else {
+        @memcpy(row.location[0..task.stats.?.cwd.len], task.stats.?.cwd);
     }
 
-    fn get_proc_status(task: *Task, some_proc: ?*Process) Errors![]const u8 {
-        const status = try get_enum_proc_status(task, some_proc);
-        return switch (status) {
-            ProcStatus.Headless => try util.colour_string("Headless", 204, 0, 0),
-            ProcStatus.Running => try util.colour_string("Running", 0, 204, 102),
-            ProcStatus.Restarting => try util.colour_string("Restarting", 204, 102, 0),
-            ProcStatus.Detached => return try util.colour_string("Detached", 204, 102, 0),
-            ProcStatus.Stopped => try util.colour_string("Stopped", 204, 0, 0)
-        };
+    if (some_proc == null or !some_proc.?.proc_exists()) {
+        set_killed_process_columns(&row);
+    } else {
+        try set_alive_process_columns(&row, task, some_proc);
     }
 
-    /// Taking a task and converting it into adding table rows
-    /// main row with the task, and secondary rows with each process
-    pub fn add_task(self: *Table, task: *Task) Errors!void {
-        try append_main_row(
-            self, task, if (task.process == null) null else &task.process.?, false
+    return row;
+}
+
+/// Setting process row
+fn create_process_row(
+    task: *Task, process: *Process
+) Errors!MainRow {
+    var row = try MainRow.alloc();
+    try set_child_process_columns(&row, process);
+
+    if (task.stats.?.cwd.len > MAX_COL_LEN) {
+        const concat_str = task.stats.?.cwd[
+            (task.stats.?.cwd.len - (MAX_COL_LEN - 3))..(task.stats.?.cwd.len)
+        ];
+        @memcpy(row.location[0..concat_str.len], concat_str);
+    } else {
+        @memcpy(row.location[0..task.stats.?.cwd.len], task.stats.?.cwd);
+    }
+
+    try set_alive_process_columns(&row, task, process);
+    return row;
+}
+
+fn create_truncated_processes_row(saved_procs_len: usize) Errors!MainRow {
+    const row = try MainRow.alloc();
+
+    _ = std.fmt.bufPrint(
+        row.command, " + {d} more process{s}", .{
+            saved_procs_len, if (saved_procs_len != 1) "es" else ""
+        }) catch |err| return e.verbose_error(
+            err, error.FailedAppendTableRow
         );
 
-        if (task.process == null) return;
-
-        if (!task.process.?.proc_exists()) {
-            const saved_procs = try taskproc.get_running_saved_procs(&task.process.?);
-            defer util.gpa.free(saved_procs);
-            if (saved_procs.len == 0) {
-                return;
-            }
-            if (!self.show_all) {
-                var trunced_proc_count = saved_procs.len;
-                const status = try get_enum_proc_status(task, &task.process.?);
-                if (status != ProcStatus.Detached) {
-                    trunced_proc_count = trunced_proc_count - 1;
-                }
-                try append_trunced_processes(self, trunced_proc_count);
-            } else {
-                for (0..saved_procs.len) |i| {
-                    var sproc: Process = saved_procs[i];
-                    try append_main_row(self, task, &sproc, true);
-                }
-            }
-        } else {
-            if (!self.show_all) {
-                var proc_len = util.get_map_length(
-                    std.AutoHashMap(Pid, f64), task.resources.?.cpu
-                );
-                const status = try get_enum_proc_status(task, &task.process.?);
-                if (status != ProcStatus.Detached) {
-                    proc_len = proc_len - 1;
-                }
-                if (proc_len > 0) {
-                    try append_trunced_processes(self, proc_len);
-                }
-            } else {
-                if (task.process.?.children != null) {
-                    for (0..task.process.?.children.?.len) |i| {
-                        var child: Process = task.process.?.children.?[i];
-                        try append_main_row(self, task, &child, true);
-                    }
-                }
-            }
-        }
-    }
-
-    /// Appending the top headers
-    pub fn append_header(self: *Table) Errors!void {
-        var row = Row.init(self);
-        row.header = true;
-        row.id = "id";
-        row.namespace = "namespace";
-        row.command = "command";
-        row.location = "location";
-        row.pid = "pid";
-        row.status = "status";
-        row.memory = "memory";
-        row.cpu = "cpu";
-        row.runtime = "runtime";
-        self.rows.append(row)
-            catch |err| return e.verbose_error(
-                err, error.FailedAppendTableRow
-            );
-        try self.update_row_widths(&row);
-    }
-
-    /// Add a row like " + 2 more processes"
-    /// Meant to go underneath when you append a task row
-    pub fn append_trunced_processes(
-        self: *Table, proc_amount: usize
-    ) Errors!void {
-        var row = Row.init(self);
-
-        row.command = std.fmt.allocPrint(
-            util.gpa, " + {d} more process{s}", .{
-                proc_amount, if (proc_amount != 1) "es" else ""
-            }) catch |err| return e.verbose_error(
-            err, error.FailedAppendTableRow
-            );
-
-        self.rows.append(row)
-            catch |err| return e.verbose_error(
-                err, error.FailedAppendTableRow
-            );
-        try self.update_row_widths(&row);
-    }
-
-    /// Appending task row to the table
-    /// if the child flag is true, it instead adds a child process under the task
-    pub fn append_main_row(
-        self: *Table, task: *Task, some_proc: ?*Process, child: bool
-    ) Errors!void {
-        var row = Row.init(self);
-
-        if (!child) {
-            row.id = std.fmt.allocPrint(util.gpa, "{d}", .{task.id})
-                catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
-
-            row.namespace = if (task.namespace == null)
-                std.fmt.allocPrint(util.gpa, "N/A", .{})
-                catch |err| return e.verbose_error(err, error.FailedAppendTableRow)
-                else
-                    std.fmt.allocPrint(util.gpa, "{s}", .{task.namespace.?})
-                        catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
-
-                row.command = if (task.stats.?.command.len > 32)
-                    std.fmt.allocPrint(util.gpa, "{s}...", .{task.stats.?.command[0..29]})
-                    catch |err| return e.verbose_error(err, error.FailedAppendTableRow)
-                    else
-                        std.fmt.allocPrint(util.gpa, "{s}", .{task.stats.?.command})
-                            catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
-        } else {
-            row.id = util.gpa.alloc(u8, 0)
-                catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
-
-            row.namespace = util.gpa.alloc(u8, 0)
-                catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
-
-            const exe = try some_proc.?.get_exe();
-            defer util.gpa.free(exe);
-            // This truncates wide strings from windows funcs
-            row.command = if (exe.len > 32)
-                std.fmt.allocPrint(util.gpa, "{s}...", .{exe[0..29]})
-                catch |err| return e.verbose_error(err, error.FailedAppendTableRow)
-                else
-                    std.fmt.allocPrint(util.gpa, "{s}", .{exe})
-                        catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
-        }
-
-        if (task.stats.?.cwd.len > 24) {
-            const concat_str = task.stats.?.cwd[(task.stats.?.cwd.len - 21)..(task.stats.?.cwd.len)];
-            row.location = std.fmt.allocPrint(
-                util.gpa, "...{s}",
-                .{concat_str}
-            ) catch |err| return e.verbose_error(
-            err, error.FailedAppendTableRow
-            );
-        } else {
-            row.location = std.fmt.allocPrint(util.gpa, "{s}", .{task.stats.?.cwd})
-                catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
-        }
-
-        if (some_proc == null or !some_proc.?.proc_exists()) {
-            row.pid = std.fmt.allocPrint(util.gpa, "N/A", .{})
-                catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
-            row.status = try get_proc_status(task, some_proc);
-            row.memory = std.fmt.allocPrint(util.gpa, "N/A", .{})
-                catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
-            row.cpu = std.fmt.allocPrint(util.gpa, "N/A", .{})
-                catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
-            row.runtime = std.fmt.allocPrint(util.gpa, "N/A", .{})
-                catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
-            self.rows.append(row)
-                catch |err| return e.verbose_error(
-                    err, error.FailedAppendTableRow
-                );
-            try self.update_row_widths(&row);
-            return;
-        }
-
-        var proc = some_proc.?;
-        row.pid = std.fmt.allocPrint(util.gpa, "{d}", .{proc.pid})
-            catch |err| return e.verbose_error(
-                err, error.FailedAppendTableRow
-            );
-        row.status = try get_proc_status(task, proc);
-
-        const memory_str = try util.get_readable_memory(try proc.get_memory());
-        row.memory = memory_str;
-
-        const cpu_int = task.resources.?.cpu.get(proc.pid);
-        if (cpu_int == null) {
-            row.cpu = std.fmt.allocPrint(util.gpa, "N/A", .{})
-                catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
-        } else {
-            const cpu_perc_str = try util.get_readable_cpu_usage(cpu_int.?);
-            row.cpu = cpu_perc_str;
-        }
-
-        const runtime_str = try util.get_readable_runtime(try proc.get_runtime());
-        row.runtime = runtime_str;
-
-        self.rows.append(row)
-            catch |err| return e.verbose_error(
-                err, error.FailedAppendTableRow
-            );
-        try self.update_row_widths(&row);
-    }
-
-    /// Inserting an erroneous row for when a task is missing some things
-    /// likely due to corruption
-    pub fn add_corrupted_task(self: *Table, task_id: TaskId) Errors!void {
-        var row = Row.init(self);
-        row.id = std.fmt.allocPrint(util.gpa, "{d}", .{task_id})
-            catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
-        row.command = std.fmt.allocPrint(util.gpa, "Error", .{})
-            catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
-        row.location = std.fmt.allocPrint(util.gpa, "N/A", .{})
-            catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
-        row.pid = std.fmt.allocPrint(util.gpa, "N/A", .{})
-            catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
-        row.status = try util.colour_string("Corrupted", 148, 0, 211);
-        row.memory = std.fmt.allocPrint(util.gpa, "N/A", .{})
-            catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
-        row.cpu = std.fmt.allocPrint(util.gpa, "N/A", .{})
-            catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
-        row.runtime = std.fmt.allocPrint(util.gpa, "N/A", .{})
-            catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
-        self.rows.append(row)
-            catch |err| return e.verbose_error(
-                err, error.FailedAppendTableRow
-            );
-        try self.update_row_widths(&row);
-        self.corrupted_rows = true;
-    }
-};
-
-
-test "lib/table/main.zig" {
-    std.debug.print("\n--- lib/table/main.zig ---\n", .{});
+    return row;
 }
 
-test "Creating task and putting it in table" {
-    std.debug.print("Creating task and putting it in table\n", .{});
-
-    const command = try std.fmt.allocPrint(util.gpa, "echo hi", .{});
-    var new_task = try TaskManager.add_task(
-        command,
-        0,
-        0,
-        null,
-        false,
-        .Shallow,
-        false,
-        false
-    );
-    defer {
-        new_task.delete() catch @panic("Failed to delete task.");
-        new_task.deinit();
+fn create_saved_task_process_rows(task: *Task, show_all: bool) Errors!?[]MainRow {
+    const saved_procs = try taskproc.get_running_saved_procs(&task.process.?);
+    defer util.gpa.free(saved_procs);
+    if (saved_procs.len == 0) {
+        return null;
     }
 
-    var table = try Table.init(false);
-    defer table.deinit();
-    try TableMethods.add_task(&table, &new_task);
-    try expect(table.rows.items.len == 1);
-    try expect(table.corrupted_rows == false);
-
-    // const width: usize = if (builtin.os.tag == .windows) 81 else 82;
-    // try expect(table.get_total_row_width() == width);
-
-    table.reset();
-
-    try expect(table.rows.items.len == 0);
+    var rows = std.ArrayList(MainRow).init(util.gpa);
+    defer rows.deinit();
+    if (!show_all) {
+        const row = try create_truncated_processes_row(saved_procs.len);
+        rows.append(row)
+            catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+    } else {
+        for (0..saved_procs.len) |i| {
+            const row = try create_process_row(task, &saved_procs[i]);
+            rows.append(row)
+                catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+        }
+    }
+    return rows.toOwnedSlice()
+        catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
 }
 
-test "Validating row count for clearing" {
-    std.debug.print("Validating row count for clearing\n", .{});
+fn create_task_process_rows(task: *Task, show_all: bool) Errors![]MainRow {
+    var rows = std.ArrayList(MainRow).init(util.gpa);
+    defer rows.deinit();
 
-    var table = try Table.init(false);
-    defer table.deinit();
-    try TableMethods.append_header(&table);
-    var row = Row.init(&table);
-    row.id = try std.fmt.allocPrint(util.gpa, "1", .{});
-    row.namespace = try std.fmt.allocPrint(util.gpa, "nsone", .{});
-    row.command = try std.fmt.allocPrint(util.gpa, "test_command", .{});
-    row.location = try std.fmt.allocPrint(util.gpa, "test_location", .{});
-    row.pid = try std.fmt.allocPrint(util.gpa, "12345", .{});
-    row.status = try util.colour_string("Running", 0, 204, 102);
-    row.memory = try std.fmt.allocPrint(util.gpa, "1234 MiB", .{});
-    row.cpu = try std.fmt.allocPrint(util.gpa, "100.00", .{});
-    row.runtime = try std.fmt.allocPrint(util.gpa, "0h 0m 1s", .{});
-    try table.rows.append(row);
-    try table.update_row_widths(&row);
+    if (task.process == null or task.process.?.children == null) {
+        return rows.toOwnedSlice()
+            catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+    }
 
-    try expect(table.row_widths.id == "id".len + 2);
-    try expect(table.row_widths.namespace == "namespace".len + 2);
-    try expect(table.row_widths.command == "test_command".len + 2);
-    try expect(table.row_widths.location == "test_location".len + 2);
-    try expect(table.row_widths.pid == "12345".len + 2);
-    try expect(table.row_widths.status == "Running".len + 2);
-    try expect(table.row_widths.memory == "1234 MiB".len + 2);
-    try expect(table.row_widths.cpu == "100.00".len + 2);
-    try expect(table.row_widths.runtime == "0h 0m 1s".len + 2);
-
-    const total_width = table.get_total_row_width();
-    const expected_total_width = "| id | namespace | test_command | test_location | 12345 | Running | 1234 MiB | 100.00 | 0h 0m 1s |".len;
-    try expect(total_width == expected_total_width);
-    const fl_row_width: f32 = @floatFromInt(total_width);
-
-    const row_count = table.rows.items.len + 3;
-    const window_cols = 100;
-    const total_rows = Table.calculate_total_rows(fl_row_width, window_cols, row_count);
-    const table_string = 
-        \\+------------------------------------------------------------------------------------------------+
-        \\| id | namespace | command      | location      | pid   | status  | memory   | cpu    | runtime  |
-        \\+------------------------------------------------------------------------------------------------+
-        \\| 1  | nsone     | test_command | test_location | 12345 | Running | 1234 MiB | 100.00 | 0h 0m 1s |
-        \\+------------------------------------------------------------------------------------------------+
-        \\
-    ;
-    const new_lines = std.mem.count(u8, table_string, "\n");
-
-    try expect(new_lines == total_rows);
+    if (!show_all) {
+        var proc_len = task.process.?.children.?.len;
+        for (task.process.?.children.?) |proc| {
+            if (task.daemon != null and proc.pid == task.daemon.?.pid) {
+                proc_len -= 1;
+            }
+        }
+        if (proc_len > 0) {
+            const row = try create_truncated_processes_row(proc_len);
+            rows.append(row)
+                catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+        }
+    } else {
+        if (task.process.?.children != null) {
+            for (0..task.process.?.children.?.len) |i| {
+                const row = try create_process_row(task, &task.process.?.children.?[i]);
+                rows.append(row)
+                    catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+            }
+        }
+    }
+    return rows.toOwnedSlice()
+        catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
 }
 
+// Removes any old tasks
+fn check_taskids(targs: TaskArgs) Errors![]TaskId {
+    var tasks = try TaskManager.get_tasks();
+    defer tasks.deinit();
+    if (!targs.parsed) {
+        return util.gpa.dupe(TaskId, tasks.task_ids) catch |err| return e.verbose_error(err, error.TasksIdsFileFailedRead);
+    }
+    var new_ids = std.ArrayList(TaskId).init(util.gpa);
+    defer new_ids.deinit();
+
+    // namespace ids + regular selected ids
+    var selected_id_list = std.ArrayList(TaskId).init(util.gpa);
+    defer selected_id_list.deinit();
+    selected_id_list.appendSlice(targs.ids.?) catch |err| return e.verbose_error(err, error.TasksIdsFileFailedRead);
+    if (targs.namespaces != null) {
+        selected_id_list.appendSlice(try TaskManager.get_ids_from_namespaces(tasks.namespaces, targs.namespaces.?)) catch |err| return e.verbose_error(err, error.TasksIdsFileFailedRead);
+    }
+    const selected_ids = try util.unique_array(TaskId, selected_id_list.items);
+    defer util.gpa.free(selected_ids);
+
+    for (selected_ids) |tid| {
+        if (std.mem.indexOfScalar(TaskId, tasks.task_ids, tid) != null) {
+            new_ids.append(tid) catch |err| return e.verbose_error(err, error.TasksIdsFileFailedRead);
+        }
+    }
+    const owned_new_ids = new_ids.toOwnedSlice() catch |err| return e.verbose_error(err, error.TasksIdsFileFailedRead);
+    return owned_new_ids;
+}
+
+
+// pub fn add_task_old(self: *Table, task: *Task) Errors!void {
+//     try append_main_row(
+//         self, task, if (task.process == null) null else &task.process.?, false
+//     );
+// 
+//     if (task.process == null) return;
+// 
+//     if (!task.process.?.proc_exists()) {
+//         const saved_procs = try taskproc.get_running_saved_procs(&task.process.?);
+//         defer util.gpa.free(saved_procs);
+//         if (saved_procs.len == 0) {
+//             return;
+//         }
+//         if (!self.show_all) {
+//             var trunced_proc_count = saved_procs.len;
+//             const status = try get_enum_proc_status(task, &task.process.?);
+//             if (status != ProcStatus.Detached) {
+//                 trunced_proc_count = trunced_proc_count - 1;
+//             }
+//             try append_trunced_processes(self, trunced_proc_count);
+//         } else {
+//             for (0..saved_procs.len) |i| {
+//                 var sproc: Process = saved_procs[i];
+//                 try append_main_row(self, task, &sproc, true);
+//             }
+//         }
+//     } else {
+//         if (!self.show_all) {
+//             var proc_len = util.get_map_length(
+//                 std.AutoHashMap(Pid, f64), task.resources.?.cpu
+//             );
+//             const status = try get_enum_proc_status(task, &task.process.?);
+//             if (status != ProcStatus.Detached and proc_len > 0) {
+//                 proc_len = proc_len - 1;
+//             }
+//             if (proc_len > 0) {
+//                 try append_trunced_processes(self, proc_len);
+//             }
+//         } else {
+//             if (task.process.?.children != null) {
+//                 for (0..task.process.?.children.?.len) |i| {
+//                     var child: Process = task.process.?.children.?[i];
+//                     try append_main_row(self, task, &child, true);
+//                 }
+//             }
+//         }
+//     }
+// }
+
+// fn trim_buf_row(row: *MainRowBufs) MainRow {
+//     return .{
+//         .id = std.mem.trimRight(u8, row.id, .{0}),
+//         .namespace = std.mem.trimRight(u8, row.namespace, .{0}),
+//         .command = std.mem.trimRight(u8, row.command, .{0}),
+//         .location = std.mem.trimRight(u8, row.location, .{0}),
+//         .pid = std.mem.trimRight(u8, row.pid, .{0}),
+//         .status = std.mem.trimRight(u8, row.status, .{0}),
+//         .memory = std.mem.trimRight(u8, row.memory, .{0}),
+//         .cpu = std.mem.trimRight(u8, row.cpu, .{0}),
+//         .runtime = std.mem.trimRight(u8, row.runtime, .{0}),
+//     };
+// }
+
+// const MainRowBufs = struct {
+//     id: [MAX_COL_LEN]u8,
+//     namespace: [MAX_COL_LEN]u8,
+//     command: [MAX_COL_LEN]u8,
+//     location: [MAX_COL_LEN]u8,
+//     pid: [MAX_COL_LEN]u8,
+//     status: [MAX_COL_LEN]u8,
+//     memory: [MAX_COL_LEN]u8,
+//     cpu: [MAX_COL_LEN]u8,
+//     runtime: [MAX_COL_LEN]u8,
+// 
+//     pub fn zero() MainRowBufs {
+//         const self = MainRowBufs{};
+//         @memset(self.id, 0);
+//         @memset(self.namespace, 0);
+//         @memset(self.command, 0);
+//         @memset(self.location, 0);
+//         @memset(self.pid, 0);
+//         @memset(self.status, 0);
+//         @memset(self.memory, 0);
+//         @memset(self.cpu, 0);
+//         @memset(self.runtime, 0);
+//     }
+// };
