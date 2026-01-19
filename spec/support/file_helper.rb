@@ -44,7 +44,7 @@ module FileHelpers
       FileUtils.rm_rf dir, :secure => true
     end
     check_multi_tasker_dir_missing
-    sleep 0.5
+    sleep 1
   end
 
   def self.check_multi_tasker_dir_missing
