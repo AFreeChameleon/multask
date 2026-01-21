@@ -4,9 +4,9 @@ curl -L "https://raw.githubusercontent.com/AFreeChameleon/multask/refs/tags/v0.5
 
 mkdir -p $HOME/.multi-tasker/bin
 if [ "$(uname -m)" = "x86_64" ]; then
-    curl -L https://github.com/AFreeChameleon/multask/releases/download/v0.5.0/multask-linux_x86_64.tar.gz -s -o $PWD/mlt.tar.gz
+    curl -L https://github.com/AFreeChameleon/multask/releases/download/v0.5.1/multask-linux_x86_64.tar.gz -s -o $PWD/mlt.tar.gz
 elif [ "$(uname -m)" = "arm64" ]; then
-    curl -L https://github.com/AFreeChameleon/multask/releases/download/v0.5.0/multask-linux_arm64.tar.gz -s -o $PWD/mlt.tar.gz
+    curl -L https://github.com/AFreeChameleon/multask/releases/download/v0.5.1/multask-linux_arm64.tar.gz -s -o $PWD/mlt.tar.gz
 else
     echo "Architecture not supported."
     exit 1
