@@ -5,7 +5,7 @@ run_migrations() {
         echo "mlt not found, not running migrations."
         return
     fi
-    versions_list=(v0.4.1 v0.4.2 v0.5.0)
+    versions_list=(v0.4.1 v0.4.2 v0.5.0 v0.5.1)
     local version=$(mlt -v | awk 'NF>1{print $NF}')
     echo "Current version: $version"
 

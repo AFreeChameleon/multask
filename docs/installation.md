@@ -6,17 +6,17 @@ Bash & ZSH officially supported.
 
 ## Linux
 ```
-curl -s "https://raw.githubusercontent.com/AFreeChameleon/multask/refs/heads/master/docs/_install/v0.5.0/linux.sh" | bash
+curl -s "https://raw.githubusercontent.com/AFreeChameleon/multask/refs/heads/master/docs/_install/v0.5.1/linux.sh" | bash
 ```
 
 ## Mac
 ```
-curl -s "https://raw.githubusercontent.com/AFreeChameleon/multask/refs/heads/master/docs/_install/v0.5.0/macos.sh" | bash
+curl -s "https://raw.githubusercontent.com/AFreeChameleon/multask/refs/heads/master/docs/_install/v0.5.1/macos.sh" | bash
 ```
 
 ## Windows
 ```
-powershell -c "irm https://raw.githubusercontent.com/AFreeChameleon/multask/refs/heads/master/docs/_install/v0.5.0/win.ps1|iex"
+powershell -c "irm https://raw.githubusercontent.com/AFreeChameleon/multask/refs/heads/master/docs/_install/v0.5.1/win.ps1|iex"
 ```
 
 ## FreeBSD (outdated)
@@ -81,7 +81,7 @@ it will automatically migrate your data to the newer version.
 Except for Windows, you'll have to run this manually:
 
 ```
-powershell -c "irm https://raw.githubusercontent.com/AFreeChameleon/multask/refs/tags/v0.5.0/docs/_install/migration/v0.5.0/win.ps1 | iex"
+powershell -c "irm https://raw.githubusercontent.com/AFreeChameleon/multask/refs/tags/v0.5.1/docs/_install/migration/v0.5.1/win.ps1 | iex"
 ```
 
 This is because of a bug where multask can't be run in the background, it's been fixed for future releases.
@@ -93,25 +93,25 @@ to automatically check and run migrations up to a certain version you can run:
 
 Windows
 ```
-# Set the "v0.5.0" to whichever version you want to migrate to
-powershell -c "Set-Variable -Value v0.5.0 -Name ver; irm https://raw.githubusercontent.com/AFreeChameleon/multask/refs/tags/$ver/docs/_install/migration/check_migrations.ps1 | iex"
+# Set the "v0.5.1" to whichever version you want to migrate to
+powershell -c "Set-Variable -Value v0.5.1 -Name ver; irm https://raw.githubusercontent.com/AFreeChameleon/multask/refs/tags/$ver/docs/_install/migration/check_migrations.ps1 | iex"
 ```
 
 Unix
 ```
-# Set the "v0.5.0" to whichever version you want to migrate to
-export MULTASK_VERSION=v0.5.0
+# Set the "v0.5.1" to whichever version you want to migrate to
+export MULTASK_VERSION=v0.5.1
 curl -L "https://raw.githubusercontent.com/AFreeChameleon/multask/refs/tags/$MULTASK_VERSION/docs/_install/migration/check_migrations.sh" -s | /bin/bash
 ```
 
 To manually migrate your data you can run these lines:
 
-### v0.4.2 to v0.5.0
+### v0.4.2 to v0.5.1
 Windows:
 ```
-powershell -c "irm https://raw.githubusercontent.com/AFreeChameleon/multask/refs/tags/v0.5.0/docs/_install/migration/v0.5.0/win.ps1 | iex"
+powershell -c "irm https://raw.githubusercontent.com/AFreeChameleon/multask/refs/tags/v0.5.1/docs/_install/migration/v0.5.1/win.ps1 | iex"
 ```
 Unix:
 ```
-curl -L "https://raw.githubusercontent.com/AFreeChameleon/multask/refs/tags/v0.5.0/docs/_install/migration/v0.5.0/linux.sh" -s | /bin/bash
+curl -L "https://raw.githubusercontent.com/AFreeChameleon/multask/refs/tags/v0.5.1/docs/_install/migration/v0.5.1/linux.sh" -s | /bin/bash
 ```
