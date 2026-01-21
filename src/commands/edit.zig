@@ -6,6 +6,8 @@ const t = @import("../lib/task/index.zig");
 const TaskId = t.TaskId;
 const Task = t.Task;
 
+const TaskFiles = @import("../lib/task/file.zig").Files;
+
 const m = @import("../lib/task/manager.zig");
 const tm = @import("../lib/task/manager.zig");
 const TaskManager = tm.TaskManager;
@@ -18,7 +20,6 @@ const Monitoring = @import("../lib/task/process.zig").Monitoring;
 const file = @import("../lib/file.zig");
 
 const util = @import("../lib/util.zig");
-const Lengths = util.Lengths;
 
 const log = @import("../lib/log.zig");
 const parse = @import("../lib/args/parse.zig");
@@ -87,9 +88,13 @@ pub fn run(argv: [][]u8) Errors!void {
             new_task.stats.?.boot = flags.boot.?;
         }
         if (flags.command != null) {
-            new_task.stats.?.command = flags.command.?;
+            util.gpa.free(new_task.stats.?.command);
+            new_task.stats.?.command = try util.strdup(flags.command.?, error.ParsingCommandArgsFailed);
         }
-        try new_task.files.?.write_file(Stats, new_task.stats.?);
+        const stats_file = try new_task.files.?.get_file_locked(Stats);
+        try TaskFiles.write_file(&stats_file, Stats, new_task.stats.?);
+        stats_file.unlock();
+        stats_file.close();
 
         if (flags.namespace != null) {
             // Need a clone because putting it in the namespaces

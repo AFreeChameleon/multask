@@ -4,7 +4,6 @@ const builtin = @import("builtin");
 const log = @import("../log.zig");
 
 const util = @import("../util.zig");
-const Lengths = util.Lengths;
 
 const TaskManager = @import("./manager.zig").TaskManager;
 

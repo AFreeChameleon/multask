@@ -27,6 +27,11 @@ const Cpu = taskproc.Cpu;
 const taskenv = @import("./lib/task/env.zig");
 const procenv = @import("./lib/windows/env.zig");
 
+const read_command_std_output = @import("./lib/windows/fork/logs.zig").read_command_std_output;
+const r = @import("./lib/windows/fork/refresh.zig");
+const monitor_processes = r.monitor_processes;
+const set_job_limits = r.set_job_limits;
+
 var out_handle_r: libc.HANDLE = std.mem.zeroes(libc.HANDLE);
 var out_handle_w: libc.HANDLE = std.mem.zeroes(libc.HANDLE);
 
@@ -74,14 +79,11 @@ pub fn main() !void {
     task.resources.?.meta = Cpu.init();
     while (true) {
         try set_job_limits(job_handle, task.stats.?.memory_limit, task.stats.?.cpu_limit);
-        // const thread_handle = libc.GetCurrentThread();
-        const process_handle = libc.GetCurrentProcess();
-        if (libc.AssignProcessToJobObject(job_handle, process_handle) == 0) {
+        const proc_info = try run_command(task.stats.?.command, task.stats.?.cwd, env_block);
+        if (libc.AssignProcessToJobObject(job_handle, proc_info.hProcess) == 0) {
             try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
             return error.ForkFailed;
         }
-
-        const proc_info = try run_command(task.stats.?.command, task.stats.?.cwd, env_block);
         defer {
             _ = libc.CloseHandle(proc_info.hProcess);
             _ = libc.CloseHandle(proc_info.hThread);
@@ -90,7 +92,7 @@ pub fn main() !void {
         }
         task.process = try Process.init(&task, proc_info.dwProcessId, null);
 
-        try monitor_process(&task, job_handle);
+        try spawn_worker_threads(&task, job_handle, proc_info.hProcess);
         try taskproc.kill_all(&task.process.?);
         if (!task.stats.?.persist) {
             break;
@@ -98,9 +100,26 @@ pub fn main() !void {
         // Persisting with a timeout of 2 seconds
         std.Thread.sleep(2_000_000_000);
     }
-    if (task.resources.?.meta != null) {
-        task.resources.?.meta.?.deinit();
-    }
+}
+
+fn spawn_worker_threads(
+    task: *Task, job_handle: libc.HANDLE, proc_event_handle: libc.HANDLE
+) Errors!void {
+    const log_thread = std.Thread.spawn(
+        .{ .allocator = util.gpa },
+        read_command_std_output,
+        .{ out_handle_r, err_handle_r, task, proc_event_handle }
+    ) catch |err| return e.verbose_error(err, error.FailedToSpawnThread);
+    const monitor_thread = std.Thread.spawn(
+        .{ .allocator = util.gpa },
+        monitor_processes,
+        .{ task, job_handle }
+    ) catch |err| return e.verbose_error(err, error.FailedToSpawnThread);
+
+    monitor_thread.join();
+    log_thread.join();
+
+    try log.printdebug("No more saved processes are alive.", .{});
 }
 
 fn enable_kill_on_job_close(job_handle: ?*anyopaque) Errors!void {
@@ -135,182 +154,6 @@ fn enable_kill_on_job_close(job_handle: ?*anyopaque) Errors!void {
     }
 }
 
-fn remove_mem_limit(
-    job_handle: ?*anyopaque
-) Errors!void {
-    var limit_info = std.mem.zeroes(libc.JOBOBJECT_EXTENDED_LIMIT_INFORMATION);
-    if (libc.QueryInformationJobObject(
-        job_handle,
-        libc.JobObjectExtendedLimitInformation,
-        &limit_info,
-        @sizeOf(libc.JOBOBJECT_EXTENDED_LIMIT_INFORMATION),
-        null
-    ) == 0) {
-        try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
-        return error.FailedToSaveProcesses;
-    }
-
-    // If the JOB_OBJECT_LIMIT_PROCESS_MEMORY is not there
-    if (
-        (limit_info.BasicLimitInformation.LimitFlags & libc.JOB_OBJECT_LIMIT_PROCESS_MEMORY) == 0
-    ) {
-        return;
-    }
-
-    limit_info.BasicLimitInformation.LimitFlags ^= libc.JOB_OBJECT_LIMIT_PROCESS_MEMORY;
-    limit_info.ProcessMemoryLimit = 0;
-    if (libc.SetInformationJobObject(
-        job_handle,
-        libc.JobObjectExtendedLimitInformation,
-        &limit_info,
-        @sizeOf(libc.JOBOBJECT_EXTENDED_LIMIT_INFORMATION)
-    ) == 0) {
-        try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
-        return error.ForkFailed;
-    }
-}
-
-fn set_mem_limit(
-    job_handle: ?*anyopaque,
-    mem_limit: util.MemLimit
-) Errors!void {
-    var limit_info = std.mem.zeroes(libc.JOBOBJECT_EXTENDED_LIMIT_INFORMATION);
-    if (libc.QueryInformationJobObject(
-        job_handle,
-        libc.JobObjectExtendedLimitInformation,
-        &limit_info,
-        @sizeOf(libc.JOBOBJECT_EXTENDED_LIMIT_INFORMATION),
-        null
-    ) == 0) {
-        try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
-        return error.FailedToSaveProcesses;
-    }
-
-    // If the JOB_OBJECT_LIMIT_PROCESS_MEMORY is not there
-    if (
-        (limit_info.BasicLimitInformation.LimitFlags & libc.JOB_OBJECT_LIMIT_PROCESS_MEMORY) == 0
-    ) {
-        limit_info.BasicLimitInformation.LimitFlags ^= libc.JOB_OBJECT_LIMIT_PROCESS_MEMORY;
-    }
-
-    limit_info.ProcessMemoryLimit = mem_limit;
-    if (libc.SetInformationJobObject(
-        job_handle,
-        libc.JobObjectExtendedLimitInformation,
-        &limit_info,
-        @sizeOf(libc.JOBOBJECT_EXTENDED_LIMIT_INFORMATION)
-    ) == 0) {
-        try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
-        return error.ForkFailed;
-    }
-}
-
-fn remove_cpu_limit(
-    job_handle: ?*anyopaque,
-) Errors!void {
-    var cpu_limit_info = std.mem.zeroes(libc.JOBOBJECT_CPU_RATE_CONTROL_INFORMATION);
-    if (libc.QueryInformationJobObject(
-        job_handle,
-        libc.JobObjectCpuRateControlInformation,
-        &cpu_limit_info,
-        @sizeOf(libc.JOBOBJECT_CPU_RATE_CONTROL_INFORMATION),
-        null
-    ) == 0) {
-        try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
-        return error.FailedToGetProcessChildren;
-    }
-
-    // If the JOB_OBJECT_CPU_RATE_CONTROL_ENABLE is not there
-    if (
-        cpu_limit_info.ControlFlags & libc.JOB_OBJECT_CPU_RATE_CONTROL_ENABLE == 0 and
-        cpu_limit_info.ControlFlags & libc.JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP == 0
-    ) {
-        return;
-    }
-
-    if (
-        cpu_limit_info.ControlFlags & libc.JOB_OBJECT_CPU_RATE_CONTROL_ENABLE == libc.JOB_OBJECT_CPU_RATE_CONTROL_ENABLE
-    ) {
-        cpu_limit_info.ControlFlags ^= libc.JOB_OBJECT_CPU_RATE_CONTROL_ENABLE;
-    }
-    if (
-        cpu_limit_info.ControlFlags & libc.JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP == libc.JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP
-    ) {
-        cpu_limit_info.ControlFlags ^= libc.JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP;
-    }
-
-    if (libc.SetInformationJobObject(
-        job_handle,
-        libc.JobObjectCpuRateControlInformation,
-        &cpu_limit_info,
-        @sizeOf(libc.JOBOBJECT_CPU_RATE_CONTROL_INFORMATION)
-    ) == 0) {
-        try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
-        return error.ForkFailed;
-    }
-}
-
-fn set_cpu_limit(
-    job_handle: ?*anyopaque,
-    cpu_limit: util.CpuLimit
-) Errors!void {
-    var cpu_limit_info = std.mem.zeroes(libc.JOBOBJECT_CPU_RATE_CONTROL_INFORMATION);
-    if (libc.QueryInformationJobObject(
-        job_handle,
-        libc.JobObjectCpuRateControlInformation,
-        &cpu_limit_info,
-        @sizeOf(libc.JOBOBJECT_CPU_RATE_CONTROL_INFORMATION),
-        null
-    ) == 0) {
-        try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
-        return error.FailedToGetProcessChildren;
-    }
-
-    // If the JOB_OBJECT_CPU_RATE_CONTROL_ENABLE is not there
-    if (
-        cpu_limit_info.ControlFlags & libc.JOB_OBJECT_CPU_RATE_CONTROL_ENABLE == 0
-    ) {
-        cpu_limit_info.ControlFlags |= libc.JOB_OBJECT_CPU_RATE_CONTROL_ENABLE;
-    }
-    if (
-        cpu_limit_info.ControlFlags & libc.JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP == 0
-    ) {
-        cpu_limit_info.ControlFlags |= libc.JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP;
-    }
-
-    cpu_limit_info.unnamed_0 = .{
-        .CpuRate = @intCast(cpu_limit * 100)
-    };
-
-    if (libc.SetInformationJobObject(
-        job_handle,
-        libc.JobObjectCpuRateControlInformation,
-        &cpu_limit_info,
-        @sizeOf(libc.JOBOBJECT_CPU_RATE_CONTROL_INFORMATION)
-    ) == 0) {
-        try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
-        return error.ForkFailed;
-    }
-}
-
-fn set_job_limits(
-    job_handle: ?*anyopaque,
-    mem_limit: util.MemLimit,
-    cpu_limit: util.CpuLimit
-) Errors!void {
-    if (mem_limit == 0) {
-        try remove_mem_limit(job_handle);
-    } else {
-        try set_mem_limit(job_handle, mem_limit);
-    }
-
-    if (cpu_limit == 0) {
-        try remove_cpu_limit(job_handle);
-    } else {
-        try set_cpu_limit(job_handle, cpu_limit);
-    }
-}
-
 fn create_job(
     lp_name: []u8
 ) Errors!?*anyopaque {
@@ -323,25 +166,91 @@ fn create_job(
     return job;
 }
 
+fn set_pipes(saAttr: *libc.SECURITY_ATTRIBUTES) Errors!void {
+    const self_pid = std.os.windows.GetCurrentProcessId();
+    var buf: [128]u8 = undefined;
+    const out_pipe = std.fmt.bufPrint(&buf, "\\\\.\\pipe\\multask-{d}-stdout", .{self_pid})
+        catch |err| return e.verbose_error(err, error.CommandFailed);
+    out_handle_r = libc.CreateNamedPipeA(
+        out_pipe.ptr,
+        libc.PIPE_ACCESS_INBOUND | libc.FILE_FLAG_OVERLAPPED,
+        libc.PIPE_TYPE_BYTE | libc.PIPE_WAIT,
+        1,
+        4096,
+        4096,
+        0,
+        null
+    );
+    if (out_handle_r == libc.INVALID_HANDLE_VALUE) {
+        return error.CommandFailed;
+    }
+
+    out_handle_w = libc.CreateFileA(
+        out_pipe.ptr,
+        libc.GENERIC_WRITE,
+        0,
+        saAttr,
+        libc.OPEN_EXISTING,
+        libc.FILE_FLAG_WRITE_THROUGH | libc.FILE_FLAG_NO_BUFFERING,
+        null
+    );
+    if (err_handle_w == libc.INVALID_HANDLE_VALUE) {
+        return error.CommandFailed;
+    }
+
+    const err_pipe = std.fmt.bufPrint(&buf, "\\\\.\\pipe\\multask-{d}-stderr", .{self_pid})
+        catch |err| return e.verbose_error(err, error.CommandFailed);
+    err_handle_r = libc.CreateNamedPipeA(
+        err_pipe.ptr,
+        libc.PIPE_ACCESS_INBOUND | libc.FILE_FLAG_OVERLAPPED,
+        libc.PIPE_TYPE_BYTE | libc.PIPE_WAIT,
+        1,
+        4096,
+        4096,
+        0,
+        null
+    );
+    if (err_handle_r == libc.INVALID_HANDLE_VALUE) {
+        return error.CommandFailed;
+    }
+
+    err_handle_w = libc.CreateFileA(
+        err_pipe.ptr,
+        libc.GENERIC_WRITE,
+        0,
+        saAttr,
+        libc.OPEN_EXISTING,
+        libc.FILE_FLAG_WRITE_THROUGH | libc.FILE_FLAG_NO_BUFFERING,
+        null
+    );
+    if (err_handle_w == libc.INVALID_HANDLE_VALUE) {
+        return error.CommandFailed;
+    }
+}
+
+/// Need to connect them so the poller can listen to them
+fn connect_pipes() Errors!void {
+    if (libc.ConnectNamedPipe(out_handle_r, null) != 0) {
+        return error.CommandFailed;
+    }
+    if (libc.ConnectNamedPipe(err_handle_r, null) != 0) {
+        return error.CommandFailed;
+    }
+}
+
 fn run_command(command: []const u8, cwd: []const u8, env_block: [:0]u8) e.Errors!libc.PROCESS_INFORMATION {
     var saAttr = std.mem.zeroes(libc.SECURITY_ATTRIBUTES);
     saAttr.nLength = @sizeOf(libc.SECURITY_ATTRIBUTES);
     saAttr.bInheritHandle = 1;
     saAttr.lpSecurityDescriptor = null;
 
-    if (libc.CreatePipe(&out_handle_r, &out_handle_w, &saAttr, 0) == 0) {
-        try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
-        return error.CommandFailed;
-    }
+    try set_pipes(&saAttr);
+
     if (libc.SetHandleInformation(out_handle_r, libc.HANDLE_FLAG_INHERIT, 0) == 0) {
         try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
         return error.CommandFailed;
     }
 
-    if (libc.CreatePipe(&err_handle_r, &err_handle_w, &saAttr, 0) == 0) {
-        try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
-        return error.CommandFailed;
-    }
     if (libc.SetHandleInformation(err_handle_r, libc.HANDLE_FLAG_INHERIT, 0) == 0) {
         try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
         return error.CommandFailed;
@@ -376,119 +285,7 @@ fn run_command(command: []const u8, cwd: []const u8, env_block: [:0]u8) e.Errors
         return error.CommandFailed;
     }
 
+    try connect_pipes();
+
     return proc_info;
-}
-
-fn monitor_process(
-    task: *Task,
-    job_handle: ?*anyopaque
-) e.Errors!void {
-    var sec: libc.SECURITY_ATTRIBUTES = std.mem.zeroes(libc.SECURITY_ATTRIBUTES);
-    sec.nLength = @sizeOf(libc.SECURITY_ATTRIBUTES);
-    sec.bInheritHandle = 1;
-    var keep_alive: [2]libc.HANDLE = .{ std.mem.zeroes(libc.HANDLE), std.mem.zeroes(libc.HANDLE) };
-    if(libc.CreatePipe(&keep_alive[0], &keep_alive[1], &sec, 0) == 0) {
-        try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
-        return error.CommandFailed;
-    }
-
-    var existing_limits: ExistingLimits = ExistingLimits {
-        .mem = task.stats.?.memory_limit,
-        .cpu = task.stats.?.cpu_limit
-    };
-
-    // Seeking to end to truncate logs
-    const outfile = try task.files.?.get_file("stdout");
-    defer outfile.close();
-    const errfile = try task.files.?.get_file("stderr");
-    defer errfile.close();
-    outfile.seekFromEnd(0)
-        catch |err| return e.verbose_error(err, error.CommandFailed);
-    errfile.seekFromEnd(0)
-        catch |err| return e.verbose_error(err, error.CommandFailed);
-    var stdout_writer = std.io.bufferedWriter(outfile.writer());
-    var stderr_writer = std.io.bufferedWriter(errfile.writer());
-    var out_new_line = true;
-    var err_new_line = true;
-    var monitor_time = std.time.nanoTimestamp();
-    while (true) {
-        var out_queued_bytes: libc.DWORD = 0;
-        var err_queued_bytes: libc.DWORD = 0;
-
-        if (libc.PeekNamedPipe(out_handle_r, null, 0, 0, &out_queued_bytes, 0) == 0) {
-            try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
-            return error.CommandFailed;
-        }
-        if (out_queued_bytes > 0) {
-            var dw_read: libc.DWORD = 0;
-            const buf = util.gpa.alloc(u8, out_queued_bytes)
-                catch |err| return e.verbose_error(err, error.CommandFailed);
-            defer util.gpa.free(buf);
-            if (libc.ReadFile(out_handle_r, buf.ptr, out_queued_bytes, &dw_read, null) == 0) {
-                try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
-                return error.CommandFailed;
-            }
-            try TaskLogger.write_timed_logs(
-                &out_new_line,
-                buf,
-                @TypeOf(stdout_writer),
-                &stdout_writer
-            );
-        }
-
-        if (libc.PeekNamedPipe(err_handle_r, null, 0, 0, &err_queued_bytes, 0) == 0) {
-            try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
-            return error.CommandFailed;
-        }
-        if (err_queued_bytes > 0) {
-            var dw_read: libc.DWORD = 0;
-            const buf = util.gpa.alloc(u8, err_queued_bytes)
-                catch |err| return e.verbose_error(err, error.CommandFailed);
-            defer util.gpa.free(buf);
-            if (libc.ReadFile(err_handle_r, buf.ptr, err_queued_bytes, &dw_read, null) == 0) {
-                try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
-                return error.CommandFailed;
-            }
-            try TaskLogger.write_timed_logs(
-                &err_new_line,
-                buf,
-                @TypeOf(stderr_writer),
-                &stderr_writer
-            );
-        }
-
-        // Making sure every second this is ran
-        const current_time = std.time.nanoTimestamp();
-        if (current_time > monitor_time + 1_000_000_000) {
-            if (task.process == null or (!task.process.?.proc_exists() and !task.process.?.any_proc_child_exists())) {
-                break;
-            }
-            
-            if (task.stats.?.memory_limit != 0) {
-                task.process.?.memory_limit = task.stats.?.memory_limit;
-                // Manual check for memory limit because windows' mem limit doesn't react quick and leaves zombie processes
-                try taskproc.check_memory_limit_within_limit(&task.process.?);
-            }
-            try task.process.?.monitor_stats();
-            monitor_time = current_time;
-
-            const stats = try task.files.?.read_file(Stats);
-            if (stats != null) {
-                task.stats.? = stats.?;
-            }
-            
-            // Proc limits
-            if (task.stats.?.memory_limit != existing_limits.mem or task.stats.?.cpu_limit != existing_limits.cpu) {
-                task.process.?.memory_limit = task.stats.?.memory_limit;
-                try set_job_limits(job_handle, task.stats.?.memory_limit, task.stats.?.cpu_limit);
-                existing_limits.mem = task.stats.?.memory_limit;
-                existing_limits.cpu = task.stats.?.cpu_limit;
-            }
-        }
-        if (monitor_time + 1_000_000_000 - current_time < 1_000_000) {
-            std.Thread.sleep(@intCast(monitor_time + 1_000_000_000 - current_time));
-        } else {
-            std.Thread.sleep(1_000_000);
-        }
-    }
 }

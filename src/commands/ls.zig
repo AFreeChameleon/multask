@@ -24,12 +24,7 @@ const log = @import("../lib/log.zig");
 const parse = @import("../lib/args/parse.zig");
 
 const main = @import("../lib/table/main.zig");
-const MainTable = main.Table;
-const MainTableMethods = main.TableMethods;
-
 const stats = @import("../lib/table/stats.zig");
-const StatsTable = stats.Table;
-const StatsTableMethods = stats.TableMethods;
 
 const cpu = @import("../lib/linux/cpu.zig");
 const window = @import("../lib/window.zig");
@@ -57,117 +52,113 @@ pub fn run(argv: [][]u8) Errors!void {
     }
 
     if (flags.stats) {
-        try output_stats_table(&flags);
+        try run_stats_table(&flags);
     } else {
-        try output_main_table(&flags);
+        try run_main_table(&flags);
     }
 }
 
-fn output_stats_table(flags: *Flags) Errors!void {
-    var table = try generate_stats_table(flags);
-    defer table.deinit();
-    try table.print_table();
+fn run_stats_table(flags: *Flags) Errors!void {
+    const out = std.io.getStdOut();
+    var buf = std.io.bufferedWriter(out.writer());
+    var bw = buf.writer();
 
-    if (!flags.watch) return;
+    var table = try stats.init_table();
+    defer table.deinit();
+
+    const ids = try check_taskids(flags.args);
+    defer util.gpa.free(ids);
+    std.mem.sort(TaskId, ids, {}, comptime std.sort.asc(TaskId));
+    var has_corrupted_rows = try stats.set_stats_table(&table, ids);
+    try stats.print_table(&table, &bw);
+
+    buf.flush()
+        catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+
+    if (!flags.watch) {
+        if (has_corrupted_rows) {
+            try log.printerr(error.CorruptedTask);
+        }
+        stats.free_table_rows(&table);
+        return;
+    }
 
     while (true) {
         std.Thread.sleep(1_000_000_000);
-        var new_table = try generate_stats_table(flags);
-        try table.clear();
-        try new_table.print_table();
-        table.deinit();
-        table = new_table;
-    }
+        // Building the new table to put over the original one because
+        // on windows the blinking juuust bad enough and gives me motion sickness
+        var new_table = try stats.init_table();
+        has_corrupted_rows = try stats.set_stats_table(&new_table, ids);
+        if (has_corrupted_rows) {
+            try log.printerr(error.CorruptedTask);
+            break;
+        }
 
-    if (table.corrupted_rows) {
-        try log.printerr(error.CorruptedTask);
+        table.clear(&bw)
+            catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+
+        stats.free_table_rows(&table);
+        table.deinit();
+
+        try stats.print_table(&new_table, &bw);
+        table = new_table;
+
+        buf.flush()
+            catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
     }
-    table.reset();
 }
 
-fn output_main_table(flags: *Flags) Errors!void {
-    var table = try generate_main_table(flags);
-    defer table.deinit();
-    try table.print_table();
 
-    if (!flags.watch) return;
+fn run_main_table(flags: *Flags) Errors!void {
+    const out = std.io.getStdOut();
+    var buf = std.io.bufferedWriter(out.writer());
+    var bw = buf.writer();
+
+    var table = try main.init_table();
+
+    const ids = try check_taskids(flags.args);
+    defer util.gpa.free(ids);
+    std.mem.sort(TaskId, ids, {}, comptime std.sort.asc(TaskId));
+    var has_corrupted_rows = try main.set_main_table(&table, ids, flags.all);
+
+    try main.print_table(&table, &bw);
+    buf.flush()
+        catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+
+    if (!flags.watch) {
+        if (has_corrupted_rows) {
+            try log.printerr(error.CorruptedTask);
+        }
+        main.free_table_rows(&table);
+        table.deinit();
+        return;
+    }
+
 
     while (true) {
         std.Thread.sleep(1_000_000_000);
-        var new_table = try generate_main_table(flags);
-        try table.clear();
-        try new_table.print_table();
+        // Building the new table to put over the original one because
+        // on windows the blinking juuust bad enough and gives me motion sickness
+        var new_table = try main.init_table();
+
+        has_corrupted_rows = try main.set_main_table(&new_table, ids, flags.all);
+        if (has_corrupted_rows) {
+            try log.printerr(error.CorruptedTask);
+            break;
+        }
+
+        table.clear(&bw)
+            catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
+
+        main.free_table_rows(&table);
         table.deinit();
+
+        try main.print_table(&new_table, &bw);
         table = new_table;
+
+        buf.flush()
+            catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
     }
-
-    if (table.corrupted_rows) {
-        try log.printerr(error.CorruptedTask);
-    }
-    table.reset();
-}
-
-fn generate_stats_table(flags: *Flags) Errors!StatsTable {
-    var table = try StatsTable.init(flags.all);
-    try StatsTableMethods.append_header(&table);
-    const ids = try check_taskids(flags.args);
-    std.mem.sort(TaskId, ids, {}, comptime std.sort.asc(TaskId));
-    defer util.gpa.free(ids);
-
-    for (ids) |task_id| {
-        var task = Task.init(task_id);
-        defer task.deinit();
-        TaskManager.get_task_from_id(&task) catch |err| {
-            try log.printdebug("{any}", .{err});
-            try StatsTableMethods.add_corrupted_task(&table, task_id);
-            continue;
-        };
-        const existing_rows = table.rows.items.len;
-        StatsTableMethods.add_task(&table, &task) catch |err| {
-            try log.printdebug("{any}", .{err});
-            const current_rows = table.rows.items.len;
-            if (current_rows > existing_rows) {
-                try table.remove_rows(current_rows - existing_rows);
-            }
-            try StatsTableMethods.add_corrupted_task(&table, task_id);
-            continue;
-        };
-    }
-    return table;
-}
-
-fn generate_main_table(flags: *Flags) Errors!MainTable {
-    var table = try MainTable.init(flags.all);
-    try MainTableMethods.append_header(&table);
-    const ids = try check_taskids(flags.args);
-    std.mem.sort(TaskId, ids, {}, comptime std.sort.asc(TaskId));
-    defer util.gpa.free(ids);
-
-    for (ids) |task_id| {
-        var task = Task.init(task_id);
-        defer task.deinit();
-        TaskManager.get_task_from_id(&task) catch |err| {
-            try log.printdebug("{any}", .{err});
-            try MainTableMethods.add_corrupted_task(&table, task_id);
-            continue;
-        };
-        task.resources.?.set_cpu_usage(&task) catch |err| {
-            try log.printdebug("{any}", .{err});
-            try MainTableMethods.add_corrupted_task(&table, task_id);
-            continue;
-        };
-        const existing_rows = table.rows.items.len;
-        MainTableMethods.add_task(&table, &task) catch |err| {
-            try log.printdebug("{any}", .{err});
-            const current_rows = table.rows.items.len;
-            if (current_rows > existing_rows) {
-                try table.remove_rows(current_rows - existing_rows);
-            }
-            try MainTableMethods.add_corrupted_task(&table, task_id);
-            continue;
-        };
-    }
-    return table;
 }
 
 // Removes any old tasks

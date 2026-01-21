@@ -19,7 +19,6 @@ const ReadProcess = @import("../lib/task/file.zig").ReadProcess;
 const file = @import("../lib/file.zig");
 
 const util = @import("../lib/util.zig");
-const Lengths = util.Lengths;
 
 const log = @import("../lib/log.zig");
 const parse = @import("../lib/args/parse.zig");
@@ -107,7 +106,7 @@ pub fn parse_cmd_args(argv: [][]u8, tasks: *Tasks) Errors!Flags {
 
     const parsed_args = try util.parse_cmd_vals(vals, tasks);
     flags.args = parsed_args;
-    if (vals.len == 0) {
+    if (vals.len == 0 and !flags.help) {
         flags.args.deinit();
         return error.MissingTaskId;
     }

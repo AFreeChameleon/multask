@@ -3,7 +3,6 @@ const std = @import("std");
 const util = @import("../util.zig");
 const winutil = @import("./util.zig");
 const Pid = util.Pid;
-const Lengths = util.Lengths;
 const e = @import("../error.zig");
 const Errors = e.Errors;
 
@@ -161,7 +160,6 @@ pub const WindowsProcess = struct {
 
         if (libc.Process32First(snapshot, &pe32) == std.os.windows.FALSE) {
             _ = libc.CloseHandle(snapshot);
-            try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
             return error.FailedToGetAllProcesses;
         }
 
@@ -251,7 +249,6 @@ pub const WindowsProcess = struct {
             else => return err
         };
         if (libc.TerminateJobObject(job_handle, 1) == 0) {
-            try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
             return error.FailedToKillAllProcesses;
         }
     }
@@ -261,7 +258,7 @@ pub const WindowsProcess = struct {
             return error.ProcessNotExists;
         }
 
-        var proc_name: [Lengths.LARGE]u8 = std.mem.zeroes([Lengths.LARGE]u8);
+        var proc_name: [1024]u8 = std.mem.zeroes([1024]u8);
         const proc_handle = libc.OpenProcess(
             libc.PROCESS_TERMINATE | libc.PROCESS_QUERY_INFORMATION | libc.SYNCHRONIZE,
             1,
@@ -269,7 +266,6 @@ pub const WindowsProcess = struct {
         );
 
         if (libc.GetProcessImageFileNameA(proc_handle, &proc_name, @intCast(proc_name.len)) == 0) {
-            try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
             return error.FailedToKillAllProcesses;
         }
 
@@ -280,7 +276,6 @@ pub const WindowsProcess = struct {
         }
 
         if (libc.TerminateProcess(proc_handle, 1) == 0) {
-            try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
             return error.FailedToKillAllProcesses;
         }
     }
@@ -300,7 +295,6 @@ pub const WindowsProcess = struct {
             &lp_kernel_time,
             &lp_user_time
         ) == 0) {
-            try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
             return error.FailedToGetProcessStats;
         }
 
@@ -321,7 +315,6 @@ pub const WindowsProcess = struct {
             libc.JOB_OBJECT_ALL_ACCESS, 1, job_name.ptr
         );
         if (job_handle == null) {
-            try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
             return error.FailedToGetJob;
         }
         return job_handle;
@@ -345,7 +338,6 @@ pub const WindowsProcess = struct {
             @sizeOf(Jobs),
             null
         ) == 0) {
-            try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
             return error.FailedToGetProcessChildren;
         }
         const pids = std.mem.trimRight(util.Pid, &jobs.list, &[1]util.Pid{0});
@@ -371,8 +363,6 @@ pub const WindowsProcess = struct {
             @sizeOf(Jobs),
             null
         ) == 0) {
-            log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()})
-                catch return false;
             return false;
         }
         const pids = std.mem.trimRight(util.Pid, &jobs.list, &[1]util.Pid{0});
@@ -419,7 +409,6 @@ pub const WindowsProcess = struct {
             null
         );
         if (res == 0) {
-            try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
             return error.FailedToGetProcessChildren;
         }
         var new_proc_list = std.ArrayList(Self).init(util.gpa);
@@ -481,20 +470,19 @@ pub const WindowsProcess = struct {
             &mem_info,
             @sizeOf(libc.PROCESS_MEMORY_COUNTERS)
         ) == 0) {
-            try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
             return error.FailedToGetProcessMemory;
         }
         return mem_info.WorkingSetSize;
     }
 
-    pub fn get_exe(self: *Self) Errors![]const u8 {
+    pub fn get_exe_buf(self: *Self, buf: []u8) Errors![]const u8 {
         const proc_handle = libc.OpenProcess(libc.PROCESS_QUERY_INFORMATION, 1, self.pid);
         if (proc_handle == null) {
             return "";
         }
-        var proc_name: [Lengths.LARGE]u8 = std.mem.zeroes([Lengths.LARGE]u8);
-        if (libc.GetProcessImageFileNameA(proc_handle, &proc_name, Lengths.LARGE) == 0) {
-            try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
+        var proc_name: [4096]u8 = undefined;
+        const bytes_written = libc.GetProcessImageFileNameA(proc_handle, &proc_name, 4096);
+        if (bytes_written == 0) {
             return error.FailedToGetProcessComm;
         }
 
@@ -503,7 +491,8 @@ pub const WindowsProcess = struct {
             if (itr_proc_name.peek() == null) {
                 // For some reason, after the null terminator the buffer sometimes gets filled with the 170 char 'ª'
                 const trimmed_exe = std.mem.trimRight(u8, it, &[2]u8{170, 0});
-                return util.strdup(trimmed_exe, error.FailedToGetProcessComm);
+                @memcpy(buf[0..trimmed_exe.len], trimmed_exe);
+                return buf[0..trimmed_exe.len];
             }
         }
         return "";

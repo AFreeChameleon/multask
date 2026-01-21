@@ -1,7 +1,6 @@
 const std = @import("std");
 const expect = std.testing.expect;
 const util = @import("../util.zig");
-const Lengths = util.Lengths;
 
 const TaskId = @import("./index.zig").TaskId;
 
@@ -125,7 +124,7 @@ pub fn serialise(map: std.process.EnvMap) Errors!JSON_Env {
 }
 
 pub fn add_multask_taskid_to_map(map: *std.process.EnvMap, task_id: TaskId) Errors!void {
-    var buf: [Lengths.TINY]u8 = std.mem.zeroes([Lengths.TINY]u8);
+    var buf: [32]u8 = undefined;
     const val = std.fmt.bufPrint(&buf, "{d}", .{task_id})
         catch |err| return e.verbose_error(err, error.FailedToGetEnvs);
     map.put("MULTASK_TASK_ID", val)
