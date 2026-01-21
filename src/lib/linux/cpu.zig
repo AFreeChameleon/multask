@@ -2,7 +2,6 @@ const std = @import("std");
 const libc = @import("../c.zig").libc;
 const util = @import("../util.zig");
 const SysTimes = util.SysTimes;
-const Lengths = util.Lengths;
 const Pid = util.Pid;
 
 const t = @import("../task/index.zig");
@@ -41,60 +40,55 @@ pub const LinuxCpu = struct {
         };
     }
 
-    pub fn get_cpu_time_total(cpu_stats: [][]const u8) u64 {
+    fn get_cpu_time_total() u64 {
+        var content_buf: [4096]u8 = undefined;
+        const cpu_line = ProcFs.read_file_until_delimiter_buf(null, &content_buf, '\n', .RootStat)
+            catch return 0;
+
+        var split_cpu_line = std.mem.splitSequence(u8, cpu_line, " ");
         var cpu_time_total: u64 = 0;
-        for (cpu_stats) |str_time| {
-            const time = std.fmt.parseInt(u64, str_time, 10)
-                catch continue;
-            cpu_time_total += time;
+
+        while (split_cpu_line.next()) |str_time| {
+            if (str_time.len != 0 and util.is_number(str_time)) {
+                const time = std.fmt.parseInt(u64, str_time, 10)
+                    catch continue;
+                cpu_time_total += time;
+            }
         }
         return cpu_time_total;
     }
 
-    pub fn get_cpu_stats() Errors![][]const u8 {
-        var stats = std.ArrayList([]const u8).init(util.gpa);
-        defer stats.deinit();
-        const stat_path = std.fs.realpathAlloc(util.gpa, "/proc/stat")
-            catch |err| return e.verbose_error(err, error.FailedToGetCpuStats);
-        defer util.gpa.free(stat_path);
-        const stat_file = std.fs.openFileAbsolute(stat_path, .{.mode = .read_only})
-            catch |err| return e.verbose_error(err, error.FailedToGetCpuStats);
-        defer stat_file.close();
+    fn read_utime_stime(pid: Pid) Errors!struct {utime: u64, stime: u64} {
+        var utime: u64 = 0;
+        var stime: u64 = 0;
 
-        var stat_buf = std.io.bufferedReader(stat_file.reader());
-        var stat_reader = stat_buf.reader();
-        const cpu_line = stat_reader.readUntilDelimiterOrEofAlloc(util.gpa, '\n', Lengths.LARGE)
-            catch |err| return e.verbose_error(err, error.FailedToGetCpuStats);
-        if (cpu_line == null) {
-            return util.gpa.alloc([]const u8, 0)
-                catch |err| return e.verbose_error(err, error.FailedToGetCpuStats);
+        var content_buf: [4096]u8 = undefined;
+        const content = try ProcFs.read_file_buf(pid, &content_buf, .Stat);
+        var stat_time_buf: [4096]u8 = undefined;
+
+        const stat_utime = try ProcFs.extract_stat_buf(&stat_time_buf, content, 13);
+        if (stat_utime != null) {
+            utime = std.fmt.parseInt(u64, stat_utime.?, 10)
+                catch |err| return e.verbose_error(err, error.FailedToGetProcesses);
         }
-        defer util.gpa.free(cpu_line.?);
-
-        var split_cpu_line = std.mem.splitSequence(u8, cpu_line.?, " ");
-        while (split_cpu_line.next()) |stat| {
-            stats.append(try util.strdup(stat, error.FailedToGetCpuStats))
-                catch |err| return e.verbose_error(err, error.FailedToGetCpuStats);
+        const stat_stime = try ProcFs.extract_stat_buf(&stat_time_buf, content, 14);
+        if (stat_stime != null) {
+            stime = std.fmt.parseInt(u64, stat_stime.?, 10)
+                catch |err| return e.verbose_error(err, error.FailedToGetProcesses);
         }
-
-        return stats.toOwnedSlice()
-            catch |err| return e.verbose_error(err, error.FailedToGetCpuStats);
+        return .{ .utime = utime, .stime = stime };
     }
 
     pub fn get_cpu_usage(
         self: *Self,
         process: *LinuxProcess,
     ) Errors!f64 {
-        const stats = try ProcFs.get_process_stats(process.pid);
-        defer stats.deinit();
         var utime: u64 = 0;
         var stime: u64 = 0;
-        if (stats.val.len > 0) {
-            utime = std.fmt.parseInt(u64, stats.val[13], 10)
-                catch |err| return e.verbose_error(err, error.FailedToGetProcesses);
-            stime = std.fmt.parseInt(u64, stats.val[14], 10)
-                catch |err| return e.verbose_error(err, error.FailedToGetProcesses);
-        }
+
+        const res = try read_utime_stime(process.pid);
+        utime = res.utime;
+        stime = res.stime;
 
         const old_proc_times_struct = self.systimes.get(process.pid);
         if (old_proc_times_struct == null) {
@@ -106,14 +100,7 @@ pub const LinuxCpu = struct {
         }
         const old_proc_times = old_proc_times_struct.?.utime + old_proc_times_struct.?.stime;
         const proc_times = utime + stime;
-        const cpu_stats = try get_cpu_stats();
-        defer {
-            for (cpu_stats) |stat| {
-                util.gpa.free(stat);
-            }
-            util.gpa.free(cpu_stats);
-        }
-        const new_time_total = get_cpu_time_total(cpu_stats);
+        const new_time_total = get_cpu_time_total();
         const cpu_usage: f64 = @as(f64, @floatFromInt(libc.sysconf(libc._SC_NPROCESSORS_ONLN)))
             * 100.0
             * (
@@ -134,13 +121,6 @@ pub const LinuxCpu = struct {
     }
 
     pub fn update_time_total(self: *Self) Errors!void {
-        const cpu_stats = try get_cpu_stats();
-        defer {
-            for (cpu_stats) |stat| {
-                util.gpa.free(stat);
-            }
-            util.gpa.free(cpu_stats);
-        }
-        self.time_total = get_cpu_time_total(cpu_stats);
+        self.time_total = get_cpu_time_total();
     }
 };

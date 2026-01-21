@@ -2,7 +2,6 @@ const std = @import("std");
 
 const log = @import("../log.zig");
 const util = @import("../util.zig");
-const Lengths = util.Lengths;
 const TaskId = @import("../task/index.zig").TaskId;
 const TaskManager = @import("../task/manager.zig").TaskManager;
 const MainFiles = @import("../file.zig").MainFiles;
@@ -25,7 +24,7 @@ fn get_crontab() Errors![]u8 {
     var buffer = std.ArrayList(u8).init(util.gpa);
     defer buffer.deinit();
 
-    _ = stdout.readAllArrayList(&buffer, Lengths.HUGE)
+    _ = stdout.readAllArrayList(&buffer, 32000)
         catch |err| return e.verbose_error(err, error.FailedToGetStartupDetails);
 
     _ = child.wait()

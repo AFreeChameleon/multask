@@ -1,10 +1,14 @@
-const libc = @import("../c.zig").libc;
 const std = @import("std");
-const e = @import("../error.zig");
+
+const libc = @import("../c.zig").libc;
+
+const util = @import("../util.zig");
 const log = @import("../log.zig");
+
+const e = @import("../error.zig");
 const Errors = e.Errors;
 
-pub fn  enable_virtual_terminal() Errors!void {
+pub fn enable_virtual_terminal() Errors!void {
     _ = std.os.windows.kernel32.SetConsoleOutputCP(65001);
     const handle = libc.GetStdHandle(libc.STD_OUTPUT_HANDLE);
     var original_mode: c_int = 0;
