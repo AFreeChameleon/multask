@@ -18,6 +18,8 @@ const Files = t.Files;
 
 const TaskLogger = @import("../task/logger.zig");
 
+const TaskFiles = @import("../task/file.zig").Files;
+
 const taskproc = @import("../task/process.zig");
 const Process = taskproc.Process;
 const ExistingLimits = taskproc.ExistingLimits;
@@ -25,7 +27,7 @@ const ExistingLimits = taskproc.ExistingLimits;
 const ChildProcess = std.process.Child;
 
 pub fn run_daemon(task: *Task, flags: ForkFlags) Errors!void {
-    try util.save_stats(task, &flags);
+    try TaskFiles.save_stats(task, &flags);
 
     if (flags.interactive != null and flags.interactive.?) {
         try log.printwarn("Interactive flag is on by default on Windows.", .{});
@@ -61,7 +63,6 @@ pub fn run_daemon(task: *Task, flags: ForkFlags) Errors!void {
     const res = libc.CreateProcessA(null, proc_string.ptr, null, null, 0, create_proc_flags, null, null, @as([*c]libc.STARTUPINFOA, @ptrCast(&si.StartupInfo)), @as([*c]libc.PROCESS_INFORMATION, @ptrCast(&proc_info)));
     if (res == 0) {
         try log.printdebug("Windows error code: {d}", .{std.os.windows.GetLastError()});
-        std.debug.print("Windows error code WHY DOES SPAWNING FAIL: {d}", .{std.os.windows.GetLastError()});
         return error.SpawnExeNotFound;
     }
 }

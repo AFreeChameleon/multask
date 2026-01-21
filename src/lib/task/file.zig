@@ -1,5 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const flute = @import("flute");
 const log = @import("../log.zig");
 const MainFiles = @import("../file.zig").MainFiles;
 
@@ -19,10 +20,16 @@ const util = @import("../util.zig");
 const Pid = util.Pid;
 const Sid = util.Sid;
 const Pgrp = util.Pgrp;
-const Lengths = util.Lengths;
 
 const e = @import("../error.zig");
 const Errors = e.Errors;
+
+pub const LogFileListener = switch (builtin.os.tag) {
+    .linux => @import("../linux/file.zig").LogFileListener,
+    .macos => @import("../macos/file.zig").LogFileListener,
+    .windows => @import("../windows/file.zig").LogFileListener,
+    else => error.InvalidOs
+};
 
 pub const TaskReadProcess = switch (builtin.os.tag) {
     .linux => @import("../linux/file.zig").TaskReadProcess,
@@ -37,6 +44,12 @@ pub const ReadProcess = switch (builtin.os.tag) {
     else => error.InvalidOs
 };
 
+pub const StdLogFileEvent = enum {
+    out,
+    err,
+    skip
+};
+
 const LogLineData = struct {
     time: i64,
     message: []const u8,
@@ -49,6 +62,13 @@ const Pipe = if (builtin.target.os.tag == .windows)
     ?[2]std.os.windows.HANDLE
 else
     ?[2]i32;
+
+pub fn OutputPadding(comptime text: []const u8, comptime rgb: [3]u8) usize {
+    const padding = flute.format.string.ColorStringWidthPadding(rgb);
+    return padding + text.len;
+}
+pub const StdoutPadding = OutputPadding("[STDOUT] ", .{0, 255, 255});
+pub const StderrPadding = OutputPadding("[STDERR] ", .{204, 0, 0});
 
 pub const Files = struct {
     const Self = @This();
@@ -81,9 +101,9 @@ pub const Files = struct {
     pub fn task_dir_exists(task_id: TaskId) Errors!bool {
         var tasks_dir = try MainFiles.get_or_create_tasks_dir();
         defer tasks_dir.close();
-        const task_path = std.fmt.allocPrint(util.gpa, "{d}", .{task_id})
+        var buf: [32]u8 = undefined;
+        const task_path = std.fmt.bufPrint(&buf, "{d}", .{task_id})
             catch |err| return e.verbose_error(err, error.TaskFileFailedCreate);
-        defer util.gpa.free(task_path);
         tasks_dir.access(task_path, .{})
             catch return false;
         return true;
@@ -93,16 +113,19 @@ pub const Files = struct {
     pub fn get_task_dir(self: *Self) Errors!std.fs.Dir {
         var tasks_dir = try MainFiles.get_or_create_tasks_dir();
         defer tasks_dir.close();
-        const exists = try task_dir_exists(self.task_id);
-        if (!exists) {
-            return error.TaskNotExists;
-        }
 
-        const task_path = std.fmt.allocPrint(util.gpa, "{d}", .{self.task_id})
-            catch |err| return e.verbose_error(err, error.TaskNotExists);
-        defer util.gpa.free(task_path);
-        const dir = tasks_dir.makeOpenPath(task_path, .{})
-            catch |err| return e.verbose_error(err, error.TaskNotExists);
+        var buf: [32]u8 = undefined;
+        const task_path = std.fmt.bufPrint(&buf, "{d}", .{self.task_id})
+            catch |err| return e.verbose_error(err, error.TaskFileFailedCreate);
+    
+        const dir = tasks_dir.openDir(task_path, .{}) catch |err| switch (err) {
+            error.FileNotFound => {
+                return tasks_dir.makeOpenPath(task_path, .{})
+                    catch |inner_err| return e.verbose_error(inner_err, error.TaskNotExists);
+            },
+            else => return error.TaskNotExists
+        };
+
         return dir;
     }
 
@@ -114,16 +137,23 @@ pub const Files = struct {
         const name = comptime get_file_name_from_type(T);
 
         const file = try self.get_file(name);
-        defer file.close();
+        file.lock(.exclusive)
+            catch |err| return e.verbose_error(err, error.TaskFileFailedRead);
+        defer {
+            file.unlock();
+            file.close();
+        }
 
         try log.printdebug("Parsing file: {s}", .{name});
 
-        const file_content = file.readToEndAlloc(util.gpa, 8388608) // 8MB
+        const buf_len = 100_000; // 100 kb
+        var buf: [buf_len]u8 = undefined;
+        const written = file.readAll(&buf)
             catch |err| return e.verbose_error(err, error.TaskFileFailedRead);
-        defer util.gpa.free(file_content);
-        if (file_content.len == 0) {
+        if (written == 0 or written > buf_len) {
             return null;
         }
+        const file_content = buf[0..written];
 
         var json = std.json.parseFromSlice(
             T,
@@ -131,9 +161,7 @@ pub const Files = struct {
             file_content,
             .{}
         ) catch |err| return e.verbose_error(err, error.TaskFileFailedRead);
-        defer {
-            json.deinit();
-        }
+        defer json.deinit();
         const value: T = try json.value.clone();
 
         return value;
@@ -147,7 +175,24 @@ pub const Files = struct {
         return false;
     }
 
-    /// Do not forget to close this
+    /// Do not forget to unlock & close this
+    pub fn get_file_locked(self: *Self, comptime T: type) Errors!std.fs.File {
+        // This is a runtime check which is bad, make this an enum or something
+        const name = comptime get_file_name_from_type(T);
+        try log.printdebug("Getting file: {s}", .{name});
+        var task_dir = try self.get_task_dir();
+        defer task_dir.close();
+        const file = task_dir.openFile(name, .{.mode = .read_write})
+            catch |err| switch (err) {
+                error.FileNotFound => return error.TaskFileNotFound,
+                else => return e.verbose_error(err, error.FailedToGetProcess)
+            };
+        file.lock(.exclusive)
+            catch |err| return e.verbose_error(err, error.TaskFileNotFound);
+        return file;
+    }
+
+    /// Do not forget to lock & close this
     pub fn get_file(self: *Self, comptime name: []const u8) Errors!std.fs.File {
         // This is a runtime check which is bad, make this an enum or something
         if (!filename_valid(name)) return error.InvalidFile;
@@ -162,13 +207,9 @@ pub const Files = struct {
         return file;
     }
 
-    pub fn clear_file(self: *Self, comptime T: type) Errors!void {
-        const name = comptime get_file_name_from_type(T);
-        // This is a runtime check which is bad, make this an enum or something
-        if (!filename_valid(name)) return error.InvalidFile;
-        const file = try self.get_file(name);
-        defer file.close();
-        try log.printdebug("Clearing file: {s}", .{name});
+    /// The file should already be locked so it does not lock it
+    pub fn clear_file(file: *const std.fs.File) Errors!void {
+        try log.printdebug("Clearing file", .{});
         file.setEndPos(0)
             catch |err| return e.verbose_error(err, error.TaskFileFailedWrite);
         file.seekTo(0)
@@ -186,24 +227,21 @@ pub const Files = struct {
     }
 
     pub fn write_file(
-        self: *Self,
+        file: *const std.fs.File,
         comptime T: type,
         raw_data: T
     ) Errors!void {
-        const name = comptime get_file_name_from_type(T);
+        try clear_file(file);
+        var buf_writer = std.io.bufferedWriter(file.writer());
 
-        try log.printdebug("Writing task {s} file", .{name});
-
-        try self.clear_file(T);
-
-        const file = try self.get_file(name);
-        defer file.close();
         var data = if (@hasDecl(T, "to_json"))
                 try raw_data.to_json()
             else
                 try raw_data.clone();
         defer data.deinit();
-        std.json.stringify(data, .{}, file.writer())
+        std.json.stringify(data, .{}, buf_writer.writer())
+            catch |err| return e.verbose_error(err, error.MainFileFailedWrite);
+        buf_writer.flush()
             catch |err| return e.verbose_error(err, error.MainFileFailedWrite);
     }
 
@@ -328,7 +366,7 @@ pub const Files = struct {
     }
 
     fn get_data_from_line(line: []const u8) Errors!LogLineData {
-        var time: [Lengths.TINY]u8 = std.mem.zeroes([Lengths.TINY]u8);
+        var time: [32]u8 = std.mem.zeroes([32]u8);
         var line_data = LogLineData {.time = 0, .message = ""};
         for (line, 0..) |char, i| {
             if (std.ascii.isDigit(char)) {
@@ -407,8 +445,9 @@ pub const Files = struct {
         return pos;
     }
 
-    /// Seek to end of files, and look for any changes to the files by seeing
-    /// if the end pos increases. If it does, print out whatever's there by line
+
+
+
     pub fn listen_log_files(self: *Self) Errors!void {
         const outfile = try self.get_file("stdout");
         defer outfile.close();
@@ -418,137 +457,110 @@ pub const Files = struct {
             catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
         errfile.seekFromEnd(0)
             catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
-        const out_reader = outfile.reader();
-        const err_reader = errfile.reader();
-        var out_end_pos = outfile.getEndPos()
+
+        var err_buf_reader = std.io.bufferedReader(errfile.reader());
+        var out_buf_reader = std.io.bufferedReader(outfile.reader());
+        const err_reader = err_buf_reader.reader();
+        const out_reader = out_buf_reader.reader();
+
+        var stdout_log_prefix_buf: [StdoutPadding]u8 = std.mem.zeroes([StdoutPadding]u8);
+        var stderr_log_prefix_buf: [StderrPadding]u8 = std.mem.zeroes([StderrPadding]u8);
+        const stdout_log_prefix = flute.format.string.colorStringBuf(&stdout_log_prefix_buf, "[STDOUT] ", 0, 255, 255)
             catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
-        var err_end_pos = errfile.getEndPos()
-            catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
-        var out_line = std.ArrayList(u8).init(util.gpa);
-        defer out_line.deinit();
-        var err_line = std.ArrayList(u8).init(util.gpa);
-        defer err_line.deinit();
+        const stderr_log_prefix = flute.format.string.colorStringBuf(&stderr_log_prefix_buf, "[STDERR] ", 204, 0, 0)
+           catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
 
-        var out_lines = std.ArrayList(LogLineData).init(util.gpa);
-        defer out_lines.deinit();
-        var err_lines = std.ArrayList(LogLineData).init(util.gpa);
-        defer err_lines.deinit();
+        const stdout = std.io.getStdOut();
+        const stderr = std.io.getStdErr();
+        var out_buf = std.io.bufferedWriter(stdout.writer());
+        var err_buf = std.io.bufferedWriter(stderr.writer());
+        const out_wr = out_buf.writer();
+        const err_wr = err_buf.writer();
 
-        while (true) {
-            outfile.sync()
-                catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
-            errfile.sync()
-                catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
-            const new_out_end_pos = outfile.getEndPos()
-                catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
-            const new_err_end_pos = errfile.getEndPos()
-                catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
+        var listener = try LogFileListener.setup(self.task_id, LogFileListener.MainIO);
 
-            // Stdout
-            if (new_out_end_pos > out_end_pos) {
-                while (true) {
-                    const byte = out_reader.readByte()
-                        catch |err| switch (err) {
-                            error.EndOfStream => break,
-                            else => return e.verbose_error(err, error.TaskLogsFailedToRead)
-                        };
-                    out_line.append(byte)
-                        catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
-                    if (byte == '\n' and out_line.items.len > 0) {
-                        const line_data = try get_data_from_line(out_line.items);
-                        out_lines.append(line_data)
-                            catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
-                        out_end_pos = outfile.getEndPos()
-                            catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
-                        out_line.clearAndFree();
-                    }
-                }
-                if (out_line.items.len > 0 and out_line.items[out_line.items.len - 1] != '\n') {
-                    const line_data = try get_data_from_line(out_line.items);
-                    out_lines.append(line_data)
-                        catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
-                    out_end_pos = outfile.getEndPos()
-                        catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
-                    out_line.clearAndFree();
-                }
+        // Buffer length & length of max value of i64
+        var new_content_buf: [4096 + 19]u8 = std.mem.zeroes([4096 + 19]u8);
+        while (
+            try listener.read(LogFileListener.MainIO)
+        ) |file_written| {
+            if (file_written == .skip) continue;
+            var log_prefix: @TypeOf(stdout_log_prefix) = undefined;
+            var wr: *const @TypeOf(out_wr) = undefined;
+            var reader: *const @TypeOf(out_reader) = undefined;
+            var log_buf: *@TypeOf(out_buf) = undefined;
+            if (file_written == .out) {
+                log_prefix = stdout_log_prefix;
+                reader = &out_reader;
+                wr = &out_wr;
+                log_buf = &out_buf;
+            } else if (file_written == .err) {
+                log_prefix = stderr_log_prefix;
+                wr = &err_wr;
+                reader = &err_reader;
+                log_buf = &err_buf;
             }
+            while (true) {
+                new_content_buf = std.mem.zeroes(@TypeOf(new_content_buf));
+                _ = reader.readUntilDelimiterOrEof(&new_content_buf, '\n')
+                    catch |err| switch (err) {
+                        error.StreamTooLong => {},
+                        else => return e.verbose_error(err, error.TaskLogsFailedToRead)
+                    };
 
-            // Stderr
-            if (new_err_end_pos > err_end_pos) {
-                while (true) {
-                    const byte = err_reader.readByte()
-                        catch |err| switch (err) {
-                            error.EndOfStream => break,
-                            else => return e.verbose_error(err, error.TaskLogsFailedToRead)
-                        };
-                    err_line.append(byte)
-                        catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
-                    if (byte == '\n' and err_line.items.len > 0) {
-                        const line_data = try get_data_from_line(err_line.items);
-                        err_lines.append(line_data)
-                            catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
-                        err_end_pos = errfile.getEndPos()
-                            catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
-                        err_line.clearAndFree();
-                    }
+                const new_content = std.mem.trimRight(u8, &new_content_buf, &[2]u8{'\n', 0});
+                if (new_content.len == 0) {
+                    break;
                 }
-                if (err_line.items.len > 0 and err_line.items[err_line.items.len - 1] != '\n') {
-                    const line_data = try get_data_from_line(err_line.items);
-                    err_lines.append(line_data)
-                        catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
-                    err_end_pos = errfile.getEndPos()
-                        catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
-                    err_line.clearAndFree();
+                var pipe_idx = std.mem.indexOfScalar(u8, new_content, '|');
+                if (pipe_idx == null) {
+                    pipe_idx = 0;
+                } else {
+                    // Add extra for the |
+                    pipe_idx.? += 1;
                 }
+                _ = wr.write(log_prefix)
+                    catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
+                _ = wr.write(new_content[pipe_idx.?..])
+                    catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
+                wr.writeByte('\n')
+                    catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
             }
-
-
-            // Iterating over each log seeing which should be printed based
-            // on time
-            if (err_lines.items.len == 0) {
-                for (out_lines.items) |item| {
-                    try log.printstdout("{s}", .{item.message});
-                }
-            } else if (out_lines.items.len == 0) {
-                for (err_lines.items) |item| {
-                    try log.printstderr("{s}", .{item.message});
-                }
-            } else {
-                var out_idx: usize = 0;
-                var err_idx: usize = 0;
-                for (0..(err_lines.items.len + out_lines.items.len)) |_| {
-                    if (err_idx >= err_lines.items.len) {
-                        if (out_idx >= out_lines.items.len) break;
-                        try log.printstdout("{s}", .{out_lines.items[out_idx].message});
-                        out_idx += 1;
-                        continue;
-                    }
-                    if (out_idx >= out_lines.items.len) {
-                        if (err_idx >= err_lines.items.len) break;
-                        try log.printstderr("{s}", .{err_lines.items[err_idx].message});
-                        err_idx += 1;
-                        continue;
-                    }
-                    const out = out_lines.items[out_idx];
-                    const err = err_lines.items[err_idx];
-                    if (out.time < err.time) {
-                        try log.printstdout("{s}", .{out.message});
-                        out_idx += 1;
-                    } else if (err.time < out.time) {
-                        try log.printstderr("{s}", .{err.message});
-                        err_idx += 1;
-                    } else if (err.time == out.time) {
-                        try log.printstderr("{s}", .{err.message});
-                        try log.printstdout("{s}", .{out.message});
-                        out_idx += 1;
-                        err_idx += 1;
-                    }
-                }
-            }
-            out_lines.clearAndFree();
-            err_lines.clearAndFree();
-
-            std.time.sleep(100000); // 100ms
+            log_buf.flush()
+                catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
         }
+        try listener.close(LogFileListener.MainIO);
     }
+
+    pub fn save_stats(task: *t.Task, flags: *const util.ForkFlags) Errors!void {
+        try util.validate_flags(.{
+            .memory_limit = flags.memory_limit,
+            .cpu_limit = flags.cpu_limit
+        });
+
+        // Have to refresh stats
+        if (flags.cpu_limit != null) {
+            task.stats.?.cpu_limit = flags.cpu_limit.?;
+        }
+        if (flags.memory_limit != null) {
+            task.stats.?.memory_limit = flags.memory_limit.?;
+        }
+        if (flags.persist != null) {
+            task.stats.?.persist = flags.persist.?;
+        }
+        if (flags.interactive != null) {
+            task.stats.?.interactive = flags.interactive.?;
+        }
+
+        const file = try task.files.?.get_file_locked(Stats);
+        defer {
+            file.unlock();
+            file.close();
+        }
+
+        var stats_clone = try task.stats.?.clone();
+        defer stats_clone.deinit();
+        try Files.write_file(&file, Stats, stats_clone);
+    }
+
 };

@@ -5,7 +5,6 @@ const util = @import("../util.zig");
 const Pid = util.Pid;
 const Sid = util.Sid;
 const Pgrp = util.Pgrp;
-const Lengths = util.Lengths;
 const e = @import("../error.zig");
 const Errors = e.Errors;
 const Find = @import("../file.zig").Find;
@@ -76,9 +75,8 @@ pub const LinuxProcess = struct {
         };
         const procExists = proc.proc_exists();
         if (procExists) {
-            const stats = try ProcFs.get_process_stats(proc.pid);
-
-            defer stats.deinit();
+            var stat_buf: [4096]u8 = undefined;
+            const stats = try ProcFs.read_file_buf(proc.pid, &stat_buf, .Stat);
 
             if (data != null) {
                 proc.starttime = data.?.starttime;
@@ -135,7 +133,7 @@ pub const LinuxProcess = struct {
     ) Errors!void {
         var keep_running = false;
 
-        const loadavg_pid: Pid = try get_most_recent_pid();
+        const loadavg_pid = try get_most_recent_pid();
         if (loadavg_pid != LoadAvgPid) {
             LoadAvgPid = loadavg_pid;
             const related_procs = try self.get_related_procs();
@@ -239,13 +237,10 @@ pub const LinuxProcess = struct {
 
     /// Gets command name associated with process.
     /// More info, use `man proc` and go to /proc/pid/comm
-    pub fn get_exe(self: *Self) Errors![]const u8 {
-        const content = try ProcFs.read_file(self.pid, ProcFs.FileType.Comm);
-        defer util.gpa.free(content);
-        return try util.strdup(
-            std.mem.trimRight(u8, content, &[2]u8{0, '\n'}),
-            error.FailedToGetProcessComm
-        );
+    pub fn get_exe_buf(self: *Self, buf: []u8) Errors![]const u8 {
+        const content = try ProcFs.read_file_buf(self.pid, buf, ProcFs.FileType.Comm);
+        const trimmed = std.mem.trimRight(u8, content, &[2]u8{0, '\n'});
+        return trimmed;
     }
 
 
@@ -269,35 +264,27 @@ pub const LinuxProcess = struct {
             return false;
         }
         // Can't check start time because it hasn't been set
+        var stat_buf: [4096]u8 = undefined;
+        const stats = ProcFs.read_file_buf(self.pid, &stat_buf, .Stat)
+            catch return false;
         if (self.starttime != 0) {
-            const stats = ProcFs.get_process_stats(self.pid)
-                catch return false;
-            defer stats.deinit();
             const starttime = get_starttime(stats)
                 catch return false;
             if (starttime != self.starttime) {
                 return false;
             }
         }
-        const state = self.get_process_state()
+        const state = get_process_state(stats)
             catch return false;
-        if (state != null and state.? == 'Z') {
+        if (state == 'Z') {
             return false;
         }
         return true;
     }
 
-    fn get_process_state(self: *Self) Errors!?u8 {
-        const stats = try ProcFs.get_process_stats(self.pid);
-        defer stats.deinit();
-
-        const state = stats.val[2][0]; // State is only one character
-        return state;
-    }
-
     pub fn get_memory(self: *Self) Errors!u64 {
-        const statm = try ProcFs.read_file(self.pid, ProcFs.FileType.Statm);
-        defer util.gpa.free(statm);
+        var buf: [128]u8 = undefined;
+        const statm = try ProcFs.read_file_buf(self.pid, &buf, ProcFs.FileType.Statm);
 
         var itr = std.mem.splitAny(u8, statm, " ");
         _ = itr.next();
@@ -314,13 +301,21 @@ pub const LinuxProcess = struct {
     pub fn get_runtime(self: *Self) Errors!u64 {
         const secs_since_epoch: u64 = @intCast(std.time.timestamp());
 
-        const stats = try ProcFs.get_process_stats(self.pid);
-        defer stats.deinit();
-        const starttime = std.fmt.parseInt(u64, stats.val[21], 10)
+        var content_buf: [4096]u8 = undefined;
+        const content = try ProcFs.read_file_buf(self.pid, &content_buf, .Stat);
+
+        var stat_buf: [4096]u8 = undefined;
+        const stat = try ProcFs.extract_stat_buf(&stat_buf, content, 21);
+
+        if (stat == null) {
+            return error.FailedToGetProcessRuntime;
+        }
+
+        const starttime = std.fmt.parseInt(u64, stat.?, 10)
             catch |err| return e.verbose_error(err, error.FailedToGetProcessRuntime);
 
-        const uptime = try ProcFs.read_file(null, ProcFs.FileType.RootUptime);
-        defer util.gpa.free(uptime);
+        var uptime_buf: [128]u8 = undefined;
+        const uptime = try ProcFs.read_file_buf(null, &uptime_buf, ProcFs.FileType.RootUptime);
 
         var split_str = std.mem.splitSequence(u8, uptime, " ");
         const secs_since_boot_str = split_str.next();
@@ -345,31 +340,72 @@ pub const LinuxProcess = struct {
         return secs_since_epoch - runtime;
     }
 
-    pub fn get_starttime(stats: ProcFs.Stats) Errors!u64 {
-        const starttime_str = stats.val[21];
-        const starttime: u64 = std.fmt.parseInt(u64, starttime_str, 10)
+    pub fn get_starttime(stats_content: []const u8) Errors!u64 {
+        var stat_buf: [4096]u8 = undefined;
+        const stat = try ProcFs.extract_stat_buf(&stat_buf, stats_content, 21);
+        if (stat == null) {
+            return error.FailedToGetProcessStarttime;
+        }
+        const starttime: u64 = std.fmt.parseInt(u64, stat.?, 10)
             catch return error.FailedToGetProcessStarttime;
         return starttime;
     }
 
-    pub fn get_sid(stats: ProcFs.Stats) Errors!Pid {
-        const sid_str = stats.val[5];
-        const sid: Pid = std.fmt.parseInt(Pid, sid_str, 10)
+    pub fn get_sid(stats_content: []const u8) Errors!Pid {
+        var stat_buf: [4096]u8 = undefined;
+        const stat = try ProcFs.extract_stat_buf(&stat_buf, stats_content, 5);
+        if (stat == null) {
+            return error.FailedToGetProcessStarttime;
+        }
+        const sid: Pid = std.fmt.parseInt(Pid, stat.?, 10)
             catch return error.FailedToGetProcessStarttime;
         return sid;
     }
 
-    pub fn get_pgrp(stats: ProcFs.Stats) Errors!Pid {
-        const pgrp_str = stats.val[4];
-        const pgrp: Pid = std.fmt.parseInt(Pid, pgrp_str, 10)
+    fn get_process_state(stats_content: []const u8) Errors!u8 {
+        var stat_buf: [4096]u8 = undefined;
+        const stat = try ProcFs.extract_stat_buf(&stat_buf, stats_content, 2);
+        if (stat == null or stat.?.len == 0) {
+            return error.FailedToGetProcessState;
+        }
+
+        const state = stat.?[0]; // State is only one character
+        return state;
+    }
+
+    pub fn get_ppid(stats_content: []const u8) Errors!Pid {
+        var stat_buf: [4096]u8 = undefined;
+        const stat = try ProcFs.extract_stat_buf(&stat_buf, stats_content, 3);
+        if (stat == null) {
+            return error.FailedToGetProcessStarttime;
+        }
+        const ppid: Pid = std.fmt.parseInt(Pid, stat.?, 10)
             catch return error.FailedToGetProcessStarttime;
+
+        return ppid;
+    }
+
+    pub fn get_pgrp(stats_content: []const u8) Errors!Pid {
+        var stat_buf: [4096]u8 = undefined;
+        const stat = try ProcFs.extract_stat_buf(&stat_buf, stats_content, 4);
+        if (stat == null) {
+            return error.FailedToGetProcessStarttime;
+        }
+        const pgrp: Pid = std.fmt.parseInt(Pid, stat.?, 10)
+            catch return error.FailedToGetProcessStarttime;
+
         return pgrp;
     }
 
     pub fn get_most_recent_pid() Errors!Pid {
-        const loadavg = try ProcFs.get_loadavg();
-        defer loadavg.deinit();
-        const pid = std.fmt.parseInt(Pid, loadavg.val[4], 10)
+        var content_buf: [128]u8 = undefined;
+        const content = try ProcFs.read_file_buf(null, &content_buf, .RootLoadavg);
+        var stat_buf: [4096]u8 = undefined;
+        const stat = try ProcFs.extract_stat_buf(&stat_buf, content, 4);
+        if (stat == null) {
+            return error.FailedToGetLoadavg;
+        }
+        const pid = std.fmt.parseInt(Pid, stat.?, 10)
             catch return error.FailedToGetLoadavg;
         try log.printdebug("Most recent pid: {d}", .{pid});
         return pid;
@@ -483,16 +519,12 @@ pub const LinuxProcess = struct {
             }
             if (exists) continue;
 
-            const stats = ProcFs.get_process_stats(pid)
-                catch continue;
-            defer stats.deinit();
+            var stat_buf: [4096]u8 = undefined;
+            const stats = try ProcFs.read_file_buf(pid, &stat_buf, .Stat);
 
-            const proc_ppid = std.fmt.parseInt(Pid, stats.val[3], 10)
-                catch return error.FailedToGetProcessStats;
-            const proc_pgrp = std.fmt.parseInt(Pid, stats.val[4], 10)
-                catch return error.FailedToGetProcessStats;
-            const proc_sid = std.fmt.parseInt(Pid, stats.val[5], 10)
-                catch return error.FailedToGetProcessStats;
+            const proc_ppid = try get_ppid(stats);
+            const proc_pgrp = try get_pgrp(stats);
+            const proc_sid = try get_sid(stats);
 
             if (ProcFs.proc_has_taskid_in_env(pid, self.task.id)) {
                 const new_proc = try Self.init(self.task, pid, .{

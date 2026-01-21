@@ -2,7 +2,6 @@ const libc = @import("../c.zig").libc;
 const std = @import("std");
 const util = @import("../util.zig");
 const SysTimes = util.SysTimes;
-const Lengths = util.Lengths;
 const Pid = util.Pid;
 
 const winutil = @import("./util.zig");

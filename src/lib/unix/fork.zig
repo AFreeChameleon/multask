@@ -19,6 +19,11 @@ const Files = t.Files;
 const Stats = @import("../task/stats.zig").Stats;
 const taskenv = @import("../task/env.zig");
 
+const read_command_std_output = @import("./logs.zig").read_command_std_output;
+const monitor_processes = @import("./refresh.zig").monitor_processes;
+
+const TaskFiles = @import("../task/file.zig").Files;
+
 const TaskLogger = @import("../task/logger.zig");
 const taskproc = @import("../task/process.zig");
 const Process = taskproc.Process;
@@ -30,7 +35,7 @@ const ChildProcess = std.process.Child;
 
 
 pub fn run_daemon(task: *Task, flags: ForkFlags) e.Errors!void {
-    try util.save_stats(task, &flags);
+    try TaskFiles.save_stats(task, &flags);
     // Set this to false for dev purposes
     if (true) {
         const process_id = libc.fork();
@@ -83,7 +88,7 @@ pub fn run_daemon(task: *Task, flags: ForkFlags) e.Errors!void {
         if (task.stats.?.memory_limit > 0) {
             try task.process.?.limit_memory(task.stats.?.memory_limit);
         }
-        try monitor_process(&child, task, task.stats.?.cpu_limit);
+        try spawn_worker_threads(&child, task);
         try taskproc.kill_all(&task.process.?);
         if (!task.stats.?.persist) {
             break;
@@ -99,162 +104,26 @@ pub fn run_daemon(task: *Task, flags: ForkFlags) e.Errors!void {
     }
 }
 
-fn monitor_process(
+fn spawn_worker_threads(
     child: *ChildProcess,
     task: *Task,
-    cpu_limit: util.CpuLimit,
 ) e.Errors!void {
-    try task.process.?.monitor_stats();
-    const mode = std.posix.pipe2(.{ .CLOEXEC = true })
-        catch return error.TaskFileFailedWrite;
-    defer std.posix.close(mode[0]);
-    defer std.posix.close(mode[1]);
+    var sleep_condition = std.Thread.Condition{};
+    var sleep_mutex = std.Thread.Mutex{};
+    const log_thread = std.Thread.spawn(.{ .allocator = util.gpa }, read_command_std_output, .{
+        child,
+        task,
+        &sleep_condition,
+    }) catch |err| return e.verbose_error(err, error.FailedToSpawnThread);
+    const monitor_thread = std.Thread.spawn(.{ .allocator = util.gpa }, monitor_processes, .{
+        task,
+        &sleep_condition,
+        &sleep_mutex,
+    }) catch |err| return e.verbose_error(err, error.FailedToSpawnThread);
 
-    var poller = std.io.poll(util.gpa, enum { stdout, stderr, mode }, .{
-        .stdout = child.stdout.?,
-        .stderr = child.stderr.?,
-        .mode = std.fs.File { .handle = mode[0] }
-    });
-    defer poller.deinit();
+    log_thread.join();
+    monitor_thread.join();
 
-    // Seeking to end to truncate logs
-    const outfile = try task.files.?.get_file("stdout");
-    defer outfile.close();
-    const errfile = try task.files.?.get_file("stderr");
-    defer errfile.close();
-    outfile.seekFromEnd(0)
-        catch |err| return e.verbose_error(err, error.CommandFailed);
-    errfile.seekFromEnd(0)
-        catch |err| return e.verbose_error(err, error.CommandFailed);
-    var stdout_writer = std.io.bufferedWriter(outfile.writer());
-    var stderr_writer = std.io.bufferedWriter(errfile.writer());
-    var out_new_line = true;
-    var err_new_line = true;
-
-    var cpu_sleeping = false;
-    var cpu_times: ?CpuLimitTimes = if (cpu_limit != 0)
-        get_cpu_limit_times(cpu_limit)
-    else null;
-
-    var timeout: i128 = if (cpu_times != null)
-        cpu_times.?.alive
-        else
-            1_000_000_000; // 1 second in nanoseconds
-    var monitor_time = std.time.nanoTimestamp();
-    var refresh_processes = false;
-    // Ctrl+C and interrupts will trigger this if not in forked
-    // And a bug will lead to an extra (), at the end of the processes file
-    while (
-        // Instead of polling every millisecond, we could do calculations
-        // For when the next second will be and set that
-        poller.pollTimeout(@intCast(timeout))
-            catch |err| return e.verbose_error(err, error.CommandFailed)
-    ) {
-        const existing_limits: ExistingLimits = ExistingLimits {
-            .mem = task.stats.?.memory_limit,
-            .cpu = task.stats.?.cpu_limit
-        };
-        const stdout_buffer = util.gpa.alloc(u8, poller.fifo(.stdout).readableLength())
-            catch |err| return e.verbose_error(err, error.CommandFailed);
-        defer util.gpa.free(stdout_buffer);
-        const stderr_buffer = util.gpa.alloc(u8, poller.fifo(.stderr).readableLength())
-            catch |err| return e.verbose_error(err, error.CommandFailed);
-        defer util.gpa.free(stderr_buffer);
-        _ = poller.fifo(.stdout).read(stdout_buffer);
-        _ = poller.fifo(.stderr).read(stderr_buffer);
-
-        // If there are no logs, this will be skipped
-        if (stdout_buffer.len > 0) {
-            try TaskLogger.write_timed_logs(
-                &out_new_line,
-                stdout_buffer,
-                @TypeOf(stdout_writer),
-                &stdout_writer
-            );
-        }
-        if (stderr_buffer.len > 0) {
-            try TaskLogger.write_timed_logs(
-                &err_new_line,
-                stderr_buffer,
-                @TypeOf(stderr_writer),
-                &stderr_writer
-            );
-        }
-
-        const current_time = std.time.nanoTimestamp();
-        var time: i128 = 1_000_000_000;
-        if (cpu_times != null) {
-            if (cpu_sleeping) {
-                time = cpu_times.?.sleep;
-            } else {
-                time = cpu_times.?.alive;
-            }
-        }
-
-        timeout = (monitor_time + time) - current_time;
-        if (timeout <= 0) {
-            refresh_processes = true;
-        }
-
-        if (refresh_processes) {
-            if (!task.process.?.proc_exists()) {
-                const saved_procs = try taskproc.get_running_saved_procs(&task.process.?);
-                defer util.gpa.free(saved_procs);
-                if (saved_procs.len == 0) {
-                    break;
-                }
-            }
-            if (cpu_times == null) {
-                try task.process.?.monitor_stats();
-                // Refresh process stats
-                const stats = try task.files.?.read_file(Stats);
-                if (stats == null) {
-                    return error.FailedToGetTaskStats;
-                }
-                task.stats.?.deinit();
-                task.stats = stats.?;
-                if (task.stats.?.memory_limit != existing_limits.mem) {
-                    try task.process.?.limit_memory(task.stats.?.memory_limit);
-                }
-                if (task.stats.?.cpu_limit != existing_limits.cpu) {
-                    cpu_times = get_cpu_limit_times(task.stats.?.cpu_limit);
-                }
-            } else {
-                if (cpu_sleeping) {
-                    // Only doing a monitor stats here as it'll be every second
-                    // and this code is designed to be run on a 1 second timer
-                    try task.process.?.monitor_stats();
-
-                    // Refresh process stats
-                    const stats = try task.files.?.read_file(Stats);
-                    if (stats == null) {
-                        return error.FailedToGetTaskStats;
-                    }
-                    task.stats.?.deinit();
-                    task.stats = stats.?;
-                    if (task.stats.?.memory_limit != existing_limits.mem) {
-                        try log.printdebug("Refresh lim {d} {d}", .{existing_limits.mem, task.stats.?.memory_limit});
-                        try task.process.?.limit_memory(task.stats.?.memory_limit);
-                    }
-                    if (task.stats.?.cpu_limit != existing_limits.cpu) {
-                        try log.printdebug("CPU Refresh lim {d} {d}", .{existing_limits.cpu, task.stats.?.cpu_limit});
-                        cpu_times = get_cpu_limit_times(task.stats.?.cpu_limit);
-                    }
-
-                    try task.process.?.set_all_status(.Active);
-                    cpu_sleeping = false;
-                    time = cpu_times.?.alive;
-                } else {
-                    try task.process.?.set_all_status(.Sleep);
-                    cpu_sleeping = true;
-                    time = cpu_times.?.sleep;
-                }
-            }
-            refresh_processes = false;
-            monitor_time = current_time;
-            timeout = (monitor_time + time) - current_time;
-        }
-    }
     try log.printdebug("No more saved processes are alive.", .{});
 }
 

@@ -2,7 +2,6 @@ const std = @import("std");
 const Task = @import("./index.zig").Task;
 
 const util = @import("../util.zig");
-const Lengths = util.Lengths;
 
 const e = @import("../error.zig");
 const Errors = e.Errors;
@@ -115,7 +114,9 @@ pub const Resources = struct {
     fn get_resources(task: *Task) Errors!Resources {
         const json_res = task.files.?.read_file(JSON_Resources)
             catch |err| switch (err) {
-                error.TaskFileFailedRead => return Resources.init(),
+                error.TaskFileFailedRead => {
+                    return Resources.init();
+                },
                 else => return err
             };
         if (json_res == null) {

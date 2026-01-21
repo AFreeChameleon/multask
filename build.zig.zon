@@ -1,7 +1,13 @@
 .{
     .name = .multask,
 
-    .version = "0.5.0",
+    .version = "0.5.1",
+    .dependencies = .{
+        .flute = .{
+            .url = "git+https://github.com/AFreeChameleon/flute/?ref=0.14#85e2f1112595bd5af681c1e7065842c737549c8f",
+            .hash = "flute-0.1.0-IAS_slCHAABuymro_wNw73bSy6aXewVPNRb_aXwCJjnM",
+        },
+    },
 
     .fingerprint = 0x31af05cbf4f60c8,
 

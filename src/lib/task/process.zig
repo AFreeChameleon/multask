@@ -13,6 +13,7 @@ const Errors = e.Errors;
 const f = @import("./file.zig");
 const ReadProcess = f.ReadProcess;
 const TaskReadProcess = f.TaskReadProcess;
+const Files = f.Files;
 
 const r = @import("./resources.zig");
 const Resources = r.Resources;
@@ -65,7 +66,11 @@ pub fn save_files(proc: *Process) Errors!void {
 
 fn save_processes(proc: *Process) Errors!void {
     try log.printdebug("Saving processes", .{});
-    try proc.task.files.?.clear_file(ReadProcess);
+    const file = try proc.task.files.?.get_file_locked(ReadProcess);
+    defer {
+        file.unlock();
+        file.close();
+    }
     var children_procs = util.gpa.alloc(
         ReadProcess,
         if (proc.children == null) 0 else proc.children.?.len
@@ -83,7 +88,7 @@ fn save_processes(proc: *Process) Errors!void {
     var read_proc = ReadProcess.init(proc, task_proc, children_procs);
     defer read_proc.deinit();
 
-    try proc.task.files.?.write_file(ReadProcess, read_proc);
+    try Files.write_file(&file, ReadProcess, read_proc);
 }
 
 fn save_resources(proc: *Process) Errors!void {
@@ -91,7 +96,13 @@ fn save_resources(proc: *Process) Errors!void {
         return error.FailedToGetProcesses;
     }
     try log.printdebug("Saving resources", .{});
-    try proc.task.files.?.clear_file(JSON_Resources);
+
+    const file = try proc.task.files.?.get_file_locked(JSON_Resources);
+    defer {
+        file.unlock();
+        file.close();
+    }
+
     var resources = Resources.init();
     defer resources.deinit();
     if (proc.proc_exists()) {
@@ -112,7 +123,7 @@ fn save_resources(proc: *Process) Errors!void {
 
     const json_resources = try resources.to_json();
     defer json_resources.deinit();
-    try proc.task.files.?.write_file(JSON_Resources, json_resources);
+    try Files.write_file(&file, JSON_Resources, json_resources);
 }
 
 /// Reads child processes in the `processes.json` file and checks
@@ -287,6 +298,12 @@ pub fn save_current_envs(task: *Task) Errors!std.process.EnvMap {
         catch |err| return e.verbose_error(err, error.FailedToGetEnvs);
     const json = try taskenv.serialise(env);
     defer json.deinit();
-    try task.files.?.write_file(JSON_Env, json);
+
+    const file = try task.files.?.get_file_locked(JSON_Env);
+    defer {
+        file.unlock();
+        file.close();
+    }
+    try Files.write_file(&file, JSON_Env, json);
     return env;
 }

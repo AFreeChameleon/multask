@@ -1,3 +1,4 @@
+const std = @import("std");
 const util = @import("../util.zig");
 const Errors = @import("../error.zig").Errors;
 const Monitoring = @import("./process.zig").Monitoring;

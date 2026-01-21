@@ -37,7 +37,7 @@ RSpec.describe "mlt ls" do
     stdout, _, _ = Open3.capture3 "#{FileHelpers.get_exe} ls"
     table = stdout.split("\n").last 6
 
-    first_task = table[3].split(/[\s,|]/).select { |el| not el.empty? }
+    first_task = table[3].split(/[\s,|,\u0000]/).select { |el| not el.empty? }
     expect(first_task[0]).to eq "1"
     expect(first_task[1]).to eq "N/A"
     expect(first_task[2]).to eq "echo"
@@ -48,7 +48,7 @@ RSpec.describe "mlt ls" do
     expect(first_task[8]).to include "N/A"
     expect(first_task[9]).to include "N/A"
 
-    second_task = table[4].split(/[\s,|]/).select { |el| not el.empty? }
+    second_task = table[4].split(/[\s,|,\u0000]/).select { |el| not el.empty? }
     expect(second_task[0]).to eq "2"
     expect(second_task[1]).to eq "N/A"
     expect(second_task[2]).to eq "echo"
@@ -95,7 +95,7 @@ RSpec.describe "mlt ls" do
     stdout, _, _ = Open3.capture3 "#{FileHelpers.get_exe} ls -s"
 
     table = stdout.split("\n").last 5
-    task = table[3].split(/[\s,|]/).select { |el| not el.empty? }
+    task = table[3].split(/[\s,|,\u0000]/).select { |el| not el.empty? }
     expect(task[0]).to eq "1"
     expect(task[1]).to eq "None"
     expect(task[2]).to eq "None"
@@ -112,7 +112,7 @@ RSpec.describe "mlt ls" do
     stdout, _, _ = Open3.capture3 "#{FileHelpers.get_exe} ls 1"
     table = stdout.split("\n").last 5
 
-    first_task = table[3].split(/[\s,|]/).select { |el| not el.empty? }
+    first_task = table[3].split(/[\s,|,\u0000]/).select { |el| not el.empty? }
     expect(first_task[0]).to eq "1"
     expect(first_task[1]).to eq "N/A"
     expect(first_task[2]).to eq "echo"
