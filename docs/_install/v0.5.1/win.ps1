@@ -1,5 +1,5 @@
 # Checking to migrate data - CANNOT run this because v0.4.2 doesnt allow redirecting content
-# irm "https://raw.githubusercontent.com/AFreeChameleon/multask-zig/refs/heads/develop-2/docs/_install/migration/check_migrations.ps1?token=GHSAT0AAAAAADGHQRJ52NNOOK7NYGSYKTTI2HFVYUQ" | iex
+irm "https://raw.githubusercontent.com/AFreeChameleon/multask/refs/tags/v0.5.1/docs/_install/migration/check_migrations.ps1" | iex
 
 # Downloading the exes
 curl https://github.com/AFreeChameleon/multask/releases/download/v0.5.1/multask-windows_x86_64.zip -o "$env:USERPROFILE\mlt-win.zip" | Out-Null
