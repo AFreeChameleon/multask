@@ -65,9 +65,18 @@ jobs:
             ./multask-linux_x86_64.tar.gz
             ./multask-linux_arm64.tar.gz
 
-      # - name: Build Windows
-      #   if: runner.os == 'Windows'
-      #   run: zig build -Doptimize=ReleaseSmall -p ./zig-out/x86 -Dtarget=x86_64-windows
+      - name: Build Windows
+        if: runner.os == 'Windows'
+        run: |
+          zig build -Doptimize=ReleaseSmall -p ./zig-out/x86 -Dtarget=x86_64-windows
+          Compress-Archive -Path .\zig-out\bin\mlt.exe .\zig-out\bin\spawn.exe .\zig-out\bin\mlt_bg.exe -DestinationPath .\multask-windows_x86_64.zip
+
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows'
+        with:
+          name: multask-windows
+          path: |
+            ./multask-windows_x86_64.tar.gz
 
       # # Sign binary Windows
       # - name: Sign binary (Windows)
@@ -88,23 +97,3 @@ jobs:
       #   run: |
       #     mkdir dist
       #     Compress-Archive -Path .\zig-out\bin\mlt.exe .\zig-out\bin\spawn.exe .\zig-out\bin\mlt_bg.exe -DestinationPath .\dist\multask-windows_x86_64.zip
-
-      # - name: Compress binary in Linux
-      #   if: runner.os == 'Linux'
-      #   run: |
-      #     mkdir -p dist
-      #     tar -czvf ./dist/multask-linux_x86_64.tar.gz ./zig-out/x86/bin/mlt
-      #     tar -czvf ./dist/multask-linux_arm64.tar.gz ./zig-out/arm64/bin/mlt 
-
-      # - name: Compress binary in macOS
-      #   if: runner.os == 'macOS'
-      #   run: |
-      #     mkdir -p dist
-      #     tar -czvf ./dist/multask-macos_x86_64.tar.gz ./zig-out/x86/bin/mlt
-      #     tar -czvf ./dist/multask-macos_arm64.tar.gz ./zig-out/arm64/bin/mlt
-      # 
-      # - name: Upload compressed artifact
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: multask-${{ runner.os }}
-      #     path: dist/
