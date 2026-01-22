@@ -6,14 +6,18 @@ on:
       branch_name:
         description: 'The branch to run the workflow'
         required: true
-        default: 'master'
+        default: 'add-binary-action'
         type: string
 
 jobs:
   compile-binaries:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [
+          ubuntu-latest,
+          macos-latest,
+          # windows-latest
+        ]
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -37,30 +41,39 @@ jobs:
         run: |
           zig build -Doptimize=ReleaseSmall -p ./zig-out/x86 -Dtarget=x86_64-linux-gnu
           zig build -Doptimize=ReleaseSmall -p ./zig-out/arm64 -Dtarget=aarch64-linux-gnu
+          tar -czvf ./multask-linux_x86_64.tar.gz -C ./zig-out/x86/bin mlt
+          tar -czvf ./multask-linux_arm64.tar.gz -C ./zig-out/arm64/bin mlt
 
-      - name: Build Windows
-        if: runner.os == 'Windows'
-        run: zig build -Doptimize=ReleaseSmall -p ./zig-out/x86 -Dtarget=x86_64-windows
+      - uses: actions/upload-artifact@v4
+        with:
+          name: multask-linux
+          path: |
+            ./multask-linux_x86_64.tar.gz
+            ./multask-linux_arm64.tar.gz
 
-      # Sign binary Windows
-      - name: Sign binary (Windows)
-        if: runner.os == 'Windows'
-        env:
-          CERT_FILE: ${{ github.workspace }}\cert.pfx
-          CERT_PASSWORD: ${{ secrets.CERT_PASSWORD }}
-        run: |
-          echo "${{ secrets.CERT_BASE64 }}" | base64 -d > $env:CERT_FILE
-          signtool sign /f "$env:CERT_FILE" /p "$env:CERT_PASSWORD" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\mlt.exe
-          signtool sign /f "$env:CERT_FILE" /p "$env:CERT_PASSWORD" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\spawn.exe
-          signtool sign /f "$env:CERT_FILE" /p "$env:CERT_PASSWORD" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\mlt_bg.exe
-          del $env:CERT_FILE
+      # - name: Build Windows
+      #   if: runner.os == 'Windows'
+      #   run: zig build -Doptimize=ReleaseSmall -p ./zig-out/x86 -Dtarget=x86_64-windows
 
-      # Compress
-      - name: Compress binary in Windows
-        if: runner.os == 'Windows'
-        run: |
-          mkdir dist
-          Compress-Archive -Path .\zig-out\bin\mlt.exe .\zig-out\bin\spawn.exe .\zig-out\bin\mlt_bg.exe -DestinationPath .\dist\multask-windows_x86_64.zip
+      # # Sign binary Windows
+      # - name: Sign binary (Windows)
+      #   if: runner.os == 'Windows'
+      #   env:
+      #     CERT_FILE: ${{ github.workspace }}\cert.pfx
+      #     CERT_PASSWORD: ${{ secrets.CERT_PASSWORD }}
+      #   run: |
+      #     echo "${{ secrets.CERT_BASE64 }}" | base64 -d > $env:CERT_FILE
+      #     signtool sign /f "$env:CERT_FILE" /p "$env:CERT_PASSWORD" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\mlt.exe
+      #     signtool sign /f "$env:CERT_FILE" /p "$env:CERT_PASSWORD" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\spawn.exe
+      #     signtool sign /f "$env:CERT_FILE" /p "$env:CERT_PASSWORD" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\mlt_bg.exe
+      #     del $env:CERT_FILE
+
+      # # Compress
+      # - name: Compress binary in Windows
+      #   if: runner.os == 'Windows'
+      #   run: |
+      #     mkdir dist
+      #     Compress-Archive -Path .\zig-out\bin\mlt.exe .\zig-out\bin\spawn.exe .\zig-out\bin\mlt_bg.exe -DestinationPath .\dist\multask-windows_x86_64.zip
 
       - name: Compress binary in Linux
         if: runner.os == 'Linux'
