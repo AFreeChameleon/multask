@@ -29,13 +29,26 @@ jobs:
         with:
           version: 0.14.1
       
-      # Build
+
+      # Macos
       - name: Build macOS
         if: runner.os == 'macOS'
         run: |
           zig build -Doptimize=ReleaseSmall -p ./zig-out/x86 -Dtarget=x86_64-macos
           zig build -Doptimize=ReleaseSmall -p ./zig-out/arm64 -Dtarget=aarch64-macos
+          tar -czvf ./multask-macos_x86_64.tar.gz -C ./zig-out/x86/bin mlt
+          tar -czvf ./multask-macos_arm64.tar.gz -C ./zig-out/arm64/bin mlt
 
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'macOS'
+        with:
+          name: multask-macos
+          path: |
+            ./multask-macos_x86_64.tar.gz
+            ./multask-macos_arm64.tar.gz
+
+
+      # Linux
       - name: Build Linux
         if: runner.os == 'Linux'
         run: |
@@ -45,6 +58,7 @@ jobs:
           tar -czvf ./multask-linux_arm64.tar.gz -C ./zig-out/arm64/bin mlt
 
       - uses: actions/upload-artifact@v4
+        if: runner.os == 'Linux'
         with:
           name: multask-linux
           path: |
