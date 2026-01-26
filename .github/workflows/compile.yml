@@ -5,8 +5,6 @@ on:
     branches:
       - "add-binary-action"
   pull_request:
-    branches:
-      - "add-binary-action"
   # workflow_dispatch:
     # inputs:
     #   branch_name:
