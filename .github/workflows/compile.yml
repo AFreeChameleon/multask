@@ -1,7 +1,13 @@
 name: Compile binaries for Macos, Linux and Windows
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - "add-binary-action"
+  pull_request:
+    branches:
+      - "add-binary-action"
+  # workflow_dispatch:
     # inputs:
     #   branch_name:
     #     description: 'The branch to run the workflow'
