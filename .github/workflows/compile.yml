@@ -2,18 +2,16 @@ name: Compile binaries for Macos, Linux and Windows
 
 on:
   workflow_dispatch:
-    inputs:
-      branch_name:
-        description: 'The branch to run the workflow'
-        required: true
-        default: 'master'
-        type: string
 
 jobs:
   compile-binaries:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [
+          ubuntu-latest,
+          macos-latest,
+          windows-latest
+        ]
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -25,59 +23,64 @@ jobs:
         with:
           version: 0.14.1
       
-      # Build
+
+      # Macos
       - name: Build macOS
         if: runner.os == 'macOS'
         run: |
           zig build -Doptimize=ReleaseSmall -p ./zig-out/x86 -Dtarget=x86_64-macos
           zig build -Doptimize=ReleaseSmall -p ./zig-out/arm64 -Dtarget=aarch64-macos
+          tar -czvf ./multask-macos_x86_64.tar.gz -C ./zig-out/x86/bin mlt
+          tar -czvf ./multask-macos_arm64.tar.gz -C ./zig-out/arm64/bin mlt
 
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'macOS'
+        with:
+          name: multask-macos
+          path: |
+            ./multask-macos_x86_64.tar.gz
+            ./multask-macos_arm64.tar.gz
+
+      # Linux
       - name: Build Linux
         if: runner.os == 'Linux'
         run: |
           zig build -Doptimize=ReleaseSmall -p ./zig-out/x86 -Dtarget=x86_64-linux-gnu
           zig build -Doptimize=ReleaseSmall -p ./zig-out/arm64 -Dtarget=aarch64-linux-gnu
+          tar -czvf ./multask-linux_x86_64.tar.gz -C ./zig-out/x86/bin mlt
+          tar -czvf ./multask-linux_arm64.tar.gz -C ./zig-out/arm64/bin mlt
+
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Linux'
+        with:
+          name: multask-linux
+          path: |
+            ./multask-linux_x86_64.tar.gz
+            ./multask-linux_arm64.tar.gz
+
+      # Windows
+      - uses: KamaranL/add-signtool-action@v1
+        id: signtool
 
       - name: Build Windows
         if: runner.os == 'Windows'
-        run: zig build -Doptimize=ReleaseSmall -p ./zig-out/x86 -Dtarget=x86_64-windows
-
-      # Sign binary Windows
-      - name: Sign binary (Windows)
-        if: runner.os == 'Windows'
-        env:
-          CERT_FILE: ${{ github.workspace }}\cert.pfx
-          CERT_PASSWORD: ${{ secrets.CERT_PASSWORD }}
-        run: |
-          echo "${{ secrets.CERT_BASE64 }}" | base64 -d > $env:CERT_FILE
-          signtool sign /f "$env:CERT_FILE" /p "$env:CERT_PASSWORD" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\mlt.exe
-          signtool sign /f "$env:CERT_FILE" /p "$env:CERT_PASSWORD" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\spawn.exe
-          signtool sign /f "$env:CERT_FILE" /p "$env:CERT_PASSWORD" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\mlt_bg.exe
-          del $env:CERT_FILE
-
-      # Compress
-      - name: Compress binary in Windows
-        if: runner.os == 'Windows'
-        run: |
-          mkdir dist
-          Compress-Archive -Path .\zig-out\bin\mlt.exe .\zig-out\bin\spawn.exe .\zig-out\bin\mlt_bg.exe -DestinationPath .\dist\multask-windows_x86_64.zip
-
-      - name: Compress binary in Linux
-        if: runner.os == 'Linux'
-        run: |
-          mkdir -p dist
-          tar -czvf ./dist/multask-linux_x86_64.tar.gz ./zig-out/x86/bin/mlt
-          tar -czvf ./dist/multask-linux_arm64.tar.gz ./zig-out/arm64/bin/mlt 
-
-      - name: Compress binary in macOS
-        if: runner.os == 'macOS'
-        run: |
-          mkdir -p dist
-          tar -czvf ./dist/multask-macos_x86_64.tar.gz ./zig-out/x86/bin/mlt
-          tar -czvf ./dist/multask-macos_arm64.tar.gz ./zig-out/arm64/bin/mlt
-      
-      - name: Upload compressed artifact
-        uses: actions/upload-artifact@v4
         with:
-          name: multask-${{ runner.os }}
-          path: dist/
+          cert_pass: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        env:
+          SIGNTOOL_DIR: ${{ steps.signtool.outputs.signtool-x64 }}
+        run: |
+          echo "$env:SIGNTOOL_DIR"
+          echo "signtool-${{ runner.arch }}"
+          curl "https://drive.google.com/uc?export=download&id=1a8mriGuORHYSbLpmTtIicDycApdXy1Br" -o cert_file.pfx
+          zig build -Doptimize=ReleaseSmall -p ./zig-out/x86 -Dtarget=x86_64-windows
+          $env:SIGNTOOL_DIR\signtool-${{ runner.arch }} sign /f cert_file.pfx /p "$cert_pass" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\mlt.exe
+          $env:SIGNTOOL_DIR\signtool-${{ runner.arch }} sign /f cert_file.pfx /p "$cert_pass" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\spawn.exe
+          $env:SIGNTOOL_DIR\signtool-${{ runner.arch }} sign /f cert_file.pfx /p "$cert_pass" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\mlt_bg.exe
+          Compress-Archive -Path .\zig-out\bin\mlt.exe .\zig-out\bin\spawn.exe .\zig-out\bin\mlt_bg.exe -DestinationPath .\multask-windows_x86_64.zip
+
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows'
+        with:
+          name: multask-windows
+          path: |
+            ./multask-windows_x86_64.zip
