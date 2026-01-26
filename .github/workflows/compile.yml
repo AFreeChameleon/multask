@@ -65,11 +65,18 @@ jobs:
             ./multask-linux_arm64.tar.gz
 
       # Windows
+      - uses: KamaranL/add-signtool-action@v1
+        id: signtool
+
       - name: Build Windows
         if: runner.os == 'Windows'
         with:
           cert_pass: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        env:
+          SIGNTOOL_DIR: ${{ steps.signtool.outputs.signtool-x64 }}
         run: |
+          echo "$env:SIGNTOOL_DIR"
+          echo "signtool-${{ runner.arch }}"
           curl "https://drive.google.com/uc?export=download&id=1a8mriGuORHYSbLpmTtIicDycApdXy1Br" -o cert_file.pfx
           zig build -Doptimize=ReleaseSmall -p ./zig-out/x86 -Dtarget=x86_64-windows
           signtool sign /f cert_file.pfx /p "$cert_pass" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\mlt.exe
