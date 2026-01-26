@@ -1,9 +1,7 @@
 name: Compile binaries for Macos, Linux and Windows
 
 on:
-  push:
-  pull_request:
-  # workflow_dispatch:
+  workflow_dispatch:
     # inputs:
     #   branch_name:
     #     description: 'The branch to run the workflow'
@@ -81,9 +79,9 @@ jobs:
           echo "signtool-${{ runner.arch }}"
           curl "https://drive.google.com/uc?export=download&id=1a8mriGuORHYSbLpmTtIicDycApdXy1Br" -o cert_file.pfx
           zig build -Doptimize=ReleaseSmall -p ./zig-out/x86 -Dtarget=x86_64-windows
-          signtool sign /f cert_file.pfx /p "$cert_pass" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\mlt.exe
-          signtool sign /f cert_file.pfx /p "$cert_pass" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\spawn.exe
-          signtool sign /f cert_file.pfx /p "$cert_pass" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\mlt_bg.exe
+          $env:SIGNTOOL_DIR\signtool-${{ runner.arch }} sign /f cert_file.pfx /p "$cert_pass" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\mlt.exe
+          $env:SIGNTOOL_DIR\signtool-${{ runner.arch }} sign /f cert_file.pfx /p "$cert_pass" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\spawn.exe
+          $env:SIGNTOOL_DIR\signtool-${{ runner.arch }} sign /f cert_file.pfx /p "$cert_pass" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\mlt_bg.exe
           Compress-Archive -Path .\zig-out\bin\mlt.exe .\zig-out\bin\spawn.exe .\zig-out\bin\mlt_bg.exe -DestinationPath .\multask-windows_x86_64.zip
 
       - uses: actions/upload-artifact@v4
