@@ -2,12 +2,12 @@ name: Compile binaries for Macos, Linux and Windows
 
 on:
   workflow_dispatch:
-    inputs:
-      branch_name:
-        description: 'The branch to run the workflow'
-        required: true
-        default: 'add-binary-action'
-        type: string
+    # inputs:
+    #   branch_name:
+    #     description: 'The branch to run the workflow'
+    #     required: true
+    #     default: 'add-binary-action'
+    #     type: string
 
 jobs:
   compile-binaries:
