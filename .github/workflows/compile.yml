@@ -2,8 +2,6 @@ name: Compile binaries for Macos, Linux and Windows
 
 on:
   push:
-    branches:
-      - "add-binary-action"
   pull_request:
   # workflow_dispatch:
     # inputs:
