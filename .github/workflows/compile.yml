@@ -16,7 +16,7 @@ jobs:
         os: [
           ubuntu-latest,
           macos-latest,
-          # windows-latest
+          windows-latest
         ]
     runs-on: ${{ matrix.os }}
 
@@ -47,7 +47,6 @@ jobs:
             ./multask-macos_x86_64.tar.gz
             ./multask-macos_arm64.tar.gz
 
-
       # Linux
       - name: Build Linux
         if: runner.os == 'Linux'
@@ -65,10 +64,17 @@ jobs:
             ./multask-linux_x86_64.tar.gz
             ./multask-linux_arm64.tar.gz
 
+      # Windows
       - name: Build Windows
         if: runner.os == 'Windows'
+        with:
+          cert_pass: ${{ secrets.WINDOWS_CERT_PASSWORD }}
         run: |
+          curl "https://drive.google.com/uc?export=download&id=1a8mriGuORHYSbLpmTtIicDycApdXy1Br" -o cert_file.pfx
           zig build -Doptimize=ReleaseSmall -p ./zig-out/x86 -Dtarget=x86_64-windows
+          signtool sign /f cert_file.pfx /p "$cert_pass" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\mlt.exe
+          signtool sign /f cert_file.pfx /p "$cert_pass" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\spawn.exe
+          signtool sign /f cert_file.pfx /p "$cert_pass" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\mlt_bg.exe
           Compress-Archive -Path .\zig-out\bin\mlt.exe .\zig-out\bin\spawn.exe .\zig-out\bin\mlt_bg.exe -DestinationPath .\multask-windows_x86_64.zip
 
       - uses: actions/upload-artifact@v4
@@ -76,24 +82,4 @@ jobs:
         with:
           name: multask-windows
           path: |
-            ./multask-windows_x86_64.tar.gz
-
-      # # Sign binary Windows
-      # - name: Sign binary (Windows)
-      #   if: runner.os == 'Windows'
-      #   env:
-      #     CERT_FILE: ${{ github.workspace }}\cert.pfx
-      #     CERT_PASSWORD: ${{ secrets.CERT_PASSWORD }}
-      #   run: |
-      #     echo "${{ secrets.CERT_BASE64 }}" | base64 -d > $env:CERT_FILE
-      #     signtool sign /f "$env:CERT_FILE" /p "$env:CERT_PASSWORD" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\mlt.exe
-      #     signtool sign /f "$env:CERT_FILE" /p "$env:CERT_PASSWORD" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\spawn.exe
-      #     signtool sign /f "$env:CERT_FILE" /p "$env:CERT_PASSWORD" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\mlt_bg.exe
-      #     del $env:CERT_FILE
-
-      # # Compress
-      # - name: Compress binary in Windows
-      #   if: runner.os == 'Windows'
-      #   run: |
-      #     mkdir dist
-      #     Compress-Archive -Path .\zig-out\bin\mlt.exe .\zig-out\bin\spawn.exe .\zig-out\bin\mlt_bg.exe -DestinationPath .\dist\multask-windows_x86_64.zip
+            ./multask-windows_x86_64.zip
