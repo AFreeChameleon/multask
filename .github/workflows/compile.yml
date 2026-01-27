@@ -60,6 +60,7 @@ jobs:
 
       # Windows
       - uses: KamaranL/add-signtool-action@v1
+        if: runner.os == 'Windows'
         id: signtool
 
       - name: Build Windows
