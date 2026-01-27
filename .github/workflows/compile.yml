@@ -75,11 +75,6 @@ jobs:
       - name: Build Windows
         if: runner.os == 'Windows'
         shell: pwsh
-        # env:
-        #   CERT_PASS: ${{ secrets.WINDOWS_CERT_PASSWORD }}
-        # signtool.exe sign /f cert_file.pfx /p ${{ secrets.WINDOWS_CERT_PASSWORD }} /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\mlt.exe
-        # signtool.exe sign /f cert_file.pfx /p ${{ secrets.WINDOWS_CERT_PASSWORD }} /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\spawn.exe
-        # signtool.exe sign /f cert_file.pfx /p ${{ secrets.WINDOWS_CERT_PASSWORD }} /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\mlt_bg.exe
         run: |
           zig build -Doptimize=ReleaseSmall -p ./zig-out/x86 -Dtarget=x86_64-windows
           signtool sign /fd SHA256 /f ".\cert_file.pfx" /p ${{ secrets.WINDOWS_CERT_PASSWORD }} .\zig-out\x86\bin\mlt.exe
