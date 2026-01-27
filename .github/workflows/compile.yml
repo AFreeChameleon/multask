@@ -72,6 +72,7 @@ jobs:
 
       - name: Build Windows
         if: runner.os == 'Windows'
+        shell: pwsh
         env:
           CERT_PASS: ${{ secrets.WINDOWS_CERT_PASSWORD }}
           SIGNTOOL_DIR: ${{ steps.signtool.outputs.signtool-x64 }}
@@ -79,9 +80,9 @@ jobs:
           echo "$env:SIGNTOOL_DIR"
           echo "signtool-${{ runner.arch }}"
           zig build -Doptimize=ReleaseSmall -p ./zig-out/x86 -Dtarget=x86_64-windows
-          $env:SIGNTOOL_DIR\signtool-${{ runner.arch }} sign /f cert_file.pfx /p "$env:CERT_PASS" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\mlt.exe
-          $env:SIGNTOOL_DIR\signtool-${{ runner.arch }} sign /f cert_file.pfx /p "$env:CERT_PASS" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\spawn.exe
-          $env:SIGNTOOL_DIR\signtool-${{ runner.arch }} sign /f cert_file.pfx /p "$env:CERT_PASS" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\mlt_bg.exe
+          & "$env:SIGNTOOL_DIR\signtool-${{ runner.arch }}" sign /f cert_file.pfx /p "$env:CERT_PASS" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\mlt.exe
+          & "$env:SIGNTOOL_DIR\signtool-${{ runner.arch }}" sign /f cert_file.pfx /p "$env:CERT_PASS" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\spawn.exe
+          & "$env:SIGNTOOL_DIR\signtool-${{ runner.arch }}" sign /f cert_file.pfx /p "$env:CERT_PASS" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\mlt_bg.exe
           Compress-Archive -Path .\zig-out\bin\mlt.exe .\zig-out\bin\spawn.exe .\zig-out\bin\mlt_bg.exe -DestinationPath .\multask-windows_x86_64.zip
           Remove-Item cert_file.pfx
 
