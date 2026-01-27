@@ -36,6 +36,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: runner.os == 'macOS'
         with:
+          retention-days: 1
           name: multask-macos
           path: |
             ./multask-macos_x86_64.tar.gz
@@ -53,6 +54,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: runner.os == 'Linux'
         with:
+          retention-days: 1
           name: multask-linux
           path: |
             ./multask-linux_x86_64.tar.gz
@@ -60,27 +62,31 @@ jobs:
 
       # Windows
       - uses: KamaranL/add-signtool-action@v1
+        if: runner.os == 'Windows'
         id: signtool
+
+      - name: Restore Windows cert
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $bytes = [Convert]::FromBase64String("${{ secrets.WINDOWS_CERT }}")
+          [IO.File]::WriteAllBytes("cert_file.pfx", $bytes)
 
       - name: Build Windows
         if: runner.os == 'Windows'
-        with:
-          cert_pass: ${{ secrets.WINDOWS_CERT_PASSWORD }}
-        env:
-          SIGNTOOL_DIR: ${{ steps.signtool.outputs.signtool-x64 }}
+        shell: pwsh
         run: |
-          echo "$env:SIGNTOOL_DIR"
-          echo "signtool-${{ runner.arch }}"
-          curl "https://drive.google.com/uc?export=download&id=1a8mriGuORHYSbLpmTtIicDycApdXy1Br" -o cert_file.pfx
           zig build -Doptimize=ReleaseSmall -p ./zig-out/x86 -Dtarget=x86_64-windows
-          $env:SIGNTOOL_DIR\signtool-${{ runner.arch }} sign /f cert_file.pfx /p "$cert_pass" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\mlt.exe
-          $env:SIGNTOOL_DIR\signtool-${{ runner.arch }} sign /f cert_file.pfx /p "$cert_pass" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\spawn.exe
-          $env:SIGNTOOL_DIR\signtool-${{ runner.arch }} sign /f cert_file.pfx /p "$cert_pass" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\mlt_bg.exe
-          Compress-Archive -Path .\zig-out\bin\mlt.exe .\zig-out\bin\spawn.exe .\zig-out\bin\mlt_bg.exe -DestinationPath .\multask-windows_x86_64.zip
+          signtool sign /fd SHA256 /f ".\cert_file.pfx" /p ${{ secrets.WINDOWS_CERT_PASSWORD }} .\zig-out\x86\bin\mlt.exe
+          signtool sign /fd SHA256 /f ".\cert_file.pfx" /p ${{ secrets.WINDOWS_CERT_PASSWORD }} .\zig-out\x86\bin\spawn.exe
+          signtool sign /fd SHA256 /f ".\cert_file.pfx" /p ${{ secrets.WINDOWS_CERT_PASSWORD }} .\zig-out\x86\bin\mlt_bg.exe
+          Compress-Archive -Path @(".\zig-out\x86\bin\mlt.exe", ".\zig-out\x86\bin\spawn.exe", ".\zig-out\x86\bin\mlt_bg.exe") -DestinationPath .\multask-windows_x86_64.zip
+          Remove-Item cert_file.pfx
 
       - uses: actions/upload-artifact@v4
         if: runner.os == 'Windows'
         with:
+          retention-days: 1
           name: multask-windows
           path: |
-            ./multask-windows_x86_64.zip
+            .\multask-windows_x86_64.zip
