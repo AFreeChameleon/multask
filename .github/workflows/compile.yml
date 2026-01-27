@@ -36,6 +36,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: runner.os == 'macOS'
         with:
+          retention_days: 1
           name: multask-macos
           path: |
             ./multask-macos_x86_64.tar.gz
@@ -53,6 +54,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: runner.os == 'Linux'
         with:
+          retention_days: 1
           name: multask-linux
           path: |
             ./multask-linux_x86_64.tar.gz
@@ -87,6 +89,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: runner.os == 'Windows'
         with:
+          retention_days: 1
           name: multask-windows
           path: |
             ./multask-windows_x86_64.zip
