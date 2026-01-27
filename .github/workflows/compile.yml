@@ -75,14 +75,16 @@ jobs:
       - name: Build Windows
         if: runner.os == 'Windows'
         shell: pwsh
-        env:
-          CERT_PASS: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        # env:
+        #   CERT_PASS: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        # signtool.exe sign /f cert_file.pfx /p ${{ secrets.WINDOWS_CERT_PASSWORD }} /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\mlt.exe
+        # signtool.exe sign /f cert_file.pfx /p ${{ secrets.WINDOWS_CERT_PASSWORD }} /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\spawn.exe
+        # signtool.exe sign /f cert_file.pfx /p ${{ secrets.WINDOWS_CERT_PASSWORD }} /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\mlt_bg.exe
         run: |
-          where signtool
           zig build -Doptimize=ReleaseSmall -p ./zig-out/x86 -Dtarget=x86_64-windows
-          signtool.exe sign /f cert_file.pfx /p "$env:CERT_PASS" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\mlt.exe
-          signtool.exe sign /f cert_file.pfx /p "$env:CERT_PASS" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\spawn.exe
-          signtool.exe sign /f cert_file.pfx /p "$env:CERT_PASS" /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\mlt_bg.exe
+          signtool sign /fd SHA256 /f ".\cert_file.pfx" /p ${{ secrets.WINDOWS_CERT_PASSWORD }} .\mlt.exe
+          signtool sign /fd SHA256 /f ".\cert_file.pfx" /p ${{ secrets.WINDOWS_CERT_PASSWORD }} .\spawn.exe
+          signtool sign /fd SHA256 /f ".\cert_file.pfx" /p ${{ secrets.WINDOWS_CERT_PASSWORD }} .\mlt_bg.exe
           Compress-Archive -Path .\zig-out\bin\mlt.exe .\zig-out\bin\spawn.exe .\zig-out\bin\mlt_bg.exe -DestinationPath .\multask-windows_x86_64.zip
           Remove-Item cert_file.pfx
 
