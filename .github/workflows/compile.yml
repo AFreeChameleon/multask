@@ -82,10 +82,10 @@ jobs:
         # signtool.exe sign /f cert_file.pfx /p ${{ secrets.WINDOWS_CERT_PASSWORD }} /tr http://timestamp.digicert.com /td sha256 /fd sha256 zig-out\bin\mlt_bg.exe
         run: |
           zig build -Doptimize=ReleaseSmall -p ./zig-out/x86 -Dtarget=x86_64-windows
-          signtool sign /fd SHA256 /f ".\cert_file.pfx" /p ${{ secrets.WINDOWS_CERT_PASSWORD }} zig-out\bin\mlt.exe
-          signtool sign /fd SHA256 /f ".\cert_file.pfx" /p ${{ secrets.WINDOWS_CERT_PASSWORD }} zig-out\bin\spawn.exe
-          signtool sign /fd SHA256 /f ".\cert_file.pfx" /p ${{ secrets.WINDOWS_CERT_PASSWORD }} zig-out\bin\mlt_bg.exe
-          Compress-Archive -Path .\zig-out\bin\mlt.exe .\zig-out\bin\spawn.exe .\zig-out\bin\mlt_bg.exe -DestinationPath .\multask-windows_x86_64.zip
+          signtool sign /fd SHA256 /f ".\cert_file.pfx" /p ${{ secrets.WINDOWS_CERT_PASSWORD }} .\zig-out\bin\mlt.exe
+          signtool sign /fd SHA256 /f ".\cert_file.pfx" /p ${{ secrets.WINDOWS_CERT_PASSWORD }} .\zig-out\bin\spawn.exe
+          signtool sign /fd SHA256 /f ".\cert_file.pfx" /p ${{ secrets.WINDOWS_CERT_PASSWORD }} .\zig-out\bin\mlt_bg.exe
+          Compress-Archive -Path @(".\zig-out\bin\mlt.exe", ".\zig-out\bin\spawn.exe", ".\zig-out\bin\mlt_bg.exe") -DestinationPath .\multask-windows_x86_64.zip
           Remove-Item cert_file.pfx
 
       - uses: actions/upload-artifact@v4
@@ -94,4 +94,4 @@ jobs:
           retention_days: 1
           name: multask-windows
           path: |
-            ./multask-windows_x86_64.zip
+            .\multask-windows_x86_64.zip
