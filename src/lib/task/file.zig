@@ -500,6 +500,7 @@ pub const Files = struct {
                 reader = &err_reader;
                 log_buf = &err_buf;
             }
+            // new_content_buf = std.mem.zeroes(@TypeOf(new_content_buf));
             while (true) {
                 new_content_buf = std.mem.zeroes(@TypeOf(new_content_buf));
                 _ = reader.readUntilDelimiterOrEof(&new_content_buf, '\n')
