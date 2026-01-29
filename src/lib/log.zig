@@ -55,6 +55,12 @@ pub fn printdebug(comptime text: []const u8, args: anytype) e.Errors!void {
     }
 }
 
+pub fn print(comptime text: []const u8, args: anytype) e.Errors!void {
+    const stdout = std.io.getStdOut().writer();
+    stdout.print(" " ++ text ++ "\n", args)
+        catch return error.InternalLoggingFailed;
+}
+
 pub fn printinfo(comptime text: []const u8, args: anytype) e.Errors!void {
     const stdout = std.io.getStdOut().writer();
     const colour_str = flute.format.string.colorStringComptime(.{0, 51, 255}, "[INFO]");
