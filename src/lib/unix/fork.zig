@@ -37,7 +37,7 @@ const ChildProcess = std.process.Child;
 pub fn run_daemon(task: *Task, flags: ForkFlags) e.Errors!void {
     try TaskFiles.save_stats(task, &flags);
     // Set this to false for dev purposes
-    if (false) {
+    if (true) {
         const process_id = libc.fork();
 
         // Failed fork

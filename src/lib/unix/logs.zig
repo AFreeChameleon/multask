@@ -27,8 +27,6 @@ pub fn read_command_std_output(
     try inner_read_command_std_output(child, task, sleep_condition);
 }
 
-const FIONREAD = 0x467F;
-
 fn inner_read_command_std_output(
     child: *ChildProcess,
     task: *Task,
