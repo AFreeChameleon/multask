@@ -1,7 +1,7 @@
 .{
     .name = .multask,
 
-    .version = "0.5.1",
+    .version = "0.5.2",
     .dependencies = .{
         .flute = .{
             .url = "git+https://github.com/AFreeChameleon/flute/?ref=main#83dc3a99e1bbb193264f9924c610fcff3c509c53",
