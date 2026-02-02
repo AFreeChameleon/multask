@@ -57,41 +57,65 @@ fn inner_read_command_std_output(
     var out_newline = true;
     var err_newline = true;
 
+    var out_fbs = std.io.fixedBufferStream(&out_buffer);
+    var out_bufw = std.io.bufferedWriter(out_fbs.writer());
+    const out_bufw_writer = &out_bufw.writer();
+
+    var err_fbs = std.io.fixedBufferStream(&err_buffer);
+    var err_bufw = std.io.bufferedWriter(err_fbs.writer());
+    const err_bufw_writer = &err_bufw.writer();
+
     while (
         poller.poll()
             catch |err| return e.verbose_error(err, error.CommandFailed)
     ) {
-        const out_written = poller.fifo(.stdout).read(&out_buffer);
-        defer out_buffer = std.mem.zeroes([TaskLogger.LOG_BUF_SIZE]u8);
-        const err_written = poller.fifo(.stderr).read(&err_buffer);
-        defer err_buffer = std.mem.zeroes([TaskLogger.LOG_BUF_SIZE]u8);
+        while (true) {
+            const out_bytes_read = poller.fifo(.stdout).read(&out_buffer);
+            const err_bytes_read = poller.fifo(.stderr).read(&err_buffer);
 
-        if (out_written == 0 and err_written == 0) {
-            return;
+            if (out_bytes_read == 0 and err_bytes_read == 0) {
+                break;
+            }
+
+            if (err_bytes_read > 0) {
+                _ = err_bufw_writer.write(err_buffer[0..err_bytes_read])
+                    catch |err| return e.verbose_error(err, error.TaskFileFailedWrite);
+                if (err_bytes_read == 0) {
+                    break;
+                }
+            }
+            if (out_bytes_read > 0) {
+                _ = out_bufw_writer.write(out_buffer[0..out_bytes_read])
+                    catch |err| return e.verbose_error(err, error.TaskFileFailedWrite);
+                if (out_bytes_read == 0) {
+                    break;
+                }
+            }
         }
 
-        // If there are no logs, this will be skipped
-        if (out_written > 0) {
-            outfile.lock(.exclusive)
+        if (out_bufw.end > 0) {
+            out_bufw.flush()
                 catch |err| return e.verbose_error(err, error.TaskFileFailedWrite);
-            defer outfile.unlock();
+            const content = out_fbs.getWritten();
             out_newline = try TaskLogger.write_timed_logs(
                 out_newline,
-                out_buffer[0..out_written],
+                content,
                 @TypeOf(stdout_writer),
                 &stdout_writer
             );
+            out_fbs.reset();
         }
-        if (err_written > 0) {
-            errfile.lock(.exclusive)
+        if (err_bufw.end > 0) {
+            err_bufw.flush()
                 catch |err| return e.verbose_error(err, error.TaskFileFailedWrite);
-            defer errfile.unlock();
+            const content = err_fbs.getWritten();
             err_newline = try TaskLogger.write_timed_logs(
                 err_newline,
-                err_buffer[0..err_written],
+                content,
                 @TypeOf(stderr_writer),
                 &stderr_writer
             );
+            err_fbs.reset();
         }
     }
     sleep_condition.signal();

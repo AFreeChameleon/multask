@@ -4,7 +4,7 @@ const util = @import("../util.zig");
 const e = @import("../error.zig");
 const Errors = e.Errors;
 
-pub const LOG_BUF_SIZE = 256;
+pub const LOG_BUF_SIZE = 4096;
 
 // Max val of an i64 is 9223372036854775807
 const I64_MAX_STR_LEN = 19;
