@@ -8,7 +8,7 @@ function Test-CommandExists {
     return $null -ne $cmd
 }
 
-$versions = @('v0.4.1', 'v0.4.2', 'v0.5.0', 'v0.5.1')
+$versions = @('v0.4.1', 'v0.4.2', 'v0.5.0', 'v0.5.1', 'v0.5.2')
 
 if (Test-CommandExists "mlt") {
     $output = mlt version
