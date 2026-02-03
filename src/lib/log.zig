@@ -57,7 +57,13 @@ pub fn printdebug(comptime text: []const u8, args: anytype) e.Errors!void {
 
 pub fn print(comptime text: []const u8, args: anytype) e.Errors!void {
     const stdout = std.io.getStdOut().writer();
-    stdout.print(" " ++ text ++ "\n", args)
+    stdout.print(text, args)
+        catch return error.InternalLoggingFailed;
+}
+
+pub fn println(comptime text: []const u8, args: anytype) e.Errors!void {
+    const stdout = std.io.getStdOut().writer();
+    stdout.print(text ++ "\n", args)
         catch return error.InternalLoggingFailed;
 }
 
