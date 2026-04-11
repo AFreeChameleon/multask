@@ -54,8 +54,6 @@ fn inner_read_command_std_output(
 
     var out_buffer: [TaskLogger.LOG_BUF_SIZE]u8 = std.mem.zeroes([TaskLogger.LOG_BUF_SIZE]u8);
     var err_buffer: [TaskLogger.LOG_BUF_SIZE]u8 = std.mem.zeroes([TaskLogger.LOG_BUF_SIZE]u8);
-    // var out_newline = true;
-    // var err_newline = true;
 
     var out_fbs = std.io.fixedBufferStream(&out_buffer);
     var out_bufw = std.io.bufferedWriter(out_fbs.writer());
@@ -91,6 +89,8 @@ fn inner_read_command_std_output(
                     catch |err| return e.verbose_error(err, error.TaskFileFailedWrite);
             }
             
+            // Need to run poll again because poll only loads 512 chars into the buffer which makes it hard to
+            // judge new lines from the ends of previous lines
             const res = poller.pollTimeout(1)
                 catch |err| return e.verbose_error(err, error.CommandFailed);
             const out_write_len = poller.fifo(.stdout).writableLength();
@@ -108,7 +108,6 @@ fn inner_read_command_std_output(
             out_bufw.flush()
                 catch |err| return e.verbose_error(err, error.TaskFileFailedWrite);
             const content = out_fbs.getWritten();
-            std.debug.print("OUT: {d} {s}\n", .{content.len, content});
             try TaskLogger.write_timed_logs(
                 content,
                 @TypeOf(stdout_writer),
@@ -130,16 +129,3 @@ fn inner_read_command_std_output(
     }
     sleep_condition.signal();
 }
-
-// fn write_log(comptime BufWriterType: type, buf_writer: BufWriterType) Errors!void {
-//             buf_writer.flush()
-//                 catch |err| return e.verbose_error(err, error.TaskFileFailedWrite);
-//             const content = out_fbs.getWritten();
-//             std.debug.print("OUT: {d} {s}\n", .{content.len, content});
-//             try TaskLogger.write_timed_logs(
-//                 content,
-//                 @TypeOf(stdout_writer),
-//                 &stdout_writer
-//             );
-//             out_fbs.reset();
-// }

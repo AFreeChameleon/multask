@@ -488,12 +488,6 @@ pub const Files = struct {
         const out_wr = out_buf.writer();
         const err_wr = err_buf.writer();
 
-        // var out_buffer: [TaskLogger.LOG_BUF_SIZE]u8 = std.mem.zeroes([TaskLogger.LOG_BUF_SIZE]u8);
-
-        // var out_fbs = std.io.fixedBufferStream(&out_buffer);
-        // var out_bufw = std.io.bufferedWriter(out_fbs.writer());
-        // const out_bufw_writer = &out_bufw.writer();
-
         var listener = try LogFileListener.setup(self.task_id, LogFileListener.MainIO);
 
         // Buffer length & length of max value of i64
@@ -518,21 +512,6 @@ pub const Files = struct {
                 log_buf = &err_buf;
             }
 
-            // Loop to read all new changes from
-            // while (true) {
-            //     const output = reader.readUntilDelimiterOrEof(&new_content_buf, '\n')
-            //         catch |err| switch (err) {
-            //             error.StreamTooLong => {},
-            //             else => return e.verbose_error(err, error.TaskLogsFailedToRead)
-            //         };
-            //     const bytes_written = out_bufw_writer.write(output)
-            //         catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
-            //     if (bytes_written == 0) {
-            //         break;
-            //     }
-            // }
-
-
             while (true) {
                 new_content_buf = std.mem.zeroes(@TypeOf(new_content_buf));
                 const read_bytes_opt = reader.readUntilDelimiterOrEof(&new_content_buf, '\n')
@@ -546,7 +525,6 @@ pub const Files = struct {
                 const read_bytes = read_bytes_opt.?; 
 
                 const new_content = std.mem.trimRight(u8, read_bytes, &[2]u8{'\n', 0});
-                // std.debug.print("\n\nNEW CONTENT: {d} {d} {d} {s} {any}\n\n", .{read_bytes.len, new_content_buf.len, new_content.len, new_content, ended_with_new_line});
                 if (new_content.len == 0) {
                     break;
                 }
@@ -559,7 +537,7 @@ pub const Files = struct {
                 }
                 _ = wr.write(log_prefix)
                     catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
-                for (pipe_idx.?..new_content.len - 1) |i| {
+                for (pipe_idx.?..new_content.len) |i| {
                     const byte = new_content[i];
                     _ = wr.writeByte(byte)
                         catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
