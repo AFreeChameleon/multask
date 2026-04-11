@@ -54,8 +54,6 @@ fn inner_read_command_std_output(
 
     var out_buffer: [TaskLogger.LOG_BUF_SIZE]u8 = std.mem.zeroes([TaskLogger.LOG_BUF_SIZE]u8);
     var err_buffer: [TaskLogger.LOG_BUF_SIZE]u8 = std.mem.zeroes([TaskLogger.LOG_BUF_SIZE]u8);
-    var out_newline = true;
-    var err_newline = true;
 
     var out_fbs = std.io.fixedBufferStream(&out_buffer);
     var out_bufw = std.io.bufferedWriter(out_fbs.writer());
@@ -69,6 +67,9 @@ fn inner_read_command_std_output(
         poller.poll()
             catch |err| return e.verbose_error(err, error.CommandFailed)
     ) {
+        var total_out_bytes_read: usize = 0;
+        var total_err_bytes_read: usize = 0;
+
         while (true) {
             const out_bytes_read = poller.fifo(.stdout).read(&out_buffer);
             const err_bytes_read = poller.fifo(.stderr).read(&err_buffer);
@@ -76,20 +77,30 @@ fn inner_read_command_std_output(
             if (out_bytes_read == 0 and err_bytes_read == 0) {
                 break;
             }
+            total_out_bytes_read += out_bytes_read;
+            total_err_bytes_read += err_bytes_read;
 
             if (err_bytes_read > 0) {
                 _ = err_bufw_writer.write(err_buffer[0..err_bytes_read])
                     catch |err| return e.verbose_error(err, error.TaskFileFailedWrite);
-                if (err_bytes_read == 0) {
-                    break;
-                }
             }
             if (out_bytes_read > 0) {
                 _ = out_bufw_writer.write(out_buffer[0..out_bytes_read])
                     catch |err| return e.verbose_error(err, error.TaskFileFailedWrite);
-                if (out_bytes_read == 0) {
-                    break;
-                }
+            }
+            
+            // Need to run poll again because poll only loads 512 chars into the buffer which makes it hard to
+            // judge new lines from the ends of previous lines
+            const res = poller.pollTimeout(1)
+                catch |err| return e.verbose_error(err, error.CommandFailed);
+            const out_write_len = poller.fifo(.stdout).writableLength();
+            const err_write_len = poller.fifo(.stderr).writableLength();
+            if (
+                !res or
+                total_out_bytes_read + out_write_len >= out_buffer.len or
+                total_err_bytes_read + err_write_len >= err_buffer.len
+            ) {
+                break;
             }
         }
 
@@ -97,8 +108,7 @@ fn inner_read_command_std_output(
             out_bufw.flush()
                 catch |err| return e.verbose_error(err, error.TaskFileFailedWrite);
             const content = out_fbs.getWritten();
-            out_newline = try TaskLogger.write_timed_logs(
-                out_newline,
+            try TaskLogger.write_timed_logs(
                 content,
                 @TypeOf(stdout_writer),
                 &stdout_writer
@@ -109,8 +119,7 @@ fn inner_read_command_std_output(
             err_bufw.flush()
                 catch |err| return e.verbose_error(err, error.TaskFileFailedWrite);
             const content = err_fbs.getWritten();
-            err_newline = try TaskLogger.write_timed_logs(
-                err_newline,
+            try TaskLogger.write_timed_logs(
                 content,
                 @TypeOf(stderr_writer),
                 &stderr_writer
