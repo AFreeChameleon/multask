@@ -48,7 +48,6 @@ pub fn run(argv: [][]u8) Errors!void {
     try task.files.?.read_last_logs(last_lines);
     if (flags.watch) {
         // Blank new line
-        try log.println("", .{});
         try log.printinfo("Listening to new lines...", .{});
         // try log.printdebug("Listening is still buggy - logs don't sync properly.", .{});
         // Task watch future lines by attaching to the /proc/{id}/fd/1 and 2 handles

@@ -24,19 +24,18 @@ pub fn write_timestamp(
 }
 
 pub fn write_timed_logs(
-    new_line: bool,
     buf: []u8,
     comptime T: type,
     writer: *T
-) Errors!bool {
+) Errors!void {
     const end_with_new_line = buf[buf.len - 1] == '\n';
-    if (new_line) {
-        write_timestamp(T, writer)
-            catch |err| return e.verbose_error(err, error.TaskFileFailedWrite);
-    }
+    try write_timestamp(T, writer);
     _ = writer.write(buf)
         catch |err| return e.verbose_error(err, error.TaskFileFailedWrite);
+    if (!end_with_new_line) {
+        _ = writer.write("\n")
+            catch |err| return e.verbose_error(err, error.TaskFileFailedWrite);
+    }
     writer.flush()
         catch |err| return e.verbose_error(err, error.TaskFileFailedWrite);
-    return end_with_new_line;
 }

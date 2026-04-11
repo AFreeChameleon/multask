@@ -21,6 +21,8 @@ const Pid = util.Pid;
 const Sid = util.Sid;
 const Pgrp = util.Pgrp;
 
+const TaskLogger = @import("../task/logger.zig");
+
 const e = @import("../error.zig");
 const Errors = e.Errors;
 
@@ -347,6 +349,8 @@ pub const Files = struct {
         errfile.seekTo(new_err_pos)
             catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
 
+        var ends_with_new_line = false;
+
         for (last_logs) |log_type| {
             const line = if (log_type == .StdOut)
                 try get_log_line(&outfile)
@@ -361,7 +365,14 @@ pub const Files = struct {
             } else {
                 try log.printstderr("{s}", .{data.message});
             }
-
+            if (data.message.len > 0 and data.message[data.message.len - 1] == '\n') {
+                ends_with_new_line = true;
+            } else {
+                ends_with_new_line = false;
+            }
+        }
+        if (!ends_with_new_line) {
+            try log.println("", .{});
         }
     }
 
@@ -477,6 +488,12 @@ pub const Files = struct {
         const out_wr = out_buf.writer();
         const err_wr = err_buf.writer();
 
+        // var out_buffer: [TaskLogger.LOG_BUF_SIZE]u8 = std.mem.zeroes([TaskLogger.LOG_BUF_SIZE]u8);
+
+        // var out_fbs = std.io.fixedBufferStream(&out_buffer);
+        // var out_bufw = std.io.bufferedWriter(out_fbs.writer());
+        // const out_bufw_writer = &out_bufw.writer();
+
         var listener = try LogFileListener.setup(self.task_id, LogFileListener.MainIO);
 
         // Buffer length & length of max value of i64
@@ -500,15 +517,36 @@ pub const Files = struct {
                 reader = &err_reader;
                 log_buf = &err_buf;
             }
+
+            // Loop to read all new changes from
+            // while (true) {
+            //     const output = reader.readUntilDelimiterOrEof(&new_content_buf, '\n')
+            //         catch |err| switch (err) {
+            //             error.StreamTooLong => {},
+            //             else => return e.verbose_error(err, error.TaskLogsFailedToRead)
+            //         };
+            //     const bytes_written = out_bufw_writer.write(output)
+            //         catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
+            //     if (bytes_written == 0) {
+            //         break;
+            //     }
+            // }
+
+
             while (true) {
                 new_content_buf = std.mem.zeroes(@TypeOf(new_content_buf));
-                _ = reader.readUntilDelimiterOrEof(&new_content_buf, '\n')
+                const read_bytes_opt = reader.readUntilDelimiterOrEof(&new_content_buf, '\n')
                     catch |err| switch (err) {
-                        error.StreamTooLong => {},
+                        error.StreamTooLong => null,
                         else => return e.verbose_error(err, error.TaskLogsFailedToRead)
                     };
+                if (read_bytes_opt == null) {
+                    break;
+                }
+                const read_bytes = read_bytes_opt.?; 
 
-                const new_content = std.mem.trimRight(u8, &new_content_buf, &[2]u8{'\n', 0});
+                const new_content = std.mem.trimRight(u8, read_bytes, &[2]u8{'\n', 0});
+                // std.debug.print("\n\nNEW CONTENT: {d} {d} {d} {s} {any}\n\n", .{read_bytes.len, new_content_buf.len, new_content.len, new_content, ended_with_new_line});
                 if (new_content.len == 0) {
                     break;
                 }
@@ -521,8 +559,11 @@ pub const Files = struct {
                 }
                 _ = wr.write(log_prefix)
                     catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
-                _ = wr.write(new_content[pipe_idx.?..])
-                    catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
+                for (pipe_idx.?..new_content.len - 1) |i| {
+                    const byte = new_content[i];
+                    _ = wr.writeByte(byte)
+                        catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
+                }
                 wr.writeByte('\n')
                     catch |err| return e.verbose_error(err, error.TaskLogsFailedToRead);
             }
