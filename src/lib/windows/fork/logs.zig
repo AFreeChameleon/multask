@@ -18,10 +18,9 @@ const PipeClient = @import("../pipe/client.zig").PipeClient;
 
 fn write_output_to_file(
     comptime T: type,
-    writer: anytype,
+    writer: *T,
     handle: libc.HANDLE,
-    new_line: bool,
-) Errors!bool {
+) Errors!void {
     var queued_bytes: libc.DWORD = 0;
 
     if (libc.PeekNamedPipe(handle, null, 0, 0, &queued_bytes, 0) == 0) {
@@ -36,13 +35,11 @@ fn write_output_to_file(
             return error.CommandFailed;
         }
         return try TaskLogger.write_timed_logs(
-            new_line,
             buf,
             T,
             writer
         );
     }
-    return true;
 }
 
 fn poll(stdout: libc.HANDLE, stderr: libc.HANDLE, proc_event_handle: libc.HANDLE) Errors!?c_ulong {
@@ -109,10 +106,6 @@ fn inner_read_command_std_output(
         catch |err| return e.verbose_error(err, error.CommandFailed);
     var stdout_writer = std.io.bufferedWriter(outfile.writer());
     var stderr_writer = std.io.bufferedWriter(errfile.writer());
-    
-    // Seeking to end to truncate logs
-    var out_newline = true;
-    var err_newline = true;
 
     var logs_client = try PipeClient.connect(task.id);
 
@@ -122,15 +115,15 @@ fn inner_read_command_std_output(
         switch (event) {
             // Stdout
             libc.WAIT_OBJECT_0 => {
-                out_newline = try write_output_to_file(
-                    @TypeOf(stdout_writer), &stdout_writer, stdout, out_newline
+                try write_output_to_file(
+                    @TypeOf(stdout_writer), &stdout_writer, stdout
                 );
                 try logs_client.signal_server(.out);
             },
             // Stderr
             libc.WAIT_OBJECT_0 + 1 => {
-                err_newline = try write_output_to_file(
-                    @TypeOf(stderr_writer), &stderr_writer, stderr, err_newline
+                try write_output_to_file(
+                    @TypeOf(stderr_writer), &stderr_writer, stderr
                 );
                 try logs_client.signal_server(.err);
             },
