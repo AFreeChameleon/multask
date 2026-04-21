@@ -348,7 +348,8 @@ fn create_main_row(
         const concat_str = task.stats.?.cwd[
             (task.stats.?.cwd.len - (MAX_COL_LEN - 3))..(task.stats.?.cwd.len)
         ];
-        @memcpy(row.location[0..concat_str.len], concat_str);
+        @memcpy(row.location[0..3], "...");
+        @memcpy(row.location[3..concat_str.len + 3], concat_str);
     } else {
         @memcpy(row.location[0..task.stats.?.cwd.len], task.stats.?.cwd);
     }
