@@ -281,8 +281,6 @@ pub const MacosProcess = struct {
                 };
             const proc_ppid = try procstats.get_ppid(&bsdinfo);
             if (proc_ppid == ppid) {
-                // The initial check for SZOMB wasn't powerful enough
-                if (!proc.proc_exists()) continue;
                 const sid = try procstats.get_sid(pid);
                 const starttime = procstats.get_starttime(&bsdinfo);
                 const pgrp = procstats.get_pgrp(&bsdinfo);
