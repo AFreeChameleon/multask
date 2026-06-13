@@ -27,7 +27,6 @@ const main = @import("../lib/table/main.zig");
 const stats = @import("../lib/table/stats.zig");
 
 const cpu = @import("../lib/linux/cpu.zig");
-const window = @import("../lib/window.zig");
 
 const e = @import("../lib/error.zig");
 const Errors = e.Errors;
