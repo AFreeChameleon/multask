@@ -202,7 +202,7 @@ pub const MainFiles = struct {
         defer env.close();
     }
     
-    pub fn build_main_dir_str(buffer: []u8) Errors!u64 {
+    pub fn build_main_dir_str(buffer: []u8) Errors![]const u8 {
         var fbs = std.io.fixedBufferStream(buffer);
         var bw = std.io.bufferedWriter(fbs.writer());
         const bw_writer = &bw.writer();
@@ -211,13 +211,11 @@ pub const MainFiles = struct {
         try PathBuilder.add_main_dir(bw_writer);
         bw.flush()
             catch |err| return e.verbose_error(err, error.TasksIdsFileFailedRead);
-        const bytes_written = fbs.getPos()
-            catch |err| return e.verbose_error(err, error.TasksIdsFileFailedRead);
-
-        return bytes_written;
+        const dir_str = fbs.getWritten();
+        return dir_str;
     }
 
-    pub fn build_tasks_dir_str(buffer: []u8) Errors!u64 {
+    pub fn build_tasks_dir_str(buffer: []u8) Errors![]const u8 {
         var fbs = std.io.fixedBufferStream(buffer);
         var bw = std.io.bufferedWriter(fbs.writer());
         const bw_writer = &bw.writer();
@@ -227,10 +225,8 @@ pub const MainFiles = struct {
         try PathBuilder.add_tasks_dir(bw_writer);
         bw.flush()
             catch |err| return e.verbose_error(err, error.TasksIdsFileFailedRead);
-        const bytes_written = fbs.getPos()
-            catch |err| return e.verbose_error(err, error.TasksIdsFileFailedRead);
-
-        return bytes_written;
+        const dir_str = fbs.getWritten();
+        return dir_str;
     }
 };
 
@@ -244,8 +240,7 @@ pub const CheckFiles = struct {
 
     fn check_main_dir() Errors!void {
         var main_dir_buf: [std.fs.max_path_bytes]u8 = undefined;
-        const main_dir_bytes_written = try MainFiles.build_main_dir_str(&main_dir_buf);
-        const main_dir_str = main_dir_buf[0..main_dir_bytes_written];
+        const main_dir_str = try MainFiles.build_main_dir_str(&main_dir_buf);
         var main_dir = std.fs.openDirAbsolute(main_dir_str, .{})
             catch |err| return e.verbose_error(err, error.MainDirNotFound);
         defer main_dir.close();
@@ -256,8 +251,7 @@ pub const CheckFiles = struct {
 
     fn check_tasks_dir() Errors!void {
         var tasks_dir_buf: [std.fs.max_path_bytes]u8 = undefined;
-        const tasks_dir_bytes_written = try MainFiles.build_tasks_dir_str(&tasks_dir_buf);
-        const tasks_dir_str = tasks_dir_buf[0..tasks_dir_bytes_written];
+        const tasks_dir_str = try MainFiles.build_tasks_dir_str(&tasks_dir_buf);
         var tasks_dir = std.fs.openDirAbsolute(tasks_dir_str, .{})
             catch |err| return e.verbose_error(err, error.TasksDirNotFound);
         defer tasks_dir.close();
@@ -268,8 +262,7 @@ pub const CheckFiles = struct {
 
     fn check_main_file() Errors!void {
         var tasks_dir_buf: [std.fs.max_path_bytes]u8 = undefined;
-        const tasks_dir_bytes_written = try MainFiles.build_tasks_dir_str(&tasks_dir_buf);
-        const tasks_dir_str = tasks_dir_buf[0..tasks_dir_bytes_written];
+        const tasks_dir_str = try MainFiles.build_tasks_dir_str(&tasks_dir_buf);
         const file_str = std.fmt.allocPrint(util.gpa, "{s}/tasks.json", .{tasks_dir_str})
             catch |err| return e.verbose_error(err, error.TasksIdsFileNotExists);
         defer util.gpa.free(file_str);
@@ -283,8 +276,7 @@ pub const CheckFiles = struct {
 
     fn check_tasks() Errors!void {
         var tasks_dir_buf: [std.fs.max_path_bytes]u8 = undefined;
-        const tasks_dir_bytes_written = try MainFiles.build_tasks_dir_str(&tasks_dir_buf);
-        const tasks_dir_str = tasks_dir_buf[0..tasks_dir_bytes_written];
+        const tasks_dir_str = try MainFiles.build_tasks_dir_str(&tasks_dir_buf);
 
         var tasks_dir = std.fs.openDirAbsolute(tasks_dir_str, .{.iterate = true})
             catch |err| return e.verbose_error(err, error.TasksDirNotFound);
