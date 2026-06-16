@@ -434,8 +434,13 @@ pub const LinuxProcess = struct {
     }
 
     pub fn kill(self: *Self) Errors!void {
-        if (libc.kill(self.pid, 9) != 0) {
-            return error.FailedToKillProcess;
+        const res = libc.kill(self.pid, 9);
+        if (res == -1) {
+            const errno = std.c._errno().*;
+            return switch (errno) {
+                3 => error.ProcessNotExists,
+                else => error.FailedToKillProcess
+            };
         }
     }
 

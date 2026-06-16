@@ -71,8 +71,8 @@ fn inner_read_command_std_output(
         var total_err_bytes_read: usize = 0;
 
         while (true) {
-            const out_bytes_read = poller.fifo(.stdout).read(&out_buffer);
-            const err_bytes_read = poller.fifo(.stderr).read(&err_buffer);
+            const out_bytes_read = poller.fifo(.stdout).read(out_buffer[0..out_buffer.len - total_out_bytes_read]);
+            const err_bytes_read = poller.fifo(.stderr).read(err_buffer[0..err_buffer.len - total_err_bytes_read]);
 
             if (out_bytes_read == 0 and err_bytes_read == 0) {
                 break;
