@@ -213,7 +213,11 @@ pub fn kill_all(proc: *Process) Errors!void {
             defer children.deinit();
             try proc.get_children(&children, proc.pid);
             for (children.items) |*child| {
-                try child.kill();
+                // Sometimes a child may be dependent on another child process
+                child.kill() catch |err| switch(err) {
+                    error.ProcessNotExists => continue,
+                    else => return err
+                };
             }
             try proc.kill();
         } else {
