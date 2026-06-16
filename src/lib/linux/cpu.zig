@@ -124,3 +124,33 @@ pub const LinuxCpu = struct {
         self.time_total = get_cpu_time_total();
     }
 };
+
+const expect = std.testing.expect;
+
+test "lib/linux/cpu.zig" {
+    std.debug.print("\n--- lib/linux/cpu.zig ---\n", .{});
+}
+
+test "LinuxCpu init starts empty" {
+    std.debug.print("LinuxCpu init starts empty\n", .{});
+    var cpu = LinuxCpu.init();
+    defer cpu.deinit();
+    try expect(cpu.time_total == 0);
+    try expect(cpu.systimes.count() == 0);
+}
+
+test "LinuxCpu clone copies systimes" {
+    std.debug.print("LinuxCpu clone copies systimes\n", .{});
+    var cpu = LinuxCpu.init();
+    defer cpu.deinit();
+    cpu.time_total = 555;
+    try cpu.systimes.put(42, SysTimes{ .utime = 1, .stime = 2 });
+
+    var cloned = try cpu.clone();
+    defer cloned.deinit();
+    try expect(cloned.time_total == 555);
+    const v = cloned.systimes.get(42);
+    try expect(v != null);
+    try expect(v.?.utime == 1);
+    try expect(v.?.stime == 2);
+}

@@ -19,3 +19,12 @@ const Errors = @import("../lib/error.zig").Errors;
 pub fn run() Errors!void {
     try log.printinfo("Multask version: v{s}", .{zon.version});
 }
+
+test "commands/version.zig" {
+    std.debug.print("\n--- commands/version.zig ---\n", .{});
+}
+
+test "version run is a no-op in test mode" {
+    std.debug.print("version run is a no-op in test mode\n", .{});
+    try run();
+}

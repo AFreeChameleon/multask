@@ -203,3 +203,33 @@ fn write_to_debug_log_file(text: []const u8) e.Errors!void {
     log_file.writeAll(text)
         catch return error.DebugLogFileFailedWrite;
 }
+
+const expect = std.testing.expect;
+
+test "lib/log.zig" {
+    std.debug.print("\n--- lib/log.zig ---\n", .{});
+}
+
+test "print_help_buf single column row" {
+    std.debug.print("print_help_buf single column row\n", .{});
+    var buf: [128]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    try print_help_buf(.{.{"only"}}, fbs.writer());
+    try expect(std.mem.eql(u8, fbs.getWritten(), "only\n"));
+}
+
+test "print_help_buf multi column row uses tabs" {
+    std.debug.print("print_help_buf multi column row uses tabs\n", .{});
+    var buf: [128]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    try print_help_buf(.{.{ "a", "b", "c" }}, fbs.writer());
+    try expect(std.mem.eql(u8, fbs.getWritten(), "a\tb\tc\n"));
+}
+
+test "print_help_buf multiple rows" {
+    std.debug.print("print_help_buf multiple rows\n", .{});
+    var buf: [128]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    try print_help_buf(.{ .{ "a", "b" }, .{"c"} }, fbs.writer());
+    try expect(std.mem.eql(u8, fbs.getWritten(), "a\tb\nc\n"));
+}

@@ -55,3 +55,15 @@ const intro_rows = .{
     .{"To see an individial command's options, run `mlt [command] -h`"},
     .{"options:"},
 };
+
+test "commands/help.zig" {
+    std.debug.print("\n--- commands/help.zig ---\n", .{});
+}
+
+test "intro_rows render with usage line" {
+    std.debug.print("intro_rows render with usage line\n", .{});
+    var buf: [256]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    try log.print_help_buf(intro_rows, fbs.writer());
+    try std.testing.expect(std.mem.indexOf(u8, fbs.getWritten(), "Usage: mlt") != null);
+}

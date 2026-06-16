@@ -561,3 +561,40 @@ pub const LinuxProcess = struct {
     }
 
 };
+
+const expect = std.testing.expect;
+
+// A /proc/pid/stat style line: index 2=state, 3=ppid, 4=pgrp, 5=sid, 21=starttime
+const sample_stat = "1234 (myproc) S 1 100 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 987654";
+
+test "lib/linux/process.zig" {
+    std.debug.print("\n--- lib/linux/process.zig ---\n", .{});
+}
+
+test "stat parsers extract the right fields" {
+    std.debug.print("stat parsers extract the right fields\n", .{});
+    try expect((try LinuxProcess.get_process_state(sample_stat)) == 'S');
+    try expect((try LinuxProcess.get_ppid(sample_stat)) == 1);
+    try expect((try LinuxProcess.get_pgrp(sample_stat)) == 100);
+    try expect((try LinuxProcess.get_sid(sample_stat)) == 100);
+    try expect((try LinuxProcess.get_starttime(sample_stat)) == 987654);
+}
+
+test "get_starttime errors when the field is missing" {
+    std.debug.print("get_starttime errors when the field is missing\n", .{});
+    try std.testing.expectError(error.FailedToGetProcessStarttime, LinuxProcess.get_starttime("1 (x) S 2 3"));
+}
+
+test "get_process_state errors on empty content" {
+    std.debug.print("get_process_state errors on empty content\n", .{});
+    try std.testing.expectError(error.FailedToGetProcessState, LinuxProcess.get_process_state(""));
+}
+
+test "get_init_args_from_readproc copies the fields" {
+    std.debug.print("get_init_args_from_readproc copies the fields\n", .{});
+    const RP = struct { sid: Sid, pgrp: Pgrp, starttime: u64 };
+    const args = LinuxProcess.get_init_args_from_readproc(RP, .{ .sid = 5, .pgrp = 6, .starttime = 7 });
+    try expect(args.sid == 5);
+    try expect(args.pgrp == 6);
+    try expect(args.starttime == 7);
+}

@@ -455,6 +455,124 @@ fn create_task_process_rows(task: *Task, show_all: bool) Errors![]MainRow {
         catch |err| return e.verbose_error(err, error.FailedAppendTableRow);
 }
 
+const Stats = @import("../task/stats.zig").Stats;
+const Monitoring = taskproc.Monitoring;
+const expect = std.testing.expect;
+
+fn make_task(id: TaskId, namespace: ?[]const u8, command: []const u8, cwd: []const u8) Errors!Task {
+    var task = Task.init(id);
+    errdefer task.deinit();
+    if (namespace != null) {
+        task.namespace = try util.strdup(namespace.?, error.CorruptedTask);
+    }
+    task.stats = Stats{
+        .command = try util.strdup(command, error.CorruptedTask),
+        .cwd = try util.strdup(cwd, error.CorruptedTask),
+        .memory_limit = 0,
+        .cpu_limit = 0,
+        .persist = false,
+        .monitoring = Monitoring.Shallow,
+        .boot = false,
+        .interactive = false,
+    };
+    return task;
+}
+
+test "lib/table/main.zig" {
+    std.debug.print("\n--- lib/table/main.zig ---\n", .{});
+}
+
+test "create_header builds a header row" {
+    std.debug.print("create_header builds a header row\n", .{});
+    const row = try create_header();
+    defer row.deinit();
+    try expect(std.mem.startsWith(u8, row.id, "id"));
+    try expect(std.mem.startsWith(u8, row.namespace, "namespace"));
+}
+
+test "create_corrupted_task formats id and error columns" {
+    std.debug.print("create_corrupted_task formats id and error columns\n", .{});
+    const row = try create_corrupted_task(7);
+    defer row.deinit();
+    try expect(std.mem.startsWith(u8, row.id, "7"));
+    try expect(std.mem.startsWith(u8, row.command, "Error"));
+    try expect(std.mem.startsWith(u8, row.pid, "N/A"));
+}
+
+test "get_proc_status_string covers all statuses" {
+    std.debug.print("get_proc_status_string covers all statuses\n", .{});
+    const statuses = [_]ProcStatus{ .Headless, .Running, .Restarting, .Detached, .Stopped };
+    for (statuses) |s| {
+        try expect(get_proc_status_string(s).len > 0);
+    }
+}
+
+test "set_parent_process_columns with namespace and short command" {
+    std.debug.print("set_parent_process_columns with namespace and short command\n", .{});
+    var task = try make_task(3, "work", "echo hi", "/tmp");
+    defer task.deinit();
+    var row = try MainRow.alloc();
+    defer row.deinit();
+    try set_parent_process_columns(&row, &task);
+    try expect(std.mem.startsWith(u8, row.id, "3"));
+    try expect(std.mem.startsWith(u8, row.namespace, "work"));
+    try expect(std.mem.startsWith(u8, row.command, "echo hi"));
+}
+
+test "set_parent_process_columns null namespace and long command" {
+    std.debug.print("set_parent_process_columns null namespace and long command\n", .{});
+    const long_cmd = "this_is_a_really_long_command_exceeding_the_limit";
+    var task = try make_task(4, null, long_cmd, "/tmp");
+    defer task.deinit();
+    var row = try MainRow.alloc();
+    defer row.deinit();
+    try set_parent_process_columns(&row, &task);
+    try expect(std.mem.startsWith(u8, row.namespace, "N/A"));
+    try expect(std.mem.endsWith(u8, row.command, "..."));
+}
+
+test "set_killed_process_columns sets N/A columns" {
+    std.debug.print("set_killed_process_columns sets N/A columns\n", .{});
+    var row = try MainRow.alloc();
+    defer row.deinit();
+    set_killed_process_columns(&row);
+    try expect(std.mem.startsWith(u8, row.pid, "N/A"));
+    try expect(std.mem.startsWith(u8, row.memory, "N/A"));
+    try expect(std.mem.startsWith(u8, row.runtime, "N/A"));
+}
+
+test "create_truncated_processes_row singular and plural" {
+    std.debug.print("create_truncated_processes_row singular and plural\n", .{});
+    const one = try create_truncated_processes_row(1);
+    defer one.deinit();
+    try expect(std.mem.indexOf(u8, one.command, "1 more process") != null);
+    try expect(std.mem.indexOf(u8, one.command, "processes") == null);
+    const many = try create_truncated_processes_row(3);
+    defer many.deinit();
+    try expect(std.mem.indexOf(u8, many.command, "3 more processes") != null);
+}
+
+test "create_main_row with no process uses killed columns" {
+    std.debug.print("create_main_row with no process uses killed columns\n", .{});
+    var task = try make_task(9, "ns", "run", "/home/user");
+    defer task.deinit();
+    const row = try create_main_row(&task);
+    defer row.deinit();
+    try expect(std.mem.startsWith(u8, row.id, "9"));
+    try expect(std.mem.startsWith(u8, row.location, "/home/user"));
+    try expect(std.mem.startsWith(u8, row.pid, "N/A"));
+}
+
+test "create_main_row truncates a long cwd" {
+    std.debug.print("create_main_row truncates a long cwd\n", .{});
+    const long_cwd = "/very/long/path/that/exceeds/the/column/limit/for/sure";
+    var task = try make_task(10, null, "run", long_cwd);
+    defer task.deinit();
+    const row = try create_main_row(&task);
+    defer row.deinit();
+    try expect(std.mem.startsWith(u8, row.location, "..."));
+}
+
 // Removes any old tasks
 fn check_taskids(targs: TaskArgs) Errors![]TaskId {
     var tasks = try TaskManager.get_tasks();

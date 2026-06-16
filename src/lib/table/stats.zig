@@ -204,3 +204,85 @@ pub fn free_table_rows(table: *Table) void {
 pub fn reset_table(table: *Table) Errors!void {
     try helper.reset_table(Table, table);
 }
+
+const Stats = @import("../task/stats.zig").Stats;
+const Monitoring = @import("../task/process.zig").Monitoring;
+const expect = std.testing.expect;
+
+fn make_stats_task(
+    id: TaskId,
+    mem: util.MemLimit,
+    cpu: util.CpuLimit,
+    persist: bool,
+    interactive: bool,
+    boot: bool,
+    monitoring: Monitoring,
+) Errors!Task {
+    var task = Task.init(id);
+    errdefer task.deinit();
+    task.stats = Stats{
+        .command = try util.strdup("echo hi", error.CorruptedTask),
+        .cwd = try util.strdup("/tmp", error.CorruptedTask),
+        .memory_limit = mem,
+        .cpu_limit = cpu,
+        .persist = persist,
+        .monitoring = monitoring,
+        .boot = boot,
+        .interactive = interactive,
+    };
+    return task;
+}
+
+test "lib/table/stats.zig" {
+    std.debug.print("\n--- lib/table/stats.zig ---\n", .{});
+}
+
+test "create_header builds a header row" {
+    std.debug.print("create_header builds a header row\n", .{});
+    const row = try create_header();
+    defer row.deinit();
+    try expect(std.mem.startsWith(u8, row.id, "id"));
+}
+
+test "create_corrupted_task formats the id" {
+    std.debug.print("create_corrupted_task formats the id\n", .{});
+    const row = try create_corrupted_task(5);
+    defer row.deinit();
+    try expect(std.mem.startsWith(u8, row.id, "5"));
+}
+
+test "add_task with limits writes formatted columns" {
+    std.debug.print("add_task with limits writes formatted columns\n", .{});
+    var table = try init_table();
+    defer table.deinit();
+    defer free_table_rows(&table);
+    var task = try make_stats_task(1, 20000, 50, true, true, true, Monitoring.Deep);
+    defer task.deinit();
+    try add_task(&table, &task);
+    try expect(table.rows.items.len == 1);
+    const row = table.rows.items[0];
+    try expect(std.mem.startsWith(u8, row.id, "1"));
+    try expect(std.mem.startsWith(u8, row.cpu_limit, "50%"));
+    try expect(std.mem.startsWith(u8, row.interactive, "Yes"));
+    try expect(std.mem.startsWith(u8, row.persist, "Yes"));
+    try expect(std.mem.startsWith(u8, row.boot, "Yes"));
+    try expect(std.mem.startsWith(u8, row.monitoring, "deep"));
+}
+
+test "add_task with no limits writes None and shallow" {
+    std.debug.print("add_task with no limits writes None and shallow\n", .{});
+    var table = try init_table();
+    defer table.deinit();
+    defer free_table_rows(&table);
+    var task = try make_stats_task(2, 0, 0, false, false, false, Monitoring.Shallow);
+    defer task.deinit();
+    try add_task(&table, &task);
+    try expect(table.rows.items.len == 1);
+    const row = table.rows.items[0];
+    try expect(std.mem.startsWith(u8, row.memory_limit, "None"));
+    try expect(std.mem.startsWith(u8, row.cpu_limit, "None"));
+    try expect(std.mem.startsWith(u8, row.interactive, "No"));
+    try expect(std.mem.startsWith(u8, row.persist, "No"));
+    try expect(std.mem.startsWith(u8, row.boot, "No"));
+    try expect(std.mem.startsWith(u8, row.monitoring, "shallow"));
+}

@@ -279,3 +279,39 @@ pub fn get_error_msg(e_type: Errors) Errors![]const u8 {
         else => "Unknown error occurred, code",
     };
 }
+
+const expect = std.testing.expect;
+
+test "lib/error.zig" {
+    std.debug.print("\n--- lib/error.zig ---\n", .{});
+}
+
+test "get_error_msg maps known errors to messages" {
+    std.debug.print("get_error_msg maps known errors to messages\n", .{});
+    const Case = struct { err: Errors, msg: []const u8 };
+    const cases = [_]Case{
+        .{ .err = error.CommandNotExists, .msg = "Command is missing." },
+        .{ .err = error.MissingTaskId, .msg = "Missing task id." },
+        .{ .err = error.OnlyOneTaskId, .msg = "Only one task id allowed." },
+        .{ .err = error.InvalidOs, .msg = "Invalid OS. Only Macos, Linux and Windows supported right now." },
+        .{ .err = error.TaskNotExists, .msg = "Task does not exist." },
+        .{ .err = error.NamespaceValueCantBeAll, .msg = "Namespace name cannot be 'all'." },
+    };
+    for (cases) |c| {
+        const msg = try get_error_msg(c.err);
+        try expect(std.mem.eql(u8, msg, c.msg));
+    }
+}
+
+test "get_error_msg falls back for unmapped error" {
+    std.debug.print("get_error_msg falls back for unmapped error\n", .{});
+    const msg = try get_error_msg(error.TestExpectFailed);
+    try expect(std.mem.eql(u8, msg, "Unknown error occurred, code"));
+}
+
+test "verbose_error returns the mapped error" {
+    std.debug.print("verbose_error returns the mapped error\n", .{});
+    log.debug = false;
+    const result = verbose_error(error.FileNotFound, error.MainDirNotFound);
+    try expect(result == error.MainDirNotFound);
+}

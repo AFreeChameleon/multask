@@ -20,6 +20,12 @@ const Startup = @import("./startup/index.zig").Startup;
 pub const MAIN_DIR: []const u8 = if (builtin.is_test) ".multi-tasker-test" else ".multi-tasker";
 const TEST_HOME_DIR = "/test/home";
 
+/// Test-only override for the home directory. When null (the default and the
+/// only value in non-test builds) `add_home_dir` falls back to TEST_HOME_DIR in
+/// test mode. Tests set this to a writable temp dir to exercise the real
+/// filesystem code in MainFiles, then reset it to null.
+pub var test_home_override: ?[]const u8 = null;
+
 pub const PathBuilder = struct {
     pub const SEPARATOR = if (builtin.os.tag == .windows) '\\' else '/';
 
@@ -32,7 +38,8 @@ pub const PathBuilder = struct {
 
     pub fn add_home_dir(bw_writer: anytype) Errors!void {
         if (builtin.is_test) {
-            bw_writer.print(TEST_HOME_DIR, .{})
+            const home = test_home_override orelse TEST_HOME_DIR;
+            bw_writer.print("{s}", .{home})
                 catch |err| return e.verbose_error(err, error.TasksIdsFileFailedRead);
             return;
         }
@@ -397,4 +404,124 @@ test "PathBuilder build to task file" {
     );
 
     try expect(std.mem.eql(u8, buffer[0..end], res));
+}
+
+test "PathBuilder home dir and terminator" {
+    std.debug.print("PathBuilder home dir and terminator\n", .{});
+    var buffer: [std.fs.max_path_bytes]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buffer);
+    var bw = std.io.bufferedWriter(fbs.writer());
+    const bw_writer = &bw.writer();
+
+    try PathBuilder.add_home_dir(bw_writer);
+    try PathBuilder.add_main_dir(bw_writer);
+    try PathBuilder.add_terminator(bw_writer);
+    const end = bw.end;
+    try bw.flush();
+
+    var buf: [128]u8 = undefined;
+    const res = try std.fmt.bufPrint(
+        &buf,
+        "/test/home{c}.multi-tasker-test{c}",
+        .{ PathBuilder.SEPARATOR, 0 }
+    );
+
+    try expect(std.mem.eql(u8, buffer[0..end], res));
+}
+
+test "MainFiles creates the dir tree under a writable home" {
+    std.debug.print("MainFiles creates the dir tree under a writable home\n", .{});
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const home = try tmp.dir.realpathAlloc(util.gpa, ".");
+    defer util.gpa.free(home);
+
+    test_home_override = home;
+    defer test_home_override = null;
+
+    // First call creates the main dir; second call opens the existing one.
+    var main_dir = try MainFiles.get_or_create_main_dir();
+    main_dir.close();
+    var main_dir_again = try MainFiles.get_or_create_main_dir();
+    main_dir_again.close();
+    var check_main = try tmp.dir.openDir(".multi-tasker-test", .{});
+    check_main.close();
+
+    // Tasks dir + tasks.json file.
+    var tasks_dir = try MainFiles.get_or_create_tasks_dir();
+    tasks_dir.close();
+    const tasks_file = try MainFiles.create_tasks_file();
+    tasks_file.close();
+    var check_tasks = try tmp.dir.openDir(".multi-tasker-test/tasks", .{});
+    check_tasks.close();
+
+    // Per-task files.
+    try MainFiles.create_task_files(1);
+    var check_task = try tmp.dir.openDir(".multi-tasker-test/tasks/1", .{});
+    check_task.close();
+}
+
+test "MainFiles get_or_create_tasks_file_lock and debug log" {
+    std.debug.print("MainFiles get_or_create_tasks_file_lock and debug log\n", .{});
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const home = try tmp.dir.realpathAlloc(util.gpa, ".");
+    defer util.gpa.free(home);
+
+    test_home_override = home;
+    defer test_home_override = null;
+
+    const locked = try MainFiles.get_or_create_tasks_file_lock();
+    locked.close();
+
+    const debug_log = try MainFiles.get_debug_log_file();
+    debug_log.close();
+}
+
+test "CheckFiles passes for a fully created task tree" {
+    std.debug.print("CheckFiles passes for a fully created task tree\n", .{});
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const home = try tmp.dir.realpathAlloc(util.gpa, ".");
+    defer util.gpa.free(home);
+
+    test_home_override = home;
+    defer test_home_override = null;
+
+    const tasks_file = try MainFiles.create_tasks_file();
+    tasks_file.close();
+    try MainFiles.create_task_files(1);
+
+    try CheckFiles.check_all();
+}
+
+test "CheckFiles reports a missing main dir" {
+    std.debug.print("CheckFiles reports a missing main dir\n", .{});
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const home = try tmp.dir.realpathAlloc(util.gpa, ".");
+    defer util.gpa.free(home);
+
+    test_home_override = home;
+    defer test_home_override = null;
+
+    // Nothing created under the temp home, so the main dir is absent.
+    try std.testing.expectError(error.MainDirNotFound, CheckFiles.check_main_dir());
+}
+
+test "CheckFiles reports a missing tasks.json" {
+    std.debug.print("CheckFiles reports a missing tasks.json\n", .{});
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const home = try tmp.dir.realpathAlloc(util.gpa, ".");
+    defer util.gpa.free(home);
+
+    test_home_override = home;
+    defer test_home_override = null;
+
+    // Create the tasks dir but no tasks.json inside it.
+    var tasks_dir = try MainFiles.get_or_create_tasks_dir();
+    tasks_dir.close();
+
+    try std.testing.expectError(error.TasksIdsFileNotExists, CheckFiles.check_main_file());
 }

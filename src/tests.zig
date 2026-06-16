@@ -5,6 +5,8 @@ pub const Errors = @import("lib/error.zig").Errors;
 
 test "Main" {
     _ = @import("lib/util.zig");
+    _ = @import("lib/error.zig");
+    _ = @import("lib/log.zig");
     _ = @import("lib/args/parse.zig");
     _ = @import("lib/table/main.zig");
     _ = @import("lib/table/stats.zig");
@@ -12,6 +14,8 @@ test "Main" {
     _ = @import("lib/task/env.zig");
     if (comptime builtin.target.os.tag == .linux) {
         _ = @import("lib/linux/file.zig");
+        _ = @import("lib/linux/cpu.zig");
+        _ = @import("lib/linux/process.zig");
     }
     if (comptime builtin.target.os.tag == .windows) {
         _ = @import("lib/windows/env.zig");
@@ -19,6 +23,8 @@ test "Main" {
 
     _ = @import("commands/create.zig");
     _ = @import("commands/delete.zig");
+    _ = @import("commands/help.zig");
+    _ = @import("commands/version.zig");
     _ = @import("commands/edit.zig");
     _ = @import("commands/health.zig");
     _ = @import("commands/logs.zig");

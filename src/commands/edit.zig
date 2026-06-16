@@ -410,3 +410,72 @@ test "No id passed" {
 
     try expect(flags == error.MissingTaskId);
 }
+
+fn put_ns(ns: *TNamespaces, name: []const u8, ids: []const TaskId) Errors!void {
+    const key = try util.strdup(name, error.FailedToEditNamespace);
+    const val = util.gpa.alloc(TaskId, ids.len)
+        catch return error.FailedToEditNamespace;
+    @memcpy(val, ids);
+    ns.put(key, val) catch return error.FailedToEditNamespace;
+}
+
+fn free_ns(ns: *TNamespaces) void {
+    var it = ns.iterator();
+    while (it.next()) |entry| {
+        util.gpa.free(entry.key_ptr.*);
+        util.gpa.free(entry.value_ptr.*);
+    }
+    ns.deinit();
+}
+
+test "swap_namespace moves an id into a brand-new namespace" {
+    std.debug.print("swap_namespace moves an id into a brand-new namespace\n", .{});
+    var ns = TNamespaces.init(util.gpa);
+    defer free_ns(&ns);
+    try swap_namespace(&ns, 1, "newns");
+    const v = ns.get("newns");
+    try expect(v != null);
+    try expect(v.?.len == 1);
+    try expect(v.?[0] == 1);
+}
+
+test "swap_namespace appends an id to an existing namespace" {
+    std.debug.print("swap_namespace appends an id to an existing namespace\n", .{});
+    var ns = TNamespaces.init(util.gpa);
+    defer free_ns(&ns);
+    try put_ns(&ns, "team", &[_]TaskId{5});
+    try swap_namespace(&ns, 9, "team");
+    const v = ns.get("team");
+    try expect(v != null);
+    try expect(v.?.len == 2);
+    try expect(std.mem.indexOfScalar(TaskId, v.?, 5) != null);
+    try expect(std.mem.indexOfScalar(TaskId, v.?, 9) != null);
+}
+
+test "swap_namespace is a no-op when id already in target" {
+    std.debug.print("swap_namespace is a no-op when id already in target\n", .{});
+    var ns = TNamespaces.init(util.gpa);
+    defer free_ns(&ns);
+    try put_ns(&ns, "home", &[_]TaskId{3});
+    try swap_namespace(&ns, 3, "home");
+    const v = ns.get("home");
+    try expect(v != null);
+    try expect(v.?.len == 1);
+    try expect(v.?[0] == 3);
+}
+
+test "swap_namespace moves an id out of its old namespace" {
+    std.debug.print("swap_namespace moves an id out of its old namespace\n", .{});
+    var ns = TNamespaces.init(util.gpa);
+    defer free_ns(&ns);
+    try put_ns(&ns, "old", &[_]TaskId{ 7, 8 });
+    try swap_namespace(&ns, 7, "fresh");
+    const oldv = ns.get("old");
+    try expect(oldv != null);
+    try expect(oldv.?.len == 1);
+    try expect(oldv.?[0] == 8);
+    const fv = ns.get("fresh");
+    try expect(fv != null);
+    try expect(fv.?.len == 1);
+    try expect(fv.?[0] == 7);
+}

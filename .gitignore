@@ -4,6 +4,7 @@
 zig-cache/
 .zig-cache/
 zig-out/
+coverage/
 build/
 build-*/
 docgen_tmp/

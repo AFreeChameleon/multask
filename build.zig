@@ -75,10 +75,27 @@ pub fn build(b: *std.Build) void {
         .optimize = optimise_opts,
     });
     test_mod.addImport("flute", flute_mod);
+    test_mod.addImport("build_zon", zon_module);
     const unit_tests = b.addTest(.{
         .root_module = test_mod,
     });
     unit_tests.linkLibC();
     const run_unit_tests = b.addRunArtifact(unit_tests);
     test_step.dependOn(&run_unit_tests.step);
+
+    // Code coverage via kcov. Builds the test binary and traces it with kcov,
+    // emitting an HTML + Cobertura report to ./coverage. Run with:
+    //   zig build coverage
+    // Requires kcov on PATH (https://github.com/SimonKagstrom/kcov).
+    const coverage_step = b.step("coverage", "Generate test coverage report with kcov");
+    const kcov = b.addSystemCommand(&.{
+        "kcov",
+        "--include-pattern=src/",
+        "--exclude-pattern=src/lib/windows/,src/lib/macos/,.cache/zig/,/p/flute",
+        "coverage",
+    });
+    kcov.addArtifactArg(unit_tests);
+    // kcov runs the binary itself, so don't let the build cache skip it.
+    kcov.has_side_effects = true;
+    coverage_step.dependOn(&kcov.step);
 }
