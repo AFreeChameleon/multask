@@ -4,8 +4,8 @@
     .version = "0.5.2",
     .dependencies = .{
         .flute = .{
-            .url = "git+https://github.com/AFreeChameleon/flute/?ref=main#83dc3a99e1bbb193264f9924c610fcff3c509c53",
-            .hash = "flute-0.1.0-IAS_sm-NAAAqtWBqTQenxhspscsBC7t0DRUg3MFm-mvj",
+            .url = "git+https://github.com/AFreeChameleon/flute/?ref=0.14#887e387a3a403198958c3884cc65f8d8ad213b6e",
+            .hash = "flute-0.1.0-IAS_sluNAABG5h8fUOv-MN0Rp-iUzSKBHLC4pYLFnrer",
         },
     },
 
