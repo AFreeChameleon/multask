@@ -196,7 +196,7 @@ pub const MainFiles = struct {
     }
     
     /// FREE THIS
-    pub fn build_main_dir_str(buffer: []const u8) Errors![]const u8 {
+    pub fn build_main_dir_str(buffer: []u8) Errors![]const u8 {
         var fbs = std.io.fixedBufferStream(buffer);
         var bw = std.io.bufferedWriter(fbs.writer());
         const bw_writer = &bw.writer();
@@ -211,7 +211,7 @@ pub const MainFiles = struct {
     }
 
     /// FREE THIS
-    pub fn build_tasks_dir_str(buffer: []const u8) Errors![]const u8 {
+    pub fn build_tasks_dir_str(buffer: []u8) Errors![]const u8 {
         var fbs = std.io.fixedBufferStream(buffer);
         var bw = std.io.bufferedWriter(fbs.writer());
         const bw_writer = &bw.writer();
