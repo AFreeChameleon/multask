@@ -219,7 +219,12 @@ pub fn kill_all(proc: *Process) Errors!void {
                     else => return err
                 };
             }
-            try proc.kill();
+            // If this process is dependent on a child process,
+            // this process may not exist or be scheduled for termination I think
+            proc.kill() catch |err| switch(err) {
+                error.ProcessNotExists => return,
+                else => return err
+            };
         } else {
             const saved_procs = try get_running_saved_procs(proc);
             defer util.gpa.free(saved_procs);
