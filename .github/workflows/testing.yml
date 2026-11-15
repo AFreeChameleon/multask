@@ -50,10 +50,10 @@ jobs:
       - name: Build project
         run: zig/zig build -Doptimize=ReleaseSmall
 
-      - name: Set up Ruby 3.4.4
+      - name: Set up Ruby 3.4
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: 3.4.4
+          ruby-version: 3.4
           bundler-cache: true
 
       - name: Run RSpec
